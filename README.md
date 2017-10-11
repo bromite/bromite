@@ -1,6 +1,6 @@
 # Bromite - Take back your browser
 
-Bromite is [Chromium](https://www.chromium.org/getting-involved/download-chromium) plus some patches for ad blocking.
+Bromite is [Chromium](https://www.chromium.org/Home) plus some patches for ad blocking.
 
 See [open issues](https://github.com/bromite/bromite/issues) for the development plan.
 
@@ -20,7 +20,8 @@ Each tag corresponds to a Chromium release tag.
 
 # Credits
 
-* nochromo for the original patches
+* [Chromium project](https://www.chromium.org/Home)
+* nochromo for the original patch
 
 # License
 
