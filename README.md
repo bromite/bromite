@@ -18,6 +18,11 @@ BTC donations address: `3MkC3idL61npQSCxL1gceksmRTkNkiCPcG`
 
 ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 
+# Features
+
+* adblocking (currently baked-in, no configuration options available)
+* some privacy patches from Inox patchset, ungoogled-chromium and Iridium projects
+
 # How to build
 
 The [bromite main repository](https://github.com/bromite/bromite) contains tags for each corresponding Chromium release (see https://chromium.googlesource.com/chromium/src.git).
@@ -34,8 +39,12 @@ Each tag corresponds to a Chromium release tag.
 
 # Credits
 
+* [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) for some patches
+* Iridium project for some patches (taken from above ungoogled-chromium)
+* [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (taken from above ungoogled-chromium)
 * [Chromium project](https://www.chromium.org/Home)
-* nochromo for the original patch
+* nochromo for the original adblock patch
+* AdBlock Plus, uBlock, EasyList and EasyPrivacy for the compilation of original adblock patch
 
 # License
 
