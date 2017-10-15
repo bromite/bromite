@@ -22,6 +22,8 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 
 * adblocking (currently baked-in, no configuration options available)
 * some privacy patches from Inox patchset, ungoogled-chromium and Iridium projects
+* all codecs included (also proprietary); H.264, HEVC etc
+* built with official Chrome optimizations
 
 # How to build
 
