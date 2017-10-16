@@ -21,17 +21,10 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 # Features
 
 * adblocking (currently baked-in, no configuration options available)
-* some privacy patches from Inox patchset, ungoogled-chromium and Iridium projects
-* all codecs included (also proprietary); H.264, HEVC etc
+* [DuckDuckGo](https://duckduckgo.com/) search engine (select it from search engines under settings)
+* privacy enhancement patches from Inox patchset, ungoogled-chromium and Iridium projects
+* all codecs included (proprietary, open H.264 etc.)
 * built with official Chrome optimizations
-
-# How to build
-
-The [bromite main repository](https://github.com/bromite/bromite) contains tags for each corresponding Chromium release (see https://chromium.googlesource.com/chromium/src.git).
-
-Each tag has the corresponding patches that can be applied on top of the chromium codebase.
-
-Please refer to official Chromium build documentation to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
 
 # Releases
 
@@ -39,15 +32,21 @@ A build server goes through the very lengthy build operation and then new versio
 
 Each tag corresponds to a Chromium release tag.
 
+# How to build
+
+The [bromite main repository](https://github.com/bromite/bromite) contains tags for each corresponding Chromium release (see https://chromium.googlesource.com/chromium/src.git).
+
+Please refer to [official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
+
 # Credits
 
+* [Chromium project](https://www.chromium.org/Home) and developers
 * [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) for some patches
 * Iridium project for some patches (taken from above ungoogled-chromium)
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (taken from above ungoogled-chromium)
-* [Chromium project](https://www.chromium.org/Home)
 * nochromo for the original adblock patch
 * AdBlock Plus, uBlock, EasyList and EasyPrivacy for the compilation of original adblock patch
 
 # License
 
-[GNU GPL v3](./LICENSE)
+The patches published as part of the Bromite project are released under [GNU GPL v3](./LICENSE).
