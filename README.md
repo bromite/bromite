@@ -21,6 +21,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 # Features
 
 * adblocking (currently baked-in, no configuration options available)
+* remove click-tracking from Google search results
 * [DuckDuckGo](https://duckduckgo.com/) search engine (select it from search engines under settings)
 * privacy enhancement patches from Inox patchset, ungoogled-chromium and Iridium projects
 * all codecs included (proprietary, open H.264 etc.)
