@@ -1,8 +1,22 @@
 # 63.0.3239.6
-* added own patch for Google search results click-tracking removal
+* added Bromite patch for Google search results click-tracking removal
 * added x86 target CPU
 * fixed red blink frame
 
 # 63.0.3235.2
-* First release with NoChromo adblocking patch
-* Added some Inox/Iridium/Ungoogled-Chromium patches
+* first release with NoChromo adblocking patch
+* Bromite patch: disable NTP remote suggestions
+* added some Inox/Iridium/Ungoogled-Chromium patches, namely:
+** DuckDuckGo search engine
+** disable battery status service
+** disable formatting in OmniBox
+** disable GCM status checks
+** use local fonts instead of fonts from Google servers
+** disable updater pings
+** do not enable Google integrations by default (translation, lookup, etc)
+** disable the ad promo system
+** do not store passwords by default
+** do not fetch Google promotions
+** restore classic NTP
+** only keep cookies until exit
+** block third-party cookies
