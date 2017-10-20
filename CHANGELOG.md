@@ -2,6 +2,8 @@
 * added Bromite patch for Google search results click-tracking removal
 * added x86 target CPU
 * fixed red blink frame
+* fixed API keys
+* added StartPage search engine (closes https://github.com/bromite/bromite/issues/3)
 
 # 63.0.3235.2
 * first release with NoChromo adblocking patch
