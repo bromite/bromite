@@ -1,5 +1,9 @@
+# 63.0.3239.15
+* remove URL tracking from Google search results
+* disable webRTC by default
+
 # 63.0.3239.10
-* fixed API keys
+* attempt enabling API keys (didn't work)
 * added StartPage search engine (closes https://github.com/bromite/bromite/issues/3)
 
 # 63.0.3239.6
