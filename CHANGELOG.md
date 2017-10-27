@@ -2,7 +2,7 @@
 * remove URL tracking from Google search results
 * disable webRTC by default (https://github.com/bromite/bromite/issues/9, still not working proper)
 * do not enable search engine geolocation by default
-* use own package name
+* use own package name (closes https://github.com/bromite/bromite/issues/1)
 
 # 63.0.3239.10
 * attempt enabling API keys (didn't work)
