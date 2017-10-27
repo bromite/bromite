@@ -1,8 +1,8 @@
 # 63.0.3239.15
 * remove URL tracking from Google search results
 * disable webRTC by default
-* use 64bit processes for WebView/Monochrome processes
 * do not enable search engine geolocation by default
+* use own package name
 
 # 63.0.3239.10
 * attempt enabling API keys (didn't work)
