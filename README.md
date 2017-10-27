@@ -44,7 +44,7 @@ Please refer to [official Chromium build documentation](https://www.chromium.org
 
 * [Chromium project](https://www.chromium.org/Home) and developers
 * [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) for some patches
-* Iridium project for some patches (taken from above ungoogled-chromium)
+* [Iridium project](https://github.com/iridium-browser) for some patches (taken from above ungoogled-chromium)
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (taken from above ungoogled-chromium)
 * nochromo for the original adblock patch
 * AdBlock Plus, uBlock, EasyList and EasyPrivacy for the compilation of original adblock patch
