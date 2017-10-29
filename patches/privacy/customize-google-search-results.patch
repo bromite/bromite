@@ -1,8 +1,8 @@
-commit 9032b89c5a4c28d43c5a13f8bc151c71acad874b
+commit b944811d1324b0d16d4f40ff7420a3fe3c69fd52
 Author: csagan5 <32685696+csagan5@users.noreply.github.com>
 Date:   Sat Oct 28 10:09:41 2017 +0200
 
-    Do not track google search results clicks
+    Do not track google search results clicks, remove AMP
 
 diff --git a/third_party/WebKit/Source/core/dom/BUILD.gn b/third_party/WebKit/Source/core/dom/BUILD.gn
 index 93f080f..2df8d30 100644
@@ -17,7 +17,7 @@ index 93f080f..2df8d30 100644
      "trustedtypes/TrustedHTML.h",
      "trustedtypes/TrustedScriptURL.cpp",
 diff --git a/third_party/WebKit/Source/core/dom/Document.cpp b/third_party/WebKit/Source/core/dom/Document.cpp
-index b7c5748..4978c84 100644
+index b53451c..ecfa473 100644
 --- a/third_party/WebKit/Source/core/dom/Document.cpp
 +++ b/third_party/WebKit/Source/core/dom/Document.cpp
 @@ -218,6 +218,7 @@
@@ -28,7 +28,7 @@ index b7c5748..4978c84 100644
  #include "platform/CrossThreadFunctional.h"
  #include "platform/DateComponents.h"
  #include "platform/EventDispatchForbiddenScope.h"
-@@ -5825,8 +5826,24 @@ void Document::FinishedParsing() {
+@@ -5826,8 +5827,24 @@ void Document::FinishedParsing() {
      fetcher_->ClearResourcesFromPreviousFetcher();
    }
  
@@ -56,13 +56,12 @@ index b7c5748..4978c84 100644
  void Document::ElementDataCacheClearTimerFired(TimerBase*) {
 diff --git a/third_party/WebKit/Source/core/dom/extensions/dont-track-me.h b/third_party/WebKit/Source/core/dom/extensions/dont-track-me.h
 new file mode 100644
-index 0000000..57a7670
 --- /dev/null
 +++ b/third_party/WebKit/Source/core/dom/extensions/dont-track-me.h
 @@ -0,0 +1,6 @@
 +#ifndef dont_track_me_h
 +#define dont_track_me_h
 +
-+#define DONT_TRACK_ME_JS "/* click-tracking removal - from https://github.com/Rob--W/dont-track-me-google */\n\nfunction sanitizeHyperlink(a) {\n    var inlineMousedown = a.getAttribute('onmousedown');\n    // return rwt(....); // E.g Google search results.\n    // return google.rwt(...); // E.g. sponsored search results\n    // return google.arwt(this); // E.g. sponsored search results (dec 2016).\n    if (inlineMousedown && /\\ba?rwt\\(/.test(inlineMousedown)) {\n        a.removeAttribute('onmousedown');\n    }\n    var realLink = getRealLinkFromGoogleUrl(a);\n    if (realLink) {\n        a.href = realLink;\n    }\n    a.referrerPolicy = 'origin';\n\n    var ping = a.getAttribute('ping');\n    if (ping && /\\/url\\?/.test(ping)) {\n        a.removeAttribute('oncontextmenu');\n        a.removeAttribute('ping');\n    }\n}\n\n/**\n * @returns {String} the real URL if the given link is a Google redirect URL.\n */\nfunction getRealLinkFromGoogleUrl(a) {\n    if ((a.hostname === location.hostname || a.hostname === 'www.google.com') &&\n        /^\\/(local_)?url$/.test(a.pathname)) {\n        // Google Maps / Dito (/local_url?q=<url>)\n        // Mobile (/url?q=<url>)\n        var url = /[?&](?:q|url)=((?:https?|ftp)[%:][^&]+)/.exec(a.search);\n        if (url) {\n            return decodeURIComponent(url[1]);\n        }\n        // Help pages, e.g. safe browsing (/url?...&q=%2Fsupport%2Fanswer...)\n        url = /[?&](?:q|url)=((?:%2[Ff]|\\/)[^&]+)/.exec(a.search);\n        if (url) {\n            return a.origin + decodeURIComponent(url[1]);\n        }\n    }\n}\n\nfunction sanitizeAllHyperlinks() {\n\t// scan all hyperlinks\n\tvar hyperlinks = document.getElementsByTagName('a');\n\tfor(var i = 0; i < hyperlinks.length; i++) {\n\t\tvar a = hyperlinks[i];\n\t\tif (a.href)\n\t\t\tsanitizeHyperlink(a);\n\t}\n}\n\nsanitizeAllHyperlinks();\n"
++#define DONT_TRACK_ME_JS "// Bromite click-tracking and AMP removal\nfunction recreateHyperlink(a) {\n    // create new A element - old one has event listeners attached\n    var newA = document.createElement('a');\n    newA.referrerPolicy = 'origin';\n\n    // remove AMP class, get actual page URL\n    var ampCur = a.getAttribute('data-amp-cur');\n    if (ampCur) {\n        newA.href = ampCur;\n        a.classList.remove('amp_r');\n    } else {\n        var realLink = getRealLinkFromGoogleUrl(a);\n        if (realLink) {\n            newA.href = realLink;\n        } else {\n            // might not be an actual hyperlink, ignore it\n            if (!a.href) {\n                return;\n            }\n            newA.href = a.href;\n        }\n    }\n    // copy CSS classes\n    newA.className = a.className;\n\n    // copy nodes inside the hyperlink\n    while (a.firstChild) {\n        newA.appendChild(a.lastChild);\n    }\n    // replace hyperlink\n    a.parentNode.replaceChild(newA, a);\n}\n\n/**\n * @returns {String} the real URL if the given link is a Google redirect URL.\n */\nfunction getRealLinkFromGoogleUrl(a) {\n    if ((a.hostname === location.hostname || a.hostname === 'www.google.com') &&\n        /^\\/(local_)?url$/.test(a.pathname)) {\n        // Google Maps / Dito (/local_url?q=<url>)\n        // Mobile (/url?q=<url>)\n        var url = /[?&](?:q|url)=((?:https?|ftp)[%:][^&]+)/.exec(a.search);\n        if (url) {\n            return decodeURIComponent(url[1]);\n        }\n        // Help pages, e.g. safe browsing (/url?...&q=%2Fsupport%2Fanswer...)\n        url = /[?&](?:q|url)=((?:%2[Ff]|\\/)[^&]+)/.exec(a.search);\n        if (url) {\n            return a.origin + decodeURIComponent(url[1]);\n        }\n    }\n}\n\nfunction sanitizeAllHyperlinks() {\n    // scan all hyperlinks\n    var hyperlinks = document.getElementsByTagName('a');\n    for (var i = 0; i < hyperlinks.length; i++) {\n        recreateHyperlink(hyperlinks[i]);\n    }\n}\n\nsanitizeAllHyperlinks();\n"
 +
 +#endif  // dont_track_me_h

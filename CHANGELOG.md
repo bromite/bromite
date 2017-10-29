@@ -1,3 +1,6 @@
+# 63.0.3239.24
+* convert AMP search results to regular search results
+
 # 63.0.3239.15
 * remove URL tracking from Google search results
 * disable webRTC by default (https://github.com/bromite/bromite/issues/9, still not working proper)
