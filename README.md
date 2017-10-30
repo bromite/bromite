@@ -23,7 +23,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 # Features
 
 * adblocking (currently baked-in, no configuration options available)
-* remove click-tracking from Google search results
+* remove click-tracking and AMP from Google search results
 * [StartPage](https://startpage.com/) search engine (select it from search engines under settings)
 * [DuckDuckGo](https://duckduckgo.com/) search engine (select it from search engines under settings)
 * privacy enhancement patches from Inox patchset, ungoogled-chromium and Iridium projects
