@@ -1,6 +1,6 @@
 # Bromite - Take back your browser
 
-[![GitHub release][version-image]][version-url]
+[![GitHub release][version-image]][version-url] [![license](https://img.shields.io/github/license/bromite/bromite.svg)]()
 
 <img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
 
