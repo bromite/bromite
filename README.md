@@ -2,7 +2,7 @@
 
 [![GitHub release][version-image]][version-url]
 
-<img src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
+<img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
 
 Bromite is [Chromium](https://www.chromium.org/Home) plus some patches for ad blocking and enhanced privacy.
 
