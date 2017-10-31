@@ -56,3 +56,6 @@ Please refer to [official Chromium build documentation](https://www.chromium.org
 # License
 
 The patches published as part of the Bromite project are released under [GNU GPL v3](./LICENSE).
+
+[version-image]: https://img.shields.io/github/release/bromite/bromite.svg?style=flat-square
+[version-url]: https://github.com/bromite/bromite/releases/latest
