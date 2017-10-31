@@ -1,6 +1,6 @@
 # Bromite - Take back your browser
 
-[![GitHub release][version-image]][version-url] [![license](https://img.shields.io/github/license/bromite/bromite.svg)]()
+[![GitHub release][version-image]][version-url] [![license][license-image]][license-url]
 
 <img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
 
@@ -59,3 +59,5 @@ The patches published as part of the Bromite project are released under [GNU GPL
 
 [version-image]: https://img.shields.io/github/release/bromite/bromite.svg?style=flat-square
 [version-url]: https://github.com/bromite/bromite/releases/latest
+[license-image]: https://img.shields.io/github/license/bromite/bromite.svg
+[license-url]: https://github.com/bromite/bromite/blob/master/LICENSE
