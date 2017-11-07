@@ -1,3 +1,5 @@
+# 63.0.3239.38
+
 # 63.0.3239.27
 
 # 63.0.3239.24
@@ -23,16 +25,16 @@
 * first release with NoChromo adblocking patch
 * Bromite patch: disable NTP remote suggestions
 * added some Inox/Iridium/Ungoogled-Chromium patches, namely:
-** DuckDuckGo search engine
-** disable battery status service
-** disable formatting in OmniBox
-** disable GCM status checks
-** use local fonts instead of fonts from Google servers
-** disable updater pings
-** do not enable Google integrations by default (translation, lookup, etc)
-** disable the ad promo system
-** do not store passwords by default
-** do not fetch Google promotions
-** restore classic NTP
-** only keep cookies until exit
-** block third-party cookies
+   * DuckDuckGo search engine
+   * disable battery status service
+   * disable formatting in OmniBox
+   * disable GCM status checks
+   * use local fonts instead of fonts from Google servers
+   * disable updater pings
+   * do not enable Google integrations by default (translation, lookup, etc)
+   * disable the ad promo system
+   * do not store passwords by default
+   * do not fetch Google promotions
+   * restore classic NTP
+   * only keep cookies until exit
+   * block third-party cookies
