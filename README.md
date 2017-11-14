@@ -32,6 +32,12 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * all codecs included (proprietary, open H.264 etc.)
 * built with official Chrome optimizations
 
+# F.A.Q.
+
+## Does Google Sync work?
+No. You would have to use your own API keys, which I do not know how you could pass via environment variables on Android.
+This is not a limitation of Bromite but of all Chromium-based projects in general, as general public is not allowed to use Google's APIs for free unless when using Chrome.
+
 # Releases
 
 A build server goes through the very lengthy build operation and then new versions are available in this project as [releases](https://github.com/bromite/bromite/releases).

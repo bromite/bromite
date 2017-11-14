@@ -1,3 +1,6 @@
+# 63.0.3239.46
+* removed search engine geolocation default patch
+
 # 63.0.3239.38
 
 # 63.0.3239.27
