@@ -1,3 +1,8 @@
+# 63.0.3239.64
+* updated adblock filters
+* fixed an issue with incognito new tab
+* permanent disable for ToS/metrics and unused auto-updates check
+
 # 63.0.3239.46
 * removed search engine geolocation default patch
 
