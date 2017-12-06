@@ -1,3 +1,7 @@
+63.0.3239.78
+* correctly set version and build numbers
+* updated adBlock filters
+
 # 63.0.3239.73
 
 # 63.0.3239.64
