@@ -1,4 +1,10 @@
-63.0.3239.78
+# 63.0.3239.85
+* no suggest URL for DuckDuckGo (https://github.com/bromite/bromite/issues/19)
+* fixed 4chan blocking rule
+* limit AMP links cleanup to search results only (fixes broken images/news result tabs)
+* updated adBlock filters
+
+# 63.0.3239.78
 * correctly set version and build numbers
 * updated adBlock filters
 
