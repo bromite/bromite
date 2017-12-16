@@ -1,3 +1,8 @@
+# 63.0.3239.105
+* limit impact of AMP-removal to not break tabs (https://github.com/bromite/bromite/issues/20)
+* remove also ads from search results
+* add Google search engine with English-only results, no RLZ and field trials
+
 # 63.0.3239.85
 * no suggest URL for DuckDuckGo (https://github.com/bromite/bromite/issues/19)
 * fixed 4chan blocking rule
