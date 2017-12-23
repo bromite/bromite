@@ -1,7 +1,11 @@
-# 63.0.3239.105
+# 63.0.3239.118
 * limit impact of AMP-removal to not break tabs (https://github.com/bromite/bromite/issues/20)
+* fix DuckDuckGo and StartPage suggestions (https://github.com/bromite/bromite/issues/19)
+* revert /deep/ and ::shadow feature drop to attempt fixing DevTools support (https://github.com/bromite/bromite/issues/23)
 * remove also ads from search results
 * add Google search engine with English-only results, no RLZ and field trials
+* updated adBlock filters
+* fix build of x86 version (was broken in previous version)
 
 # 63.0.3239.85
 * no suggest URL for DuckDuckGo (https://github.com/bromite/bromite/issues/19)
