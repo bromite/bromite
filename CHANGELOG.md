@@ -1,3 +1,7 @@
+# 63.0.3239.122
+* disable webRTC completely (https://github.com/bromite/bromite/issues/9)
+* hyperlinks sanitization fixed and now accessible from Google logo click
+
 # 63.0.3239.118
 * limit impact of AMP-removal to not break tabs (https://github.com/bromite/bromite/issues/20)
 * fix DuckDuckGo and StartPage suggestions (https://github.com/bromite/bromite/issues/19)
