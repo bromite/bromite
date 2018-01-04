@@ -1,3 +1,6 @@
+# 63.0.3239.129
+* updated AdBlock filters
+
 # 63.0.3239.122
 * disable webRTC completely (https://github.com/bromite/bromite/issues/9)
 * hyperlinks sanitization fixed and now accessible from Google logo click
