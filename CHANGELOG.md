@@ -1,9 +1,14 @@
+# 63.0.3239.144
+* fixed invalid AdBlock filter rule blocking all connections (https://github.com/bromite/bromite/issues/26)
+* updated AdBlock filters
+
 # 63.0.3239.129
 * updated AdBlock filters
 
 # 63.0.3239.122
 * disable webRTC completely (https://github.com/bromite/bromite/issues/9)
 * hyperlinks sanitization fixed and now accessible from Google logo click
+* now building and publishing SystemWebView apks
 
 # 63.0.3239.118
 * limit impact of AMP-removal to not break tabs (https://github.com/bromite/bromite/issues/20)
