@@ -1,3 +1,9 @@
+# 63.0.3239.150
+* fixed crash when clicking on address bar lock (page info) or opening site settings (https://github.com/bromite/bromite/issues/28)
+* build H264 with NEON optimizations for ARMv7
+* updated AdBlock filters
+* more builds for arm64 architecture
+
 # 63.0.3239.144
 * fixed invalid AdBlock filter rule blocking all connections (https://github.com/bromite/bromite/issues/26)
 * updated AdBlock filters
