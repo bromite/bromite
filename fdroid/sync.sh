@@ -2,28 +2,35 @@
 
 set -e
 
+## sync starts in fdroiddata/build/$PKG
 echo "SYNC from $PWD"
 
-mkdir -p srcvol
+. common
 
-if [ -e srcvol/src ]; then
-	unlink srcvol/src
-fi
-ln -s build/srclib/chromium srcvol/src
+## install gclient configuration files
+cp gclient_android.default ../../srclib/.gclient
+cp gclient_entries         ../../srclib/.gclient_entries
 
-./gclient-prepare.sh
+## create all necessary srclib symlinks so that gclient does not fetch them again
+cd ../../srclib
+../$PKG/fdroid/gclient-prepare.sh
 
-## create output directory - preserve if exists but make sure it's a symlink
-mkdir -p srcvol/out
-if [ -e srcvol/src/out ]; then
-	unlink srcvol/src/out
-fi
-ln -s "$PWD/srcvol/out" srcvol/src/out
+## gclient must run in the chromium directory and it cannot be a symlink
+cd src
 
-. depot-tools.env
-
-cp gclient_android.default srcvol/.gclient
-cp gclient_entries srcvol/.gclient_entries
-
+set +e
 #gclient sync --with_branch_heads --delete_unversioned_trees
-exec gclient sync
+echo y | gclient sync --reset
+RV=$?
+
+## revert the license workaround
+git checkout DEPS
+cd ..
+
+if [ $RV -eq 0 ]; then
+	## success, copy the new gclient_entries
+	cp .gclient_entries ../$PKG/fdroid/gclient_entries
+	exit 0
+fi
+
+exit $RV
