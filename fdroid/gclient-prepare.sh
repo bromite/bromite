@@ -1,9 +1,16 @@
 #!/bin/bash
 ## gclient-prepare.sh
+##
+## @author csagan5
+##
+## Bromite srclibs setup script for F-Droid build
 ## this script is auto-generated based on gclient_entries
 ## DO NOT edit manually
 ##
+## https://www.bromite.org/
+##
 #
+
 set -e
 
 ## setup chromium-py into src/third_party/webdriver/pylib

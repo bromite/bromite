@@ -1,4 +1,12 @@
 #!/bin/bash
+## build.sh
+##
+## @author csagan5
+##
+## Bromite build script for F-Droid
+## https://www.bromite.org/
+##
+#
 
 if [ ! $# -eq 5 ]; then
 	echo "Usage: build.sh release version-code arch ninja-target" 1>&2
@@ -14,8 +22,7 @@ OUTPUT="out/Release_${RELEASE}_${ARCH}"
 
 set -e
 
-## sync starts in fdroiddata/build/$PKG
-echo "BUILD from $PWD"
+## build= commands run in fdroiddata/build/$PKG
 
 . common
 
@@ -45,5 +52,12 @@ gn gen "--args=android_default_version_code=\"${VER_CODE}\" android_default_vers
 CONC=$(nproc)
 let CONC+=1
 
+PREFIX=""
+## detect running buildserver
+## if running locally, then reduce build process priority
+if [ ! -e $HOME/buildserverid ]; then
+	PREFIX="ionice --class 3 nice --adjustment=5"
+fi
+
 ##NOTE: can't use exit code to identify interrupts until https://github.com/ninja-build/ninja/issues/430 is addressed
-NINJA_STATUS="%f/%t (%p) %es | " ionice --class 3 nice --adjustment=5 ninja -j$CONC -C "$OUTPUT" ${NINJA_TARGET}
+NINJA_STATUS="%f/%t (%p) %es | " $PREFIX ninja -j$CONC -C "$OUTPUT" ${NINJA_TARGET}

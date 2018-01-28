@@ -1,9 +1,16 @@
 #!/bin/bash
+## sync.sh
+##
+## @author csagan5
+##
+## Bromite 'gclient sync' script for F-Droid
+## https://www.bromite.org/
+##
+#
 
 set -e
 
-## sync starts in fdroiddata/build/$PKG
-echo "SYNC from $PWD"
+## sync= commands run in fdroiddata/build/$PKG
 
 . common
 
@@ -23,11 +30,9 @@ set +e
 echo y | gclient sync --reset
 RV=$?
 
-## revert the license workaround
-git checkout DEPS
-cd ..
 
 if [ $RV -eq 0 ]; then
+	cd ..
 	## success, copy the new gclient_entries
 	cp .gclient_entries ../$PKG/fdroid/gclient_entries
 	exit 0
