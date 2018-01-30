@@ -68,12 +68,6 @@ if [ -e "src/third_party/re2/src" ]; then
 fi
 ln -v -s "$PWD/chromium-re2" "src/third_party/re2/src"
 
-## setup chromium-src into src/third_party/webrtc
-if [ -e "src/third_party/webrtc" ]; then
-	rm -rfv "src/third_party/webrtc"
-fi
-ln -v -s "$PWD/chromium-src" "src/third_party/webrtc"
-
 ## setup chromium-wds into src/third_party/wds/src
 mkdir -p "src/third_party/wds"
 if [ -e "src/third_party/wds/src" ]; then
@@ -228,6 +222,12 @@ if [ -e "src/third_party/snappy/src" ]; then
 	rm -rfv "src/third_party/snappy/src"
 fi
 ln -v -s "$PWD/chromium-snappy" "src/third_party/snappy/src"
+
+## setup chromium-webrtc into src/third_party/webrtc
+if [ -e "src/third_party/webrtc" ]; then
+	rm -rfv "src/third_party/webrtc"
+fi
+ln -v -s "$PWD/chromium-webrtc" "src/third_party/webrtc"
 
 ## setup chromium-content into src/chrome/test/data/perf/frame_rate/content
 mkdir -p "src/chrome/test/data/perf/frame_rate"
