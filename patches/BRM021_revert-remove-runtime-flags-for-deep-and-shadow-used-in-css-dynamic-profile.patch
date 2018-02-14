@@ -1,0 +1,114 @@
+Author: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date:   Wed Dec 20 22:18:41 2017 +0100
+
+    Revert "Remove Runtime flags for /deep/ and ::shadow used in CSS dynamic profile"
+    
+    This reverts commit 860f43550bf6587ca21900dfdf901fce697cbbb7
+
+diff --git a/third_party/WebKit/Source/core/css/CSSSelector.cpp b/third_party/WebKit/Source/core/css/CSSSelector.cpp
+--- a/third_party/WebKit/Source/core/css/CSSSelector.cpp
++++ b/third_party/WebKit/Source/core/css/CSSSelector.cpp
+@@ -546,8 +546,14 @@ void CSSSelector::UpdatePseudoType(const AtomicString& value,
+         pseudo_type_ = kPseudoUnknown;
+       break;
+     case kPseudoShadow:
+-      if (match_ != kPseudoElement || context.IsDynamicProfile())
+-        pseudo_type_ = kPseudoUnknown;
++      if (RuntimeEnabledFeatures::
++              ShadowPseudoElementInCSSDynamicProfileEnabled()) {
++        if (match_ != kPseudoElement)
++          pseudo_type_ = kPseudoUnknown;
++      } else {
++        if (match_ != kPseudoElement || context.IsDynamicProfile())
++          pseudo_type_ = kPseudoUnknown;
++      }
+       break;
+     case kPseudoBlinkInternalElement:
+       if (match_ != kPseudoElement || mode != kUASheetMode)
+diff --git a/third_party/WebKit/Source/core/css/SelectorChecker.cpp b/third_party/WebKit/Source/core/css/SelectorChecker.cpp
+--- a/third_party/WebKit/Source/core/css/SelectorChecker.cpp
++++ b/third_party/WebKit/Source/core/css/SelectorChecker.cpp
+@@ -336,6 +336,8 @@ SelectorChecker::MatchStatus SelectorChecker::MatchForRelation(
+ 
+   switch (relation) {
+     case CSSSelector::kShadowDeepAsDescendant:
++      DCHECK(
++          !RuntimeEnabledFeatures::DeepCombinatorInCSSDynamicProfileEnabled());
+       Deprecation::CountDeprecation(context.element->GetDocument(),
+                                     WebFeature::kCSSDeepCombinator);
+       FALLTHROUGH;
+@@ -424,6 +426,11 @@ SelectorChecker::MatchStatus SelectorChecker::MatchForRelation(
+         UseCounter::Count(context.element->GetDocument(),
+                           WebFeature::kPseudoShadowInStaticProfile);
+       }
++      if (RuntimeEnabledFeatures::
++                       ShadowPseudoElementInCSSDynamicProfileEnabled()) {
++          Deprecation::CountDeprecation(context.element->GetDocument(),
++                                        WebFeature::kCSSSelectorPseudoShadow);
++      }
+       // If we're in the same tree-scope as the scoping element, then following
+       // a shadow descendant combinator would escape that and thus the scope.
+       if (context.scope && context.scope->OwnerShadowHost() &&
+diff --git a/third_party/WebKit/Source/core/css/StyleEngineTest.cpp b/third_party/WebKit/Source/core/css/StyleEngineTest.cpp
+--- a/third_party/WebKit/Source/core/css/StyleEngineTest.cpp
++++ b/third_party/WebKit/Source/core/css/StyleEngineTest.cpp
+@@ -752,6 +752,14 @@ TEST_F(StyleEngineTest, RuleSetInvalidationV0BoundaryCrossing) {
+   EXPECT_EQ(ScheduleInvalidationsForRules(
+                 *shadow_root, ".a ::content span { background: green}"),
+             kRuleSetInvalidationFullRecalc);
++  if (RuntimeEnabledFeatures::DeepCombinatorInCSSDynamicProfileEnabled()) {
++    EXPECT_EQ(ScheduleInvalidationsForRules(
++                  *shadow_root, ".a /deep/ span { background: green}"),
++              kRuleSetInvalidationFullRecalc);
++    EXPECT_EQ(ScheduleInvalidationsForRules(
++                  *shadow_root, ".a::shadow span { background: green}"),
++              kRuleSetInvalidationFullRecalc);
++  }
+ }
+ 
+ TEST_F(StyleEngineTest, HasViewportDependentMediaQueries) {
+diff --git a/third_party/WebKit/Source/core/css/parser/CSSSelectorParser.cpp b/third_party/WebKit/Source/core/css/parser/CSSSelectorParser.cpp
+--- a/third_party/WebKit/Source/core/css/parser/CSSSelectorParser.cpp
++++ b/third_party/WebKit/Source/core/css/parser/CSSSelectorParser.cpp
+@@ -1,4 +1,3 @@
+-
+ // Copyright 2014 The Chromium Authors. All rights reserved.
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+@@ -667,6 +666,9 @@ CSSSelector::RelationType CSSSelectorParser::ConsumeCombinator(
+       const CSSParserToken& slash = range.ConsumeIncludingWhitespace();
+       if (slash.GetType() != kDelimiterToken || slash.Delimiter() != '/')
+         failed_parsing_ = true;
++      if (RuntimeEnabledFeatures::DeepCombinatorInCSSDynamicProfileEnabled()) {
++        return CSSSelector::kShadowDeep;
++      }
+       return context_->IsDynamicProfile() ? CSSSelector::kShadowDeepAsDescendant
+                                           : CSSSelector::kShadowDeep;
+     }
+diff --git a/third_party/WebKit/Source/platform/runtime_enabled_features.json5 b/third_party/WebKit/Source/platform/runtime_enabled_features.json5
+--- a/third_party/WebKit/Source/platform/runtime_enabled_features.json5
++++ b/third_party/WebKit/Source/platform/runtime_enabled_features.json5
+@@ -325,6 +325,11 @@
+       name: "DecodeToYUV",
+       status: "experimental",
+     },
++    // Remove this flag once we can remove /deep/ at M63.
++    {
++      name: "DeepCombinatorInCSSDynamicProfile",
++      status: "test",
++    },
+     {
+       name: "DeprecationReporting",
+       status: "experimental",
+@@ -973,6 +978,11 @@
+       name: "ShadowPiercingDescendantCombinator",
+       status: "experimental",
+     },
++    // Remove this flag once we can remove ::shadow at M63.
++    {
++      name: "ShadowPseudoElementInCSSDynamicProfile",
++      status: "test",
++    },
+     {
+       name: "ShapeDetection",
+       status: "experimental",
