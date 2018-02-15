@@ -1,3 +1,16 @@
+# 64.0.3282.168
+* never fetch most popular sites for new tab initialization
+* some improvements to adblock filters
+* disabled signin (ungoogled-chromium) (https://github.com/bromite/bromite/issues/31 and https://github.com/bromite/bromite/issues/11)
+* disabled webRTC and crash uploaders (ungoogled-chromium)
+* disabled translate (ungoogled-chromium)
+* disabled Gaia & GCM (ungoogled-chromium)
+* added clear HTTP cache menu item (ungoogled-chromium)
+* disabled Google host detection (ungoogled-chromium)
+* disabled profile avatar downloading (ungoogled-chromium)
+* disabled intranet redirect detector (ungoogled-chromium)
+* disabled plugin untraceable URLs (ungoogled-chromium)
+
 # 64.0.3282.149
 * updated AdBlock filters
 
