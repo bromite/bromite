@@ -26,11 +26,13 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 
 * adblocking (currently baked-in, no configuration options available)
 * remove click-tracking and AMP from Google search results
+* allow youtube/vimeo videos to play in background
 * [StartPage](https://startpage.com/) search engine (select it from search engines under settings)
 * [DuckDuckGo](https://duckduckgo.com/) search engine (select it from search engines under settings)
+* Google search engines English-only with reduced tracking (select it from search engines under settings)
 * privacy enhancement patches from Inox patchset, ungoogled-chromium and Iridium projects
 * all codecs included (proprietary, open H.264 etc.)
-* built with official Chrome optimizations
+* built with official optimizations
 
 # F.A.Q.
 
