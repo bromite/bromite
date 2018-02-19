@@ -36,7 +36,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 
 # F.A.Q.
 
-## Does Google Sync work?
+## Does Google Sync/Translate/Data saver work?
 No.
 This is not a limitation of Bromite but of all Chromium-based projects in general, as general public is not allowed to use Google's APIs for free unless when using Chrome.
 
