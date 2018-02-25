@@ -1,5 +1,11 @@
+# 64.0.3282.182
+* add support for domain-based adblock filters
+* optimized memory allocation for filters
+* updated AdBlock filters
+
 # 64.0.3282.168
-* never fetch most popular sites for new tab initialization
+* extension: allow playing youtube/vimeo videos in background (https://github.com/bromite/bromite/issues/16)
+* never fetch most popular sites for new tab initialization, disable logo on new tab page
 * some improvements to adblock filters
 * disabled signin (ungoogled-chromium) (https://github.com/bromite/bromite/issues/31 and https://github.com/bromite/bromite/issues/11)
 * disabled webRTC and crash uploaders (ungoogled-chromium)
