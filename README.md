@@ -10,7 +10,8 @@ Bromite is only available for Android v4.1 and above.
 
 See [open issues](https://github.com/bromite/bromite/issues) for the development in progress.
 
-<img src="https://bromite.org/downloads.svg" alt="total downloads" title="total downloads" />
+<img src="https://bromite.org/downloads.svg" alt="downloads on Github" title="downloads on Github" />
+<img src="https://bromite.org/xda_labs.svg" alt="downloads on XDA Labs" title="downloads on XDA Labs" />
 
 # Donate
 
