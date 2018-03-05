@@ -34,6 +34,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * [DuckDuckGo](https://duckduckgo.com/) search engine (select it from search engines under settings)
 * Google search engines English-only with reduced tracking (select it from search engines under settings)
 * privacy enhancement patches from Inox patchset, ungoogled-chromium and Iridium projects
+* completely removed webRTC
 * all codecs included (proprietary, open H.264 etc.)
 * built with official optimizations
 
