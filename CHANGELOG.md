@@ -1,3 +1,6 @@
+# 64.0.3282.193
+* updated AdBlock filters
+
 # 64.0.3282.182
 * add support for domain-based adblock filters
 * optimized memory allocation for filters
