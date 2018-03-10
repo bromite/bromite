@@ -1,5 +1,12 @@
+# 64.0.3282.204
+* use H264 NEON optimizations also for arm64
+* fix build of Stable channel
+* updated AdBlock filters
+* started building vanilla Chromium releases as well
+
 # 64.0.3282.193
 * updated AdBlock filters
+* disable reporting
 
 # 64.0.3282.182
 * add support for domain-based adblock filters
