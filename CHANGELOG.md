@@ -1,3 +1,9 @@
+# 65.0.3325.176
+* remove device name and build id from User Agent
+* added Qwant search engine
+* updated AdBlock filters
+* disable non-working 3rd-party filters support
+
 # 64.0.3282.204
 * use H264 NEON optimizations also for arm64
 * fix build of Stable channel

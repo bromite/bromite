@@ -1,0 +1,166 @@
+Author: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date:   Mon Feb 12 21:45:21 2018 +0100
+
+    ungoogled-chromium: Clear HTTP cache menu item
+    Adds a menu item under "More tools" to clear the HTTP authentication cache on demand
+
+diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
+--- a/chrome/app/chrome_command_ids.h
++++ b/chrome/app/chrome_command_ids.h
+@@ -148,6 +148,7 @@
+ #define IDC_DEV_TOOLS_INSPECT           40023
+ #define IDC_UPGRADE_DIALOG              40024
+ #define IDC_VIEW_INCOMPATIBILITIES      40025
++#define IDC_CLEAR_HTTP_AUTH_CACHE       40026
+ #define IDC_SHOW_KEYBOARD_OVERLAY       40027
+ #define IDC_PROFILING_ENABLED           40028
+ #define IDC_BOOKMARKS_MENU              40029
+diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -1064,6 +1064,9 @@ are declared in build/common.gypi.
+         <message name="IDS_CLEAR_BROWSING_DATA" desc="The text label for the menu item for clearing of browsing data">
+           &amp;Clear browsing data...
+         </message>
++        <message name="IDS_CLEAR_HTTP_AUTH_CACHE" desc="The text label for the menu item for clearing the HTTP authentication cache">
++          Clear &amp;HTTP auth cache
++        </message>
+         <message name="IDS_SHOW_DOWNLOADS" desc="The show downloads menu in the app menu">
+           &amp;Downloads
+         </message>
+@@ -1102,6 +1105,9 @@ are declared in build/common.gypi.
+         <message name="IDS_CLEAR_BROWSING_DATA" desc="In Title Case: The text label for the menu item for clearing of browsing data">
+           &amp;Clear Browsing Data...
+         </message>
++        <message name="IDS_CLEAR_HTTP_AUTH_CACHE" desc="In Title Case: The text label for the menu item for clearing the HTTP authentication cache">
++          Clear &amp;HTTP Auth Cache
++        </message>
+         <message name="IDS_SHOW_DOWNLOADS" desc="In Title Case: The show downloads menu in the app menu">
+           &amp;Downloads
+         </message>
+diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -58,6 +58,9 @@
+ #include "extensions/browser/extension_system.h"
+ #include "printing/features/features.h"
+ #include "ui/events/keycodes/keyboard_codes.h"
++#include "net/url_request/url_request_context.h"
++#include "net/url_request/url_request_context_getter.h"
++#include "net/http/http_transaction_factory.h"
+ 
+ #if defined(OS_MACOSX)
+ #include "chrome/browser/ui/browser_commands_mac.h"
+@@ -625,6 +628,9 @@ bool BrowserCommandController::ExecuteCommandWithDisposition(
+     case IDC_CLEAR_BROWSING_DATA:
+       ShowClearBrowsingDataDialog(browser_);
+       break;
++    case IDC_CLEAR_HTTP_AUTH_CACHE:
++      profile()->GetRequestContext()->GetURLRequestContext()->http_transaction_factory()->GetSession()->http_auth_cache()->Clear();
++      break;
+     case IDC_IMPORT_SETTINGS:
+       ShowImportDialog(browser_);
+       break;
+@@ -867,6 +873,7 @@ void BrowserCommandController::InitCommandState() {
+                                         !profile()->IsOffTheRecord());
+   command_updater_.UpdateCommandEnabled(IDC_CLEAR_BROWSING_DATA,
+                                         !guest_session);
++  command_updater_.UpdateCommandEnabled(IDC_CLEAR_HTTP_AUTH_CACHE, true);
+ #if defined(OS_CHROMEOS)
+   command_updater_.UpdateCommandEnabled(IDC_TAKE_SCREENSHOT, true);
+ #else
+diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
+--- a/chrome/browser/ui/toolbar/app_menu_model.cc
++++ b/chrome/browser/ui/toolbar/app_menu_model.cc
+@@ -215,6 +215,7 @@ void ToolsMenuModel::Build(Browser* browser) {
+ 
+   AddSeparator(ui::NORMAL_SEPARATOR);
+   AddItemWithStringId(IDC_CLEAR_BROWSING_DATA, IDS_CLEAR_BROWSING_DATA);
++  AddItemWithStringId(IDC_CLEAR_HTTP_AUTH_CACHE, IDS_CLEAR_HTTP_AUTH_CACHE);
+   AddItemWithStringId(IDC_MANAGE_EXTENSIONS, IDS_SHOW_EXTENSIONS);
+   if (chrome::CanOpenTaskManager())
+     AddItemWithStringId(IDC_TASK_MANAGER, IDS_TASK_MANAGER);
+@@ -475,6 +476,13 @@ void AppMenuModel::LogMenuMetrics(int command_id) {
+       }
+       LogMenuAction(MENU_ACTION_CLEAR_BROWSING_DATA);
+       break;
++    case IDC_CLEAR_HTTP_AUTH_CACHE:
++      if (!uma_action_recorded_) {
++        UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ClearHttpAuthCache",
++                                   delta);
++      }
++      LogMenuAction(MENU_ACTION_CLEAR_HTTP_AUTH_CACHE);
++      break;
+     case IDC_VIEW_SOURCE:
+       if (!uma_action_recorded_)
+         UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.ViewSource", delta);
+diff --git a/chrome/browser/ui/toolbar/app_menu_model.h b/chrome/browser/ui/toolbar/app_menu_model.h
+--- a/chrome/browser/ui/toolbar/app_menu_model.h
++++ b/chrome/browser/ui/toolbar/app_menu_model.h
+@@ -76,6 +76,7 @@ enum AppMenuAction {
+   MENU_ACTION_OPEN_IN_CHROME = 48,
+   MENU_ACTION_SITE_SETTINGS = 49,
+   MENU_ACTION_APP_INFO = 50,
++  MENU_ACTION_CLEAR_HTTP_AUTH_CACHE = 51,
+   LIMIT_MENU_ACTION
+ };
+ 
+diff --git a/chrome/browser/ui/views/frame/global_menu_bar_x11.cc b/chrome/browser/ui/views/frame/global_menu_bar_x11.cc
+--- a/chrome/browser/ui/views/frame/global_menu_bar_x11.cc
++++ b/chrome/browser/ui/views/frame/global_menu_bar_x11.cc
+@@ -225,6 +225,7 @@ GlobalMenuBarCommand tools_menu[] = {
+ 
+     {IDS_TASK_MANAGER, IDC_TASK_MANAGER},
+     {IDS_CLEAR_BROWSING_DATA, IDC_CLEAR_BROWSING_DATA},
++    {IDS_CLEAR_HTTP_AUTH_CACHE, IDC_CLEAR_HTTP_AUTH_CACHE},
+ 
+     {MENU_SEPARATOR, MENU_SEPARATOR},
+ 
+diff --git a/net/http/http_auth_cache.cc b/net/http/http_auth_cache.cc
+--- a/net/http/http_auth_cache.cc
++++ b/net/http/http_auth_cache.cc
+@@ -250,6 +250,10 @@ bool HttpAuthCache::Remove(const GURL& origin,
+   return false;
+ }
+ 
++void HttpAuthCache::Clear() {
++  entries_.clear();
++}
++
+ void HttpAuthCache::ClearEntriesAddedWithin(base::TimeDelta duration) {
+   base::TimeTicks begin_time = base::TimeTicks::Now() - duration;
+   base::EraseIf(entries_, [begin_time](const Entry& entry) {
+diff --git a/net/http/http_auth_cache.h b/net/http/http_auth_cache.h
+--- a/net/http/http_auth_cache.h
++++ b/net/http/http_auth_cache.h
+@@ -166,6 +166,8 @@ class NET_EXPORT HttpAuthCache {
+               HttpAuth::Scheme scheme,
+               const AuthCredentials& credentials);
+ 
++  void Clear();
++
+   // Clears cache entries created within |duration| of base::TimeTicks::Now().
+   void ClearEntriesAddedWithin(base::TimeDelta duration);
+ 
+diff --git a/tools/metrics/histograms/enums.xml b/tools/metrics/histograms/enums.xml
+--- a/tools/metrics/histograms/enums.xml
++++ b/tools/metrics/histograms/enums.xml
+@@ -46154,6 +46154,7 @@ Called by update_traffic_annotation_histograms.py.-->
+   <int value="48" label="Open in Chrome"/>
+   <int value="49" label="Site Settings"/>
+   <int value="50" label="App Info"/>
++  <int value="51" label="Clear HTTP auth cache"/>
+ </enum>
+ 
+ <enum name="XFrameOptions">
+diff --git a/tools/metrics/histograms/histograms.xml b/tools/metrics/histograms/histograms.xml
+--- a/tools/metrics/histograms/histograms.xml
++++ b/tools/metrics/histograms/histograms.xml
+@@ -102544,6 +102544,7 @@ http://cs/file:chrome/histograms.xml - but prefer this file for new entries.
+   <suffix name="Overestimate"
+       label="Tracks when the compositor's estimates were too high and by how
+              much."/>
++  <suffix name="ClearHttpAuthCache" label="Clear HTTP authentication cache"/>
+   <suffix name="Underestimate"
+       label="Tracks when the compositor's estimates were too low and by how
+              much."/>
