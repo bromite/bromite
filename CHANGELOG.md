@@ -1,4 +1,6 @@
 # 65.0.3325.176
+* block plugins enumeration API
+* block battery API
 * remove device name and build id from User Agent
 * added Qwant search engine
 * updated AdBlock filters
