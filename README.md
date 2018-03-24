@@ -43,9 +43,10 @@ We cannot add add-ons to Bromite (merely some features) and anyway HTTPS everywh
 * adblocking (currently baked-in, no configuration options available)
 * remove click-tracking and AMP from Google search results
 * allow youtube/vimeo videos to play in background
-* [StartPage](https://startpage.com/) search engine (select it from search engines under settings)
-* [DuckDuckGo](https://duckduckgo.com/) search engine (select it from search engines under settings)
-* Google search engines English-only with reduced tracking (select it from search engines under settings)
+* [StartPage](https://startpage.com/) search engine
+* [DuckDuckGo](https://duckduckgo.com/) search engine
+* [Qwant](https://www.qwant.com/) search engine
+* Google search engines English-only with reduced tracking
 * privacy enhancement patches from Inox patchset, ungoogled-chromium and Iridium projects
 * completely removed webRTC
 * all codecs included (proprietary, open H.264 etc.)
