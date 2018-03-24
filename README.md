@@ -30,6 +30,9 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 No.
 This is not a limitation of Bromite but of all Chromium-based projects in general, as general public is not allowed to use Google's APIs for free unless when using Chrome.
 
+## Does Bromite require root?
+No.
+
 ## Q. Can you add dark mode/some cool themes?
 No.
 Bromite is about adblocking and privacy.
