@@ -1,3 +1,7 @@
+# 65.0.3325.190
+* block some Canvas and AudioBuffer APIs mostly used for fingerprinting
+* updated adblock filters
+
 # 65.0.3325.176
 * block plugins enumeration API
 * block battery API
