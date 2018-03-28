@@ -12,6 +12,11 @@ See [open issues](https://github.com/bromite/bromite/issues) for the development
 
 <img src="https://www.bromite.org/bromite_bromite_gh_downloads.svg" alt="downloads on Github" title="downloads on Github" /> <img src="https://www.bromite.org/bromite_bromite_xda_downloads.svg" alt="downloads on XDA Labs" title="downloads on XDA Labs" />
 
+# Goals
+
+Bromite aims at providing a no-clutter browsing experience without privacy-invasive features and with the addition of a fast ad-blocking engine.
+Minimal UI changes are applied to help curbing the idea of "browser as an advertisement platform".
+
 # Donate
 
 Please donate to support development of Bromite and the costs for the build system.
@@ -46,27 +51,30 @@ We cannot add add-ons to Bromite (merely some features) and anyway HTTPS everywh
 
 # Features
 
-* adblocking (currently baked-in, no configuration options available)
+* baked-in adblock engine with filters from EasyList, EasyPrivacy and others
 * remove click-tracking and AMP from Google search results
-* allow youtube/vimeo videos to play in background
+* allow videos to play in background
 * [StartPage](https://startpage.com/) search engine
 * [DuckDuckGo](https://duckduckgo.com/) search engine
 * [Qwant](https://www.qwant.com/) search engine
-* Google search engines English-only with reduced tracking
+* Google search engine English-only with reduced tracking
 * privacy enhancement patches from Inox patchset, ungoogled-chromium and Iridium projects
-* removed webRTC and applied other anti-fingerprinting mitigations
+* anti-fingerprinting mitigations
 * all codecs included (proprietary, open H.264 etc.)
 * built with official optimizations
 
 # Releases
 
-A build server goes through the very lengthy build operation and then new versions are available in this project as [releases](https://github.com/bromite/bromite/releases).
+All built versions are available as [releases](https://github.com/bromite/bromite/releases).
 
 Each tag corresponds to a Chromium release tag.
 
+Bromite is currently built for ARM, ARM64 and x86 and for the Android SDKs versions 16 and 21
+Additionally, SystemWebView, Monochrome and the vanilla Chromium builds are provided.
+
 # How to build
 
-The [bromite main repository](https://github.com/bromite/bromite) contains tags for each corresponding Chromium release (see https://chromium.googlesource.com/chromium/src.git).
+The [Bromite main repository](https://github.com/bromite/bromite) contains tags for each corresponding Chromium release (see https://chromium.googlesource.com/chromium/src.git).
 
 Please refer to [official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
 
@@ -77,7 +85,7 @@ Please refer to [official Chromium build documentation](https://www.chromium.org
 * [Iridium project](https://github.com/iridium-browser) for some patches (taken from above ungoogled-chromium)
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (taken from above ungoogled-chromium)
 * nochromo for the original adblock patch
-* AdBlock Plus, uBlock, EasyList and EasyPrivacy for the compilation of original adblock patch
+* AdBlock Plus, uBlock, EasyList and EasyPrivacy for the filters included
 
 # License
 
