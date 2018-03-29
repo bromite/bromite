@@ -1,0 +1,566 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Wed, 28 Mar 2018 15:55:11 +0200
+Subject: Bromite adblock engine
+
+Ported from NoChromo patch
+Make interception testable
+Add domain support
+Re-land: third-party filters support
+---
+ net/BUILD.gn                          |   4 +-
+ net/url_request/adblock_intercept.cc  | 324 ++++++++++++++++++++++++++++++++++
+ net/url_request/adblock_intercept.h   |  16 ++
+ net/url_request/nochromo_intercept.cc | 116 ------------
+ net/url_request/nochromo_intercept.h  |  13 --
+ net/url_request/url_request.cc        |  14 +-
+ 6 files changed, 353 insertions(+), 134 deletions(-)
+ create mode 100644 net/url_request/adblock_intercept.cc
+ create mode 100644 net/url_request/adblock_intercept.h
+ delete mode 100644 net/url_request/nochromo_intercept.cc
+ delete mode 100644 net/url_request/nochromo_intercept.h
+
+diff --git a/net/BUILD.gn b/net/BUILD.gn
+--- a/net/BUILD.gn
++++ b/net/BUILD.gn
+@@ -1739,8 +1739,8 @@ component("net") {
+       "url_request/url_fetcher_response_writer.h",
+       "url_request/url_range_request_job.cc",
+       "url_request/url_range_request_job.h",
+-      "url_request/nochromo_intercept.cc",
+-      "url_request/nochromo_intercept.h",
++      "url_request/adblock_intercept.cc",
++      "url_request/adblock_intercept.h",
+       "url_request/url_request.cc",
+       "url_request/url_request.h",
+       "url_request/url_request_context.cc",
+diff --git a/net/url_request/adblock_intercept.cc b/net/url_request/adblock_intercept.cc
+new file mode 100644
+--- /dev/null
++++ b/net/url_request/adblock_intercept.cc
+@@ -0,0 +1,324 @@
++#include "url/gurl.h"
++
++#ifdef ADB_TESTER
++#include <cstddef>
++#include <cstdlib>
++#include <string.h>
++
++#include "log.h"
++#include <tld.h>
++
++#else
++
++#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
++#include <android/log.h>
++
++#endif
++
++#include "net/url_request/adblock_entries.h"
++
++namespace net {
++
++const char *LOG_TAG = "Bromite";
++
++#ifdef ADB_TESTER
++int adblock_rules_count() { return ADBLOCK_ENTRY_COUNT; }
++#endif
++
++// True if the given canonical |host| is "[www.]<domain_in_lower_case>.<TLD>"
++// with a valid TLD. If |subdomain_permission| is ALLOW_SUBDOMAIN, we check
++// against host "*.<domain_in_lower_case>.<TLD>" instead. Will return the TLD
++// string in |tld|, if specified and the |host| can be parsed.
++static bool is_first_party(char *l_host, char *l_url_host) {
++  size_t tld_length;
++
++#ifdef ADB_TESTER
++  char *found_tld;
++
++  if (TLD_SUCCESS != tld_get_z(l_host, &found_tld))
++    return false;
++  tld_length = strlen(found_tld);
++  if (tld_length == 0)
++    return false;
++#else
++  tld_length = net::registry_controlled_domains::GetCanonicalHostRegistryLength(
++      l_host, net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
++      net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
++  if ((tld_length == 0) || (tld_length == std::string::npos))
++    return false;
++#endif
++
++  int len = strlen(l_host);
++  char *tld = l_host + len - tld_length;
++
++  // Removes any subdomain from origin host.
++  int i = len - tld_length - 2, top_i = i;
++  if (i < 0) {
++    return false;
++  }
++  char *domain = l_host;
++  for (; i >= 0; i--) {
++    if (l_host[i] == '.') {
++      int p_len = top_i - i;
++      // skip "co" in "co.uk", "org" in "org.uk"
++      if (p_len <= 3) {
++        tld -= p_len + 1;
++        continue;
++      }
++
++      // segment is long enough, accept it at as a domain
++      domain = l_host + i;
++      len -= i;
++      break;
++    }
++  }
++
++#ifdef ADBLOCK_LOG
++  __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
++                      "%s: extracted domain suffix: \"%s\" (TLD=\"%s\")",
++                      l_host, domain, tld);
++#endif
++
++  // Check if supplied URL host matches, including the dot.
++  int b_len = strlen(l_url_host);
++  if (b_len < len) {
++    return false;
++  }
++  for (int i = 0; i < len; i++) {
++    if (l_url_host[b_len - 1 - i] != domain[len - 1 - i])
++      return false;
++  }
++
++  // pass with flying colors
++  return true;
++}
++
++static char *strtolower(const char *str) {
++  int len = strlen(str);
++  char *ret = (char *)malloc(len + 1);
++  ret[len] = '\0';
++  for (int i = 0; i < len; i++) {
++    if ((65 <= str[i]) && (str[i] <= 90)) {
++      ret[i] = str[i] + 32;
++    } else {
++      ret[i] = str[i];
++    }
++  }
++  return ret;
++}
++
++static char *strtosep(const char *str) {
++  int len = strlen(str);
++  char *ret = (char *)malloc(len + 3);
++  ret[0] = '^';
++  ret[len + 1] = '^';
++  ret[len + 2] = '\0';
++  for (int i = 0; i < len; i++) {
++    if ((str[i] == ':') || (str[i] == '/') || (str[i] == '?') ||
++        (str[i] == '&') || (str[i] == '=')) {
++      ret[i + 1] = '^';
++    } else {
++      ret[i + 1] = str[i];
++    }
++  }
++  return ret;
++}
++
++static bool url_matches(const char *c_url, char *c_url_sep, char *c_url_lower,
++                        char *c_url_lower_sep, adblock_entry *entry) {
++  bool match = false;
++  // select comparison string based on case and separator presence (separator
++  // takes some shortcuts)
++  bool match_case = ((entry->flags & ADBLOCK_FLAG_MATCH_CASE) != 0);
++  bool match_separator = ((entry->flags & ADBLOCK_FLAG_HAS_SEPARATOR) != 0);
++  const char *match_url =
++      match_case ? (match_separator ? c_url_sep : c_url)
++                 : (match_separator ? c_url_lower_sep : c_url_lower);
++
++#ifdef ADBLOCK_LOG_MORE
++  __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "[case:%d][sep:%d][%s]",
++                      match_case, match_separator, match_url);
++#endif
++  // check for all match parts at >= position of last match
++  const char *last = match_url;
++  for (int m = 0; const char *url_match = entry->matches[m]; m++) {
++    bool is_last_match = entry->matches[m + 1] == NULL;
++    const char *pos = strstr(last, url_match);
++    match = (pos != NULL);
++
++#ifdef ADBLOCK_LOG_MORE
++    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "[%s][found:%d][match:%d]",
++                        entry->matches[m], pos == NULL ? 0 : 1, match ? 1 : 0);
++#endif
++    // check if the url starts with the first match part
++    if (match && (m == 0) && ((entry->flags & ADBLOCK_FLAG_MATCH_BEGIN) != 0) &&
++        (pos != match_url))
++      match = false;
++
++    // check if the url ends with the last match part
++    if (match && is_last_match &&
++        ((entry->flags & ADBLOCK_FLAG_MATCH_END) != 0) &&
++        (pos != &match_url[strlen(match_url) - strlen(entry->matches[m])]))
++      match = false;
++
++    // check domain match
++    if (match && (m == 0) &&
++        ((entry->flags & ADBLOCK_FLAG_MATCH_DOMAIN) != 0) &&
++        (pos != match_url) && (pos[-1] != '^') && (pos[-1] != '.') &&
++        (pos[-1] != '/'))
++      match = false;
++
++    // short circuit
++    if (!match)
++      break;
++  }
++  return match;
++}
++
++bool url_match_domain(adblock_entry *entry, const std::string &origin_host) {
++  bool match_domain = true;
++  // check for a negative domain match
++  if (entry->domains_neg) {
++    if (origin_host.empty()) {
++      // skip this rule, cannot match on domain
++      return false;
++    }
++    for (int d = 0; const char *domain = entry->domains_neg[d]; d++) {
++      if (domain == origin_host) {
++        match_domain = false;
++        break;
++      }
++    }
++  }
++
++  // check for a required positive domain match
++  if (entry->domains) {
++    if (origin_host.empty()) {
++      // skip this rule, cannot match on domain
++      return false;
++    }
++    for (int d = 0; const char *domain = entry->domains[d]; d++) {
++      if (domain != origin_host) {
++        match_domain = false;
++        break;
++      }
++    }
++  }
++  return match_domain;
++}
++
++static bool url_match_party(adblock_entry *entry, const GURL &url,
++                            const std::string &origin_host, bool &checked_fp,
++                            bool &fp) {
++  bool wanted_fp;
++  if ((entry->flags & ADBLOCK_FLAG_THIRD_PARTY) != 0) {
++    wanted_fp = false;
++  } else if ((entry->flags & ADBLOCK_FLAG_FIRST_PARTY) != 0) {
++    wanted_fp = true;
++  } else {
++    // no-op
++    return true;
++  }
++
++  if (origin_host.empty()) {
++    // cannot match this rule, no origin host to determine first/third party
++    return false;
++  }
++
++#ifdef ADB_TESTER
++//__android_log_print(ANDROID_LOG_INFO, LOG_TAG, "matchFirst=%d matchThird=%d",
++// matchFirstParty, matchThirdParty);
++#endif
++  if (!checked_fp) {
++    // lower-case version
++    char *l_host = strtolower(origin_host.c_str()),
++         *l_url_host = strtolower(url.host().c_str());
++
++    // is the URL a first-party to the current page's host?
++    fp = is_first_party(l_host, l_url_host);
++
++    checked_fp = true;
++#ifdef ADB_TESTER
++    __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
++                        "is_first_party(\"%s\", \"%s\") = %s", l_host,
++                        l_url_host, fp ? "true" : "false");
++#endif
++    free(l_host);
++    free(l_url_host);
++  }
++
++  return fp == wanted_fp;
++}
++
++int adblock_intercept(const GURL &url, const std::string &origin_host) {
++  //  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
++  //     return 0;
++  //  }
++
++  if (url.is_valid() && url.SchemeIsHTTPOrHTTPS()) {
++    const char *c_url = url.spec().c_str();
++    char *c_url_lower = strtolower(c_url);
++    char *c_url_sep = strtosep(c_url);
++    char *c_url_lower_sep = strtosep(c_url_lower);
++
++#ifdef ADBLOCK_LOG
++    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "[%s with host '%s'] [%s]",
++                        c_url, url.host().c_str(), origin_host.c_str());
++#endif
++
++    bool checked_fp = false, fp = false;
++
++    bool intercept = false;
++    for (int i = 0; i < ADBLOCK_ENTRY_COUNT; i++) {
++      adblock_entry *entry = &ADBLOCK_ENTRIES[i];
++
++      // no use checking rules when we're intercepting, or exceptions when not
++      bool check =
++          (!intercept && ((entry->flags & ADBLOCK_FLAG_EXCEPTION) == 0)) ||
++          (intercept && ((entry->flags & ADBLOCK_FLAG_EXCEPTION) != 0));
++      if (!check)
++        continue;
++
++      // first check for domain matches, a quick branch out if matching
++      if (!url_match_domain(entry, origin_host))
++        continue;
++
++      // check on the URL matcher
++      if (!url_matches(c_url, c_url_sep, c_url_lower, c_url_lower_sep, entry))
++        continue;
++
++      // finally check first/third-party
++      if (!url_match_party(entry, url, origin_host, checked_fp, fp))
++        continue;
++
++#ifdef ADBLOCK_LOG
++      if (!intercept) {
++        __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
++                            "--> intercept (#%d: \"%s\") (%x)", i,
++                            entry->matches[0], entry->flags);
++      } else {
++        __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "--> pass (%d) (#%d)", i,
++                            entry->flags);
++      }
++#endif
++      intercept = !intercept;
++    } // for each entry
++
++    free(c_url_sep);
++    free(c_url_lower);
++    free(c_url_lower_sep);
++
++    if (intercept) {
++#ifdef ADBLOCK_LOG
++      __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "blocked");
++#endif
++      return 1;
++    }
++#ifdef ADBLOCK_LOG
++    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "pass");
++#endif
++  }
++  return 0;
++}
++
++} // namespace net
+diff --git a/net/url_request/adblock_intercept.h b/net/url_request/adblock_intercept.h
+new file mode 100644
+--- /dev/null
++++ b/net/url_request/adblock_intercept.h
+@@ -0,0 +1,16 @@
++#ifndef NET_URL_REQUEST_ADBLOCK_INTERCEPT_H_
++#define NET_URL_REQUEST_ADBLOCK_INTERCEPT_H_
++
++#include "url/gurl.h"
++
++namespace net {
++
++#ifdef ADB_TESTER
++int adblock_rules_count();
++#endif
++
++int adblock_intercept(const GURL &url, const std::string &origin_host);
++
++} // namespace net
++
++#endif // NET_URL_REQUEST_ADBLOCK_INTERCEPT_H_
+diff --git a/net/url_request/nochromo_intercept.cc b/net/url_request/nochromo_intercept.cc
+deleted file mode 100644
+--- a/net/url_request/nochromo_intercept.cc
++++ /dev/null
+@@ -1,116 +0,0 @@
+-#include "url/gurl.h"
+-#include "net/url_request/nochromo_entries.h"
+-
+-#include <android/log.h>
+-
+-namespace net {
+-  
+-#define NOCHROMO_LOG 0
+-#define NOCHROMO_LOG_MORE 0
+-
+-static char* strtolower(const char* str) {
+-  int len = strlen(str);
+-  char* ret = (char*)malloc(len + 1);
+-  ret[len] = '\0';
+-  for (int i = 0; i < len; i++) {
+-    if ((65 <= str[i]) && (str[i] <= 90)) {
+-      ret[i] = str[i] + 32;
+-    } else {
+-      ret[i] = str[i];
+-    }
+-  }
+-  return ret;
+-}
+-
+-static char* strtosep(const char* str) {
+-  int len = strlen(str);
+-  char* ret = (char*)malloc(len + 3);
+-  ret[0] = '^';
+-  ret[len + 1] = '^';
+-  ret[len + 2] = '\0';
+-  for (int i = 0; i < len; i++) {
+-    if ((str[i] == ':') || (str[i] == '/') || (str[i] == '?') || (str[i] == '&') || (str[i] == '=')) {
+-      ret[i + 1] = '^';
+-    } else {
+-      ret[i + 1] = str[i];
+-    }
+-  }
+-  return ret;
+-}
+-
+-int nochromo_intercept(const GURL& url) {
+-  if (url.is_valid() && url.SchemeIsHTTPOrHTTPS()) {
+-    const char* c_url = url.spec().c_str();
+-    char* c_url_lower = strtolower(c_url);
+-    char* c_url_sep = strtosep(c_url);
+-    char* c_url_lower_sep = strtosep(c_url_lower);
+-    
+-    if (NOCHROMO_LOG) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "[%s]", c_url);
+-    
+-    bool intercept = false;
+-    for (int i = 0; i < NOCHROMO_ENTRY_COUNT; i++) {
+-      nochromo_entry* entry = &NOCHROMO_ENTRIES[i];
+-      
+-      // no use checking rules when we're intercepting, or exceptions when not
+-      bool check =
+-        (!intercept && ((entry->flags & NOCHROMO_FLAG_EXCEPTION) == 0)) ||
+-        (intercept && ((entry->flags & NOCHROMO_FLAG_EXCEPTION) != 0));
+-      
+-      if (check) {
+-        bool match = false;
+-        
+-        // select comparison string based on case and separator presence (separator takes some shortcuts)
+-        bool match_case = ((entry->flags & NOCHROMO_FLAG_MATCH_CASE) != 0);
+-        bool match_separator = ((entry->flags & NOCHROMO_FLAG_HAS_SEPARATOR) != 0);
+-        const char* match_url = match_case ? (match_separator ? c_url_sep : c_url) : (match_separator ? c_url_lower_sep : c_url_lower); 
+-        
+-        if (NOCHROMO_LOG || NOCHROMO_LOG_MORE) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "[case:%d][sep:%d][%s]", match_case, match_separator, match_url);
+-        
+-        // check for all match parts at >= position of last match
+-        const char* last = match_url;
+-        for (int m = 0; m < entry->matchcount; m++) {
+-          const char* pos = strstr(last, entry->matches[m]);
+-          match = (pos != NULL);
+-          
+-          if (NOCHROMO_LOG || NOCHROMO_LOG_MORE) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "[%s][found:%d][match:%d]", entry->matches[m], pos == NULL ? 0 : 1, match ? 1 : 0);
+-          
+-          // check if the url starts with the first match part
+-          if (match && (m == 0) && ((entry->flags & NOCHROMO_FLAG_MATCH_BEGIN) != 0) && (pos != match_url)) match = false;
+-          
+-          // check if the url ends with the last match part
+-          if (match && (m == entry->matchcount - 1) && ((entry->flags & NOCHROMO_FLAG_MATCH_END) != 0) && (pos != &match_url[strlen(match_url) - strlen(entry->matches[m])])) match = false;
+-          
+-          // check domain match
+-          if (match && (m == 0) && ((entry->flags & NOCHROMO_FLAG_MATCH_DOMAIN) != 0) && (pos != match_url) && (pos[-1] != '^') && (pos[-1] != '.') && (pos[-1] != '/')) match = false;
+-          
+-          // short circuit
+-          if (!match) break;
+-        }
+-        
+-        if (match) {
+-          if (NOCHROMO_LOG) {
+-            if (!intercept) {
+-              __android_log_print(ANDROID_LOG_INFO, "NoChromo", "--> intercept (%d) (%d)", i, entry->flags);
+-            } else {
+-              __android_log_print(ANDROID_LOG_INFO, "NoChromo", "--> pass (%d) (%d)", i, entry->flags);
+-            }
+-          }
+-          intercept = !intercept;
+-        }
+-      }
+-    }
+-    
+-    free(c_url_sep);
+-    free(c_url_lower);
+-    free(c_url_lower_sep);
+-    
+-    if (intercept) {
+-      if (NOCHROMO_LOG) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "intercepted!");
+-      return 1;
+-    }
+-    if (NOCHROMO_LOG) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "pass!");
+-  }
+-  return 0;
+-}
+-
+-}  // namespace net
+\ No newline at end of file
+diff --git a/net/url_request/nochromo_intercept.h b/net/url_request/nochromo_intercept.h
+deleted file mode 100644
+--- a/net/url_request/nochromo_intercept.h
++++ /dev/null
+@@ -1,13 +0,0 @@
+-#ifndef NET_URL_REQUEST_NOCHROMO_INTERCEPT_H_
+-#define NET_URL_REQUEST_NOCHROMO_INTERCEPT_H_
+-
+-#include "url/gurl.h"
+-
+-namespace net {
+-
+-GURL nochromo_intercepted = GURL("http://127.0.0.1/");
+-int nochromo_intercept(const GURL& url);
+-
+-}  // namespace net
+-
+-#endif  // NET_URL_REQUEST_NOCHROMO_INTERCEPT_H_
+diff --git a/net/url_request/url_request.cc b/net/url_request/url_request.cc
+--- a/net/url_request/url_request.cc
++++ b/net/url_request/url_request.cc
+@@ -44,7 +44,7 @@
+ #include "url/gurl.h"
+ #include "url/origin.h"
+ 
+-#include "net/url_request/nochromo_intercept.h"
++#include "net/url_request/adblock_intercept.h"
+ 
+ #if BUILDFLAG(ENABLE_REPORTING)
+ #include "net/url_request/network_error_logging_delegate.h"
+@@ -558,7 +558,6 @@ URLRequest::URLRequest(const GURL& url,
+                                          : context->network_delegate()),
+       net_log_(NetLogWithSource::Make(context->net_log(),
+                                       NetLogSourceType::URL_REQUEST)),
+-      url_chain_(1, url),
+       method_("GET"),
+       referrer_policy_(CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE),
+       first_party_url_policy_(NEVER_CHANGE_FIRST_PARTY_URL),
+@@ -583,7 +582,16 @@ URLRequest::URLRequest(const GURL& url,
+   // Sanity check out environment.
+   DCHECK(base::ThreadTaskRunnerHandle::IsSet());
+ 
+-  if (nochromo_intercept(url)) url_chain_.push_back(nochromo_intercepted);
++  std::string initiatorHost;
++  if (initiator_.has_value()) {
++    initiatorHost = initiator_.value().host();
++  }
++
++  if (adblock_intercept(url, initiatorHost)) {
++     url_chain_ = { url, GURL("http://127.0.0.1") };
++  } else {
++     url_chain_ = { url };
++  }
+ 
+   context->url_requests()->insert(this);
+   net_log_.BeginEvent(
+-- 
+2.7.4
+

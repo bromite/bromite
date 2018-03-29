@@ -1,6 +1,11 @@
+# 65.0.3325.198
+* re-landed support of third-party filters
+* completed patches cleanup
+* updated AdBlock filters
+
 # 65.0.3325.190
 * block some Canvas and AudioBuffer APIs mostly used for fingerprinting
-* updated adblock filters
+* updated AdBlock filters
 
 # 65.0.3325.176
 * block plugins enumeration API
