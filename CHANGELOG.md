@@ -1,3 +1,9 @@
+# 65.0.3325.204
+* add menu option to toggle global Javascript preferences setting (https://github.com/bromite/bromite/issues/37)
+* add fingeprinting mitigation for getClientRects, getBoundingClientRect
+* set audio latency to fixed number
+* updated AdBlock filters
+
 # 65.0.3325.198
 * re-landed support of third-party filters
 * completed patches cleanup
