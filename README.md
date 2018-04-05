@@ -59,7 +59,7 @@ We cannot add add-ons to Bromite (merely some features) and anyway HTTPS everywh
 * [Qwant](https://www.qwant.com/) search engine
 * Google search engine English-only with reduced tracking
 * privacy enhancement patches from Inox patchset, ungoogled-chromium and Iridium projects
-* anti-fingerprinting mitigations
+* webRTC, canvas, audio and other anti-fingerprinting mitigations
 * all codecs included (proprietary, open H.264 etc.)
 * built with official optimizations
 
