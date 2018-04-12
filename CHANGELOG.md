@@ -1,3 +1,6 @@
+# 65.0.3325.218
+* updated AdBlock filters
+
 # 65.0.3325.204
 * add menu option to toggle global Javascript preferences setting (https://github.com/bromite/bromite/issues/37)
 * add fingeprinting mitigation for getClientRects, getBoundingClientRect
