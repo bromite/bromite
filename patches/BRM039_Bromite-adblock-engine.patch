@@ -7,13 +7,13 @@ Make interception testable
 Add domain support
 Re-land: third-party filters support
 ---
- net/BUILD.gn                          |   4 +-
+ net/BUILD.gn                          |   9 +-
  net/url_request/adblock_intercept.cc  | 324 ++++++++++++++++++++++++++++++++++
  net/url_request/adblock_intercept.h   |  16 ++
  net/url_request/nochromo_intercept.cc | 116 ------------
  net/url_request/nochromo_intercept.h  |  13 --
- net/url_request/url_request.cc        |  14 +-
- 6 files changed, 353 insertions(+), 134 deletions(-)
+ net/url_request/url_request.cc        |  19 +-
+ 6 files changed, 364 insertions(+), 133 deletions(-)
  create mode 100644 net/url_request/adblock_intercept.cc
  create mode 100644 net/url_request/adblock_intercept.h
  delete mode 100644 net/url_request/nochromo_intercept.cc
@@ -22,17 +22,29 @@ Re-land: third-party filters support
 diff --git a/net/BUILD.gn b/net/BUILD.gn
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -1739,8 +1739,8 @@ component("net") {
+@@ -1739,8 +1739,6 @@ component("net") {
        "url_request/url_fetcher_response_writer.h",
        "url_request/url_range_request_job.cc",
        "url_request/url_range_request_job.h",
 -      "url_request/nochromo_intercept.cc",
 -      "url_request/nochromo_intercept.h",
-+      "url_request/adblock_intercept.cc",
-+      "url_request/adblock_intercept.h",
        "url_request/url_request.cc",
        "url_request/url_request.h",
        "url_request/url_request_context.cc",
+@@ -1801,6 +1799,13 @@ component("net") {
+       "//third_party/zlib",
+     ]
+ 
++    if (is_android) {
++      sources += [
++        "url_request/adblock_intercept.cc",
++        "url_request/adblock_intercept.h"
++      ]
++    }
++
+     if (enable_reporting) {
+       sources += [
+         "network_error_logging/network_error_logging_service.cc",
 diff --git a/net/url_request/adblock_intercept.cc b/net/url_request/adblock_intercept.cc
 new file mode 100644
 --- /dev/null
@@ -526,28 +538,33 @@ deleted file mode 100644
 diff --git a/net/url_request/url_request.cc b/net/url_request/url_request.cc
 --- a/net/url_request/url_request.cc
 +++ b/net/url_request/url_request.cc
-@@ -44,7 +44,7 @@
+@@ -44,7 +44,9 @@
  #include "url/gurl.h"
  #include "url/origin.h"
  
 -#include "net/url_request/nochromo_intercept.h"
++#if defined(OS_ANDROID)
 +#include "net/url_request/adblock_intercept.h"
++#endif
  
  #if BUILDFLAG(ENABLE_REPORTING)
  #include "net/url_request/network_error_logging_delegate.h"
-@@ -558,7 +558,6 @@ URLRequest::URLRequest(const GURL& url,
+@@ -558,7 +560,9 @@ URLRequest::URLRequest(const GURL& url,
                                           : context->network_delegate()),
        net_log_(NetLogWithSource::Make(context->net_log(),
                                        NetLogSourceType::URL_REQUEST)),
--      url_chain_(1, url),
++#if !defined(OS_ANDROID)
+       url_chain_(1, url),
++#endif
        method_("GET"),
        referrer_policy_(CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE),
        first_party_url_policy_(NEVER_CHANGE_FIRST_PARTY_URL),
-@@ -583,7 +582,16 @@ URLRequest::URLRequest(const GURL& url,
+@@ -583,7 +587,18 @@ URLRequest::URLRequest(const GURL& url,
    // Sanity check out environment.
    DCHECK(base::ThreadTaskRunnerHandle::IsSet());
  
 -  if (nochromo_intercept(url)) url_chain_.push_back(nochromo_intercepted);
++#if defined(OS_ANDROID)
 +  std::string initiatorHost;
 +  if (initiator_.has_value()) {
 +    initiatorHost = initiator_.value().host();
@@ -558,6 +575,7 @@ diff --git a/net/url_request/url_request.cc b/net/url_request/url_request.cc
 +  } else {
 +     url_chain_ = { url };
 +  }
++#endif
  
    context->url_requests()->insert(this);
    net_log_.BeginEvent(
