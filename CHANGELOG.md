@@ -1,4 +1,9 @@
+# 65.0.3325.230
+* fixed permission to access Google account issue (https://github.com/bromite/bromite/issues/11)
+* updated AdBlock filters
+
 # 65.0.3325.218
+* always set WideVine version
 * updated AdBlock filters
 
 # 65.0.3325.204
