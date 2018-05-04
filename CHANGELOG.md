@@ -1,3 +1,8 @@
+# 66.0.3359.148
+* disable permanently all custom tab intents (https://github.com/bromite/bromite/issues/17)
+* updated AdBlock filters
+* reduce randomisation for client rects from 5% to 3%
+
 # 65.0.3325.230
 * fixed permission to access Google account issue (https://github.com/bromite/bromite/issues/11)
 * updated AdBlock filters
@@ -13,12 +18,12 @@
 * updated AdBlock filters
 
 # 65.0.3325.198
-* re-landed support of third-party filters
+* re-landed support for third-party AdBlock filters
 * completed patches cleanup
 * updated AdBlock filters
 
 # 65.0.3325.190
-* block some Canvas and AudioBuffer APIs mostly used for fingerprinting
+* block some Canvas and AudioBuffer APIs mostly used for fingerprinting (https://github.com/bromite/bromite/issues/15)
 * updated AdBlock filters
 
 # 65.0.3325.176
