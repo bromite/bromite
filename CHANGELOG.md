@@ -1,3 +1,6 @@
+# 66.0.3359.161
+* updated AdBlock filters
+
 # 66.0.3359.148
 * disable permanently all custom tab intents (https://github.com/bromite/bromite/issues/17)
 * updated AdBlock filters
