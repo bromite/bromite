@@ -1,0 +1,273 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Mon, 30 Apr 2018 15:39:58 +0200
+Subject: Started work on canvas randomisation
+
+Add shuffling for TextMetrics
+---
+ .../Source/core/html/canvas/CanvasAsyncBlobCreator.cpp     | 14 +++++++-------
+ .../Source/core/html/canvas/CanvasAsyncBlobCreator.h       |  6 +++---
+ .../WebKit/Source/core/html/canvas/HTMLCanvasElement.cpp   |  4 ++--
+ third_party/WebKit/Source/core/html/canvas/TextMetrics.cpp |  4 ++++
+ third_party/WebKit/Source/core/html/canvas/TextMetrics.h   |  2 ++
+ .../WebKit/Source/core/inspector/InspectorAuditsAgent.cpp  |  2 +-
+ .../WebKit/Source/core/offscreencanvas/OffscreenCanvas.cpp |  6 +++++-
+ .../WebKit/Source/modules/accessibility/AXLayoutObject.cpp |  2 +-
+ .../modules/canvas/canvas2d/BaseRenderingContext2D.cpp     |  3 +++
+ .../modules/canvas/canvas2d/CanvasRenderingContext2D.cpp   |  6 +++++-
+ .../WebKit/Source/platform/graphics/ImageDataBuffer.cpp    |  6 ++++--
+ .../WebKit/Source/platform/graphics/ImageDataBuffer.h      |  3 ++-
+ 12 files changed, 39 insertions(+), 19 deletions(-)
+
+diff --git a/third_party/WebKit/Source/core/html/canvas/CanvasAsyncBlobCreator.cpp b/third_party/WebKit/Source/core/html/canvas/CanvasAsyncBlobCreator.cpp
+--- a/third_party/WebKit/Source/core/html/canvas/CanvasAsyncBlobCreator.cpp
++++ b/third_party/WebKit/Source/core/html/canvas/CanvasAsyncBlobCreator.cpp
+@@ -220,14 +220,14 @@ void CanvasAsyncBlobCreator::Dispose() {
+   image_ = nullptr;
+ }
+ 
+-bool CanvasAsyncBlobCreator::EncodeImage(const double& quality) {
++bool CanvasAsyncBlobCreator::EncodeImage(const double& quality, const double shuffleAmt) {
+   std::unique_ptr<ImageDataBuffer> buffer = ImageDataBuffer::Create(src_data_);
+   if (!buffer)
+     return false;
+-  return buffer->EncodeImage("image/webp", quality, &encoded_image_);
++  return buffer->EncodeImage("image/webp", quality, shuffleAmt, &encoded_image_);
+ }
+ 
+-void CanvasAsyncBlobCreator::ScheduleAsyncBlobCreation(const double& quality) {
++void CanvasAsyncBlobCreator::ScheduleAsyncBlobCreation(const double& quality, const double shuffleAmt) {
+   if (!static_bitmap_image_loaded_) {
+     context_->GetTaskRunner(TaskType::kCanvasBlobSerialization)
+         ->PostTask(FROM_HERE,
+@@ -241,7 +241,7 @@ void CanvasAsyncBlobCreator::ScheduleAsyncBlobCreation(const double& quality) {
+       // When OffscreenCanvas.convertToBlob() occurs on worker thread,
+       // we do not need to use background task runner to reduce load on main.
+       // So we just directly encode images on the worker thread.
+-      if (!EncodeImage(quality)) {
++      if (!EncodeImage(quality, shuffleAmt)) {
+         context_->GetTaskRunner(TaskType::kCanvasBlobSerialization)
+             ->PostTask(
+                 FROM_HERE,
+@@ -260,7 +260,7 @@ void CanvasAsyncBlobCreator::ScheduleAsyncBlobCreation(const double& quality) {
+       BackgroundTaskRunner::PostOnBackgroundThread(
+           FROM_HERE,
+           CrossThreadBind(&CanvasAsyncBlobCreator::EncodeImageOnEncoderThread,
+-                          WrapCrossThreadPersistent(this), quality));
++                          WrapCrossThreadPersistent(this), quality, shuffleAmt));
+     }
+   } else {
+     idle_task_status_ = kIdleTaskNotStarted;
+@@ -432,11 +432,11 @@ void CanvasAsyncBlobCreator::CreateNullAndReturnResult() {
+   Dispose();
+ }
+ 
+-void CanvasAsyncBlobCreator::EncodeImageOnEncoderThread(double quality) {
++void CanvasAsyncBlobCreator::EncodeImageOnEncoderThread(double quality, double shuffleAmt) {
+   DCHECK(!IsMainThread());
+   DCHECK(mime_type_ == kMimeTypeWebp);
+ 
+-  if (!EncodeImage(quality)) {
++  if (!EncodeImage(quality, shuffleAmt)) {
+     PostCrossThreadTask(
+         *parent_frame_task_runner_->Get(TaskType::kCanvasBlobSerialization),
+         FROM_HERE,
+diff --git a/third_party/WebKit/Source/core/html/canvas/CanvasAsyncBlobCreator.h b/third_party/WebKit/Source/core/html/canvas/CanvasAsyncBlobCreator.h
+--- a/third_party/WebKit/Source/core/html/canvas/CanvasAsyncBlobCreator.h
++++ b/third_party/WebKit/Source/core/html/canvas/CanvasAsyncBlobCreator.h
+@@ -38,7 +38,7 @@ class CORE_EXPORT CanvasAsyncBlobCreator
+                                         ExecutionContext*,
+                                         ScriptPromiseResolver*);
+ 
+-  void ScheduleAsyncBlobCreation(const double& quality);
++  void ScheduleAsyncBlobCreation(const double& quality, const double shuffleAmt);
+   virtual ~CanvasAsyncBlobCreator();
+   enum MimeType {
+     kMimeTypePng,
+@@ -130,7 +130,7 @@ class CORE_EXPORT CanvasAsyncBlobCreator
+   Member<ScriptPromiseResolver> script_promise_resolver_;
+ 
+   void LoadStaticBitmapImage();
+-  bool EncodeImage(const double&);
++  bool EncodeImage(const double&, const double);
+ 
+   // PNG, JPEG
+   bool InitializeEncoder(double quality);
+@@ -138,7 +138,7 @@ class CORE_EXPORT CanvasAsyncBlobCreator
+                                           // without deadline
+ 
+   // WEBP
+-  void EncodeImageOnEncoderThread(double quality);
++  void EncodeImageOnEncoderThread(double quality, double shuffleAmt);
+ 
+   void IdleTaskStartTimeoutEvent(double quality);
+   void IdleTaskCompleteTimeoutEvent();
+diff --git a/third_party/WebKit/Source/core/html/canvas/HTMLCanvasElement.cpp b/third_party/WebKit/Source/core/html/canvas/HTMLCanvasElement.cpp
+--- a/third_party/WebKit/Source/core/html/canvas/HTMLCanvasElement.cpp
++++ b/third_party/WebKit/Source/core/html/canvas/HTMLCanvasElement.cpp
+@@ -826,7 +826,7 @@ String HTMLCanvasElement::ToDataURLInternal(
+     std::unique_ptr<ImageDataBuffer> data_buffer =
+         ImageDataBuffer::Create(image_bitmap);
+     if (data_buffer)
+-      return data_buffer->ToDataURL(encoding_mime_type, quality);
++      return data_buffer->ToDataURL(encoding_mime_type, quality, GetDocument().GetShuffleFactorX());
+   }
+   return String("data:,");
+ }
+@@ -892,7 +892,7 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
+   }
+ 
+   if (async_creator) {
+-    async_creator->ScheduleAsyncBlobCreation(quality);
++    async_creator->ScheduleAsyncBlobCreation(quality, GetDocument().GetShuffleFactorX());
+   } else {
+     GetDocument()
+         .GetTaskRunner(TaskType::kCanvasBlobSerialization)
+diff --git a/third_party/WebKit/Source/core/html/canvas/TextMetrics.cpp b/third_party/WebKit/Source/core/html/canvas/TextMetrics.cpp
+--- a/third_party/WebKit/Source/core/html/canvas/TextMetrics.cpp
++++ b/third_party/WebKit/Source/core/html/canvas/TextMetrics.cpp
+@@ -47,6 +47,10 @@ float TextMetrics::GetFontBaseline(const TextBaseline& text_baseline,
+   return 0;
+ }
+ 
++void TextMetrics::Shuffle(const double amt) {
++  //TODO: shuffle here
++}
++
+ void TextMetrics::Update(const Font& font,
+                          const TextDirection& direction,
+                          const TextBaseline& baseline,
+diff --git a/third_party/WebKit/Source/core/html/canvas/TextMetrics.h b/third_party/WebKit/Source/core/html/canvas/TextMetrics.h
+--- a/third_party/WebKit/Source/core/html/canvas/TextMetrics.h
++++ b/third_party/WebKit/Source/core/html/canvas/TextMetrics.h
+@@ -67,6 +67,8 @@ class CORE_EXPORT TextMetrics final : public ScriptWrappable {
+ 
+   static float GetFontBaseline(const TextBaseline&, const FontMetrics&);
+ 
++  void Shuffle(const double amt);
++
+  private:
+   void Update(const Font&,
+               const TextDirection&,
+diff --git a/third_party/WebKit/Source/core/inspector/InspectorAuditsAgent.cpp b/third_party/WebKit/Source/core/inspector/InspectorAuditsAgent.cpp
+--- a/third_party/WebKit/Source/core/inspector/InspectorAuditsAgent.cpp
++++ b/third_party/WebKit/Source/core/inspector/InspectorAuditsAgent.cpp
+@@ -56,7 +56,7 @@ bool EncodeAsImage(char* body,
+ 
+   String mime_type = "image/";
+   mime_type.append(encoding);
+-  return image_to_encode->EncodeImage(mime_type, quality, output);
++  return image_to_encode->EncodeImage(mime_type, quality, 0, output);
+ }
+ 
+ }  // namespace
+diff --git a/third_party/WebKit/Source/core/offscreencanvas/OffscreenCanvas.cpp b/third_party/WebKit/Source/core/offscreencanvas/OffscreenCanvas.cpp
+--- a/third_party/WebKit/Source/core/offscreencanvas/OffscreenCanvas.cpp
++++ b/third_party/WebKit/Source/core/offscreencanvas/OffscreenCanvas.cpp
+@@ -5,6 +5,7 @@
+ #include "core/offscreencanvas/OffscreenCanvas.h"
+ 
+ #include <memory>
++#include "base/rand_util.h"
+ #include "core/css/CSSFontSelector.h"
+ #include "core/css/OffscreenFontSelector.h"
+ #include "core/css/StyleEngine.h"
+@@ -398,7 +399,10 @@ ScriptPromise OffscreenCanvas::convertToBlob(ScriptState* script_state,
+     CanvasAsyncBlobCreator* async_creator = CanvasAsyncBlobCreator::Create(
+         snapshot, encoding_mime_type, start_time,
+         ExecutionContext::From(script_state), resolver);
+-    async_creator->ScheduleAsyncBlobCreation(options.quality());
++
++    // add +/- 3% noise against fingerprinting
++    double shuffleAmt = (base::RandDouble() - 0.5) * 0.03;
++    async_creator->ScheduleAsyncBlobCreation(options.quality(), shuffleAmt);
+     return resolver->Promise();
+   } else {
+     exception_state.ThrowDOMException(
+diff --git a/third_party/WebKit/Source/modules/accessibility/AXLayoutObject.cpp b/third_party/WebKit/Source/modules/accessibility/AXLayoutObject.cpp
+--- a/third_party/WebKit/Source/modules/accessibility/AXLayoutObject.cpp
++++ b/third_party/WebKit/Source/modules/accessibility/AXLayoutObject.cpp
+@@ -1017,7 +1017,7 @@ String AXLayoutObject::ImageDataUrl(const IntSize& max_size) const {
+   if (!buffer)
+     return String();
+ 
+-  return buffer->ToDataURL("image/png", 1.0);
++  return buffer->ToDataURL("image/png", 1.0, document->GetShuffleFactorX());
+ }
+ 
+ String AXLayoutObject::GetText() const {
+diff --git a/third_party/WebKit/Source/modules/canvas/canvas2d/BaseRenderingContext2D.cpp b/third_party/WebKit/Source/modules/canvas/canvas2d/BaseRenderingContext2D.cpp
+--- a/third_party/WebKit/Source/modules/canvas/canvas2d/BaseRenderingContext2D.cpp
++++ b/third_party/WebKit/Source/modules/canvas/canvas2d/BaseRenderingContext2D.cpp
+@@ -1610,6 +1610,9 @@ ImageData* BaseRenderingContext2D::getImageData(
+   const CanvasColorParams& color_params = ColorParams();
+   scoped_refptr<StaticBitmapImage> snapshot = GetImage(kPreferNoAcceleration);
+ 
++  //TODO: calculate some random value and use it to shuffle pixel data in 'snapshot'
++  // it should StaticBitmapImage somehow
++
+   if (!StaticBitmapImage::ConvertToArrayBufferContents(
+           snapshot, contents, image_data_rect, color_params, IsAccelerated())) {
+     exception_state.ThrowRangeError("Out of memory at ImageData creation");
+diff --git a/third_party/WebKit/Source/modules/canvas/canvas2d/CanvasRenderingContext2D.cpp b/third_party/WebKit/Source/modules/canvas/canvas2d/CanvasRenderingContext2D.cpp
+--- a/third_party/WebKit/Source/modules/canvas/canvas2d/CanvasRenderingContext2D.cpp
++++ b/third_party/WebKit/Source/modules/canvas/canvas2d/CanvasRenderingContext2D.cpp
+@@ -779,8 +779,12 @@ TextMetrics* CanvasRenderingContext2D::measureText(const String& text) {
+   else
+     direction = ToTextDirection(GetState().GetDirection(), canvas());
+ 
+-  return TextMetrics::Create(font, direction, GetState().GetTextBaseline(),
++  TextMetrics* textMetrics = TextMetrics::Create(font, direction, GetState().GetTextBaseline(),
+                              GetState().GetTextAlign(), text);
++
++  textMetrics->Shuffle(canvas()->GetDocument().GetShuffleFactorX());
++
++  return textMetrics;
+ }
+ 
+ void CanvasRenderingContext2D::DrawTextInternal(
+diff --git a/third_party/WebKit/Source/platform/graphics/ImageDataBuffer.cpp b/third_party/WebKit/Source/platform/graphics/ImageDataBuffer.cpp
+--- a/third_party/WebKit/Source/platform/graphics/ImageDataBuffer.cpp
++++ b/third_party/WebKit/Source/platform/graphics/ImageDataBuffer.cpp
+@@ -124,7 +124,9 @@ const unsigned char* ImageDataBuffer::Pixels() const {
+ 
+ bool ImageDataBuffer::EncodeImage(const String& mime_type,
+                                   const double& quality,
++                                  const double shuffleAmt,
+                                   Vector<unsigned char>* encoded_image) const {
++  //TODO: this is the only place where shuffleAmt should be used
+   DCHECK(is_valid_);
+   SkPixmap src;
+   if (uses_pixmap_) {
+@@ -165,12 +167,12 @@ bool ImageDataBuffer::EncodeImage(const String& mime_type,
+ }
+ 
+ String ImageDataBuffer::ToDataURL(const String& mime_type,
+-                                  const double& quality) const {
++                                  const double& quality, const double shuffleAmt) const {
+   DCHECK(is_valid_);
+   DCHECK(MIMETypeRegistry::IsSupportedImageMIMETypeForEncoding(mime_type));
+ 
+   Vector<unsigned char> result;
+-  if (!EncodeImage(mime_type, quality, &result))
++  if (!EncodeImage(mime_type, quality, shuffleAmt, &result))
+     return "data:,";
+ 
+   return "data:" + mime_type + ";base64," + Base64Encode(result);
+diff --git a/third_party/WebKit/Source/platform/graphics/ImageDataBuffer.h b/third_party/WebKit/Source/platform/graphics/ImageDataBuffer.h
+--- a/third_party/WebKit/Source/platform/graphics/ImageDataBuffer.h
++++ b/third_party/WebKit/Source/platform/graphics/ImageDataBuffer.h
+@@ -51,9 +51,10 @@ class PLATFORM_EXPORT ImageDataBuffer {
+       const CanvasColorParams& = CanvasColorParams());
+   static std::unique_ptr<ImageDataBuffer> Create(const SkPixmap&);
+ 
+-  String ToDataURL(const String& mime_type, const double& quality) const;
++  String ToDataURL(const String& mime_type, const double& quality, const double shuffleAmt) const;
+   bool EncodeImage(const String& mime_type,
+                    const double& quality,
++                   double shuffleAmt,
+                    Vector<unsigned char>* encoded_image) const;
+   const unsigned char* Pixels() const;
+   const IntSize& size() const { return size_; }
+-- 
+2.7.4
+
