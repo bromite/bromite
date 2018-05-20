@@ -1,3 +1,8 @@
+# 66.0.3359.188
+* updated AdBlock filters
+* increase max (persistent) connections per server from 6 to 15
+* preliminary work for better canvas fingerprinting mitigations
+
 # 66.0.3359.161
 * updated AdBlock filters
 
