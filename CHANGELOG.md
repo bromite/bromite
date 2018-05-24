@@ -1,3 +1,6 @@
+# 66.0.3359.196
+* updated AdBlock filters
+
 # 66.0.3359.188
 * updated AdBlock filters
 * increase max (persistent) connections per server from 6 to 15
