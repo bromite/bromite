@@ -1,3 +1,6 @@
+# 66.0.3359.200
+* updated AdBlock filters
+
 # 66.0.3359.196
 * updated AdBlock filters
 
