@@ -1,3 +1,6 @@
+# 67.0.3396.67
+* updated AdBlock filters
+
 # 66.0.3359.202
 * fix DevTools integration (https://github.com/bromite/bromite/issues/23)
 * allow toggling of Javascript from New Tab Page (fixes https://github.com/bromite/bromite/issues/60)
