@@ -1,3 +1,6 @@
+# 67.0.3396.76
+* updated AdBlock filters
+
 # 67.0.3396.72
 * add global toggle for adblock engine (https://github.com/bromite/bromite/issues/53)
 * updated AdBlock filters
