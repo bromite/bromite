@@ -1,3 +1,6 @@
+# 67.0.3396.82
+* updated AdBlock filters
+
 # 67.0.3396.76
 * updated AdBlock filters
 
