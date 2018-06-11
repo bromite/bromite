@@ -55,7 +55,7 @@ We cannot add add-ons to Bromite (merely some features) and anyway HTTPS everywh
 
 * baked-in adblock engine with filters from EasyList, EasyPrivacy and others
 * remove click-tracking and AMP from Google search results
-* allow videos to play in background
+* allow playing videos in background
 * [StartPage](https://startpage.com/) search engine
 * [DuckDuckGo](https://duckduckgo.com/) search engine
 * [Qwant](https://www.qwant.com/) search engine
