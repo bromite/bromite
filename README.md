@@ -60,7 +60,7 @@ We cannot add add-ons to Bromite (merely some features) and anyway HTTPS everywh
 * [DuckDuckGo](https://duckduckgo.com/) search engine
 * [Qwant](https://www.qwant.com/) search engine
 * Google search engine English-only with reduced tracking
-* privacy enhancement patches from Inox patchset, ungoogled-chromium and Iridium projects
+* privacy enhancement patches from [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/), [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) and [Iridium](https://github.com/iridium-browser) projects
 * webRTC, canvas, audio and other anti-fingerprinting mitigations
 * all codecs included (proprietary, open H.264 etc.)
 * built with official optimizations
@@ -86,8 +86,9 @@ Please refer to [official Chromium build documentation](https://www.chromium.org
 * [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) for some patches
 * [Iridium project](https://github.com/iridium-browser) for some patches (taken from above ungoogled-chromium)
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (taken from above ungoogled-chromium)
+* [Brave Browser](https://github.com/brave/browser-android-tabs) for some patches
 * nochromo for the original adblock patch
-* AdBlock Plus, uBlock, EasyList and EasyPrivacy for the filters included
+* [AdBlock Plus](https://adblockplus.org/), [uBlock](https://www.ublock.org/), [Peter Lowe's adservers list](https://pgl.yoyo.org/adservers/), [EasyList and EasyPrivacy](https://easylist.to/) for the filters included
 
 # License
 
