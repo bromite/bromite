@@ -55,15 +55,16 @@ We cannot add add-ons to Bromite (merely some features) and anyway HTTPS everywh
 
 * baked-in adblock engine with filters from EasyList, EasyPrivacy and others
 * remove click-tracking and AMP from Google search results
+* DNS-over-HTTPS support via Google/CloudFlare servers
 * allow playing videos in background
-* [StartPage](https://startpage.com/) search engine
-* [DuckDuckGo](https://duckduckgo.com/) search engine
-* [Qwant](https://www.qwant.com/) search engine
+* [StartPage](https://startpage.com/), [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines
 * Google search engine English-only with reduced tracking
 * privacy enhancement patches from [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/), [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) and [Iridium](https://github.com/iridium-browser) projects
 * webRTC, canvas, audio and other anti-fingerprinting mitigations
 * all codecs included (proprietary, open H.264 etc.)
-* built with official optimizations
+* built with official speed optimizations
+
+You can inspect all functionality/privacy changes by reading the patches: https://github.com/bromite/bromite/tree/master/patches
 
 # Releases
 
@@ -72,7 +73,7 @@ All built versions are available as [releases](https://github.com/bromite/bromit
 Each tag corresponds to a Chromium release tag.
 
 Bromite is currently built for ARM, ARM64 and x86 and for the Android SDKs versions 16 and 21
-Additionally, SystemWebView, Monochrome and the vanilla Chromium builds are provided.
+Additionally, SystemWebView, Monochrome and the [vanilla Chromium](https://www.bromite.org/chromium) builds are provided.
 
 # How to build
 

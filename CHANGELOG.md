@@ -1,3 +1,14 @@
+# 67.0.3396.88
+* add flag for DNS-over-HTTPS (Google experimental DNS) (fixes https://github.com/bromite/bromite/issues/68)
+* disable signin, translate and data saver UI/internal components (fixes https://github.com/bromite/bromite/issues/67)
+* rename `GoogleEN` -> `Google In English` (fixes https://github.com/bromite/bromite/issues/66)
+* re-enabled text metrics and ToDataURL, ToBlob with randomisation of color data (fixes https://github.com/bromite/bromite/issues/52)
+* open YouTube links in Bromite
+* use Android Media Player for URLs
+* add exit menu item
+* hide "send reports to Google" menu item
+* updated AdBlock filters
+
 # 67.0.3396.82
 * updated AdBlock filters
 
