@@ -1,0 +1,137 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sat, 28 Apr 2018 08:30:26 +0200
+Subject: Add a flag for DNS-over-HTTPS
+
+Specify explicit values for the DNS-over-HTTPS servers (Google experimental DNS).
+See also: https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-02.txt
+---
+ chrome/browser/about_flags.cc                                    | 6 ++++++
+ chrome/browser/flag_descriptions.cc                              | 3 +++
+ chrome/browser/flag_descriptions.h                               | 3 +++
+ chrome/browser/io_thread.cc                                      | 9 +++++----
+ chrome/common/chrome_features.cc                                 | 7 +++++++
+ chrome/common/chrome_features.h                                  | 4 ++++
+ .../network_session_configurator/common/network_features.cc      | 3 ---
+ .../network_session_configurator/common/network_features.h       | 4 ----
+ 8 files changed, 28 insertions(+), 11 deletions(-)
+
+diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
+--- a/chrome/browser/about_flags.cc
++++ b/chrome/browser/about_flags.cc
+@@ -3544,6 +3544,12 @@ const FeatureEntry kFeatureEntries[] = {
+      FEATURE_VALUE_TYPE(features::kAsyncDns)},
+ #endif  // defined(OS_ANDROID)
+ 
++#if defined(OS_ANDROID)
++    {"enable-dns-over-https", flag_descriptions::kDnsOverHttpsName,
++     flag_descriptions::kDnsOverHttpsDescription, kOsAndroid,
++     FEATURE_VALUE_TYPE(features::kDnsOverHttps)},
++#endif  // defined(OS_ANDROID)
++
+     {"enable-overflow-icons-for-media-controls",
+      flag_descriptions::kOverflowIconsForMediaControlsName,
+      flag_descriptions::kOverflowIconsForMediaControlsDescription, kOsAll,
+diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
+--- a/chrome/browser/flag_descriptions.cc
++++ b/chrome/browser/flag_descriptions.cc
+@@ -1849,6 +1849,9 @@ const char kAndroidPaymentAppsDescription[] =
+ const char kAsyncDnsName[] = "Async DNS resolver";
+ const char kAsyncDnsDescription[] = "Enables the built-in DNS resolver.";
+ 
++const char kDnsOverHttpsName[] = "DNS over HTTPS";
++const char kDnsOverHttpsDescription[] = "Enables DNS-over-HTTPS (experimental, non-IETF).";
++
+ const char kAutofillAccessoryViewName[] =
+     "Autofill suggestions as keyboard accessory view";
+ const char kAutofillAccessoryViewDescription[] =
+diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptions.h
+--- a/chrome/browser/flag_descriptions.h
++++ b/chrome/browser/flag_descriptions.h
+@@ -1133,6 +1133,9 @@ extern const char kAndroidPaymentAppsDescription[];
+ extern const char kAsyncDnsName[];
+ extern const char kAsyncDnsDescription[];
+ 
++extern const char kDnsOverHttpsName[];
++extern const char kDnsOverHttpsDescription[];
++
+ extern const char kAutofillAccessoryViewName[];
+ extern const char kAutofillAccessoryViewDescription[];
+ 
+diff --git a/chrome/browser/io_thread.cc b/chrome/browser/io_thread.cc
+--- a/chrome/browser/io_thread.cc
++++ b/chrome/browser/io_thread.cc
+@@ -386,10 +386,11 @@ IOThread::IOThread(
+   if (base::FeatureList::IsEnabled(features::kDnsOverHttps)) {
+     base::Value specs(base::Value::Type::LIST);
+     base::Value methods(base::Value::Type::LIST);
+-    base::Value spec(variations::GetVariationParamValueByFeature(
+-        features::kDnsOverHttps, "server"));
+-    base::Value method(variations::GetVariationParamValueByFeature(
+-        features::kDnsOverHttps, "method"));
++
++    // use some hard-coded defaults
++    base::Value spec("https://dns.google.com/experimental");
++    base::Value method("POST");
++
+     if (spec.GetString().size() > 0) {
+       specs.GetList().push_back(std::move(spec));
+       methods.GetList().push_back(std::move(method));
+diff --git a/chrome/common/chrome_features.cc b/chrome/common/chrome_features.cc
+--- a/chrome/common/chrome_features.cc
++++ b/chrome/common/chrome_features.cc
+@@ -79,6 +79,13 @@ const base::Feature kAsyncDns {
+ #endif
+ };
+ 
++// Enable DNS over HTTPS
++// (https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-02.txt).
++const base::Feature kDnsOverHttps {
++  "dns-over-https",
++      base::FEATURE_DISABLED_BY_DEFAULT
++};
++
+ #if defined(OS_WIN) || defined(OS_MACOSX)
+ // Enables automatic tab discarding, when the system is in low memory state.
+ const base::Feature kAutomaticTabDiscarding{"AutomaticTabDiscarding",
+diff --git a/chrome/common/chrome_features.h b/chrome/common/chrome_features.h
+--- a/chrome/common/chrome_features.h
++++ b/chrome/common/chrome_features.h
+@@ -48,6 +48,10 @@ extern const base::Feature kAssetDownloadSuggestionsFeature;
+ 
+ extern const base::Feature kAsyncDns;
+ 
++// Enable DNS over HTTPS
++// (https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-02.txt).
++extern const base::Feature kDnsOverHttps;
++
+ #if defined(OS_WIN) || defined(OS_MACOSX)
+ extern const base::Feature kAutomaticTabDiscarding;
+ #endif  // defined(OS_WIN) || defined(OS_MACOSX)
+diff --git a/components/network_session_configurator/common/network_features.cc b/components/network_session_configurator/common/network_features.cc
+--- a/components/network_session_configurator/common/network_features.cc
++++ b/components/network_session_configurator/common/network_features.cc
+@@ -9,7 +9,4 @@ namespace features {
+ const base::Feature kTokenBinding{"token-binding",
+                                   base::FEATURE_DISABLED_BY_DEFAULT};
+ 
+-const base::Feature kDnsOverHttps{"dns-over-https",
+-                                  base::FEATURE_DISABLED_BY_DEFAULT};
+-
+ }  // namespace features
+diff --git a/components/network_session_configurator/common/network_features.h b/components/network_session_configurator/common/network_features.h
+--- a/components/network_session_configurator/common/network_features.h
++++ b/components/network_session_configurator/common/network_features.h
+@@ -14,10 +14,6 @@ namespace features {
+ // (https://www.ietf.org/id/draft-ietf-tokbind-protocol-04.txt).
+ NETWORK_SESSION_CONFIGURATOR_EXPORT extern const base::Feature kTokenBinding;
+ 
+-// Enabled DNS over HTTPS
+-// (https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-02.txt).
+-NETWORK_SESSION_CONFIGURATOR_EXPORT extern const base::Feature kDnsOverHttps;
+-
+ }  // namespace features
+ 
+ #endif  // COMPONENTS_NETWORK_SESSION_CONFIGURATOR_COMMON_NETWORK_FEATURES_H_
+-- 
+2.7.4
+

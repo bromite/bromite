@@ -1,0 +1,259 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Thu, 26 Apr 2018 10:37:05 +0200
+Subject: Add menu option to toggle global Adblock preference
+
+Allow toggling Chromium's "ads enabled" content settings option together with Bromite adblock engine.
+---
+ chrome/android/java/res/menu/custom_tabs_menu.xml  | 12 +++++++
+ chrome/android/java/res/menu/main_menu.xml         | 13 ++++++++
+ .../chromium/chrome/browser/ChromeActivity.java    |  8 +++++
+ .../chrome/browser/ChromeTabbedActivity.java       |  8 +++++
+ .../browser/appmenu/AppMenuPropertiesDelegate.java | 38 ++++++++++++++++++++++
+ .../CustomTabAppMenuPropertiesDelegate.java        |  2 ++
+ .../java/strings/android_chrome_strings.grd        | 11 +++++++
+ .../subresource_filter_content_settings_manager.cc |  3 ++
+ net/url_request/adblock_intercept.cc               |  2 ++
+ net/url_request/adblock_intercept.h                |  2 ++
+ net/url_request/url_request.cc                     |  4 +++
+ 11 files changed, 103 insertions(+)
+
+diff --git a/chrome/android/java/res/menu/custom_tabs_menu.xml b/chrome/android/java/res/menu/custom_tabs_menu.xml
+--- a/chrome/android/java/res/menu/custom_tabs_menu.xml
++++ b/chrome/android/java/res/menu/custom_tabs_menu.xml
+@@ -74,6 +74,18 @@
+           </menu>
+         </item>
+ 
++        <item android:id="@+id/enable_adblock_row_menu_id"
++            android:title="@null"
++            android:orderInCategory="2">
++          <menu>
++              <item android:id="@+id/enable_adblock_id"
++                  android:title="@string/menu_enable_adblock" />
++              <item android:id="@+id/enable_adblock_check_id"
++                  android:title="@null"
++                  android:checkable="true" />
++          </menu>
++        </item>
++
+         <!-- Title is intentionally left blank in xml and will be set in java. -->
+         <item android:id="@+id/open_in_browser_id"
+             android:title=""
+diff --git a/chrome/android/java/res/menu/main_menu.xml b/chrome/android/java/res/menu/main_menu.xml
+--- a/chrome/android/java/res/menu/main_menu.xml
++++ b/chrome/android/java/res/menu/main_menu.xml
+@@ -82,6 +82,19 @@
+                 android:checkable="true" />
+           </menu>
+         </item>
++
++        <item android:id="@+id/enable_adblock_row_menu_id"
++            android:title="@null"
++            android:orderInCategory="2">
++          <menu>
++              <item android:id="@+id/enable_adblock_id"
++                  android:title="@string/menu_enable_adblock" />
++              <item android:id="@+id/enable_adblock_check_id"
++                  android:title="@null"
++                  android:checkable="true" />
++          </menu>
++        </item>
++
+         <item android:id="@+id/reader_mode_prefs_id"
+             android:title="@string/menu_reader_mode_prefs"
+             android:icon="@drawable/reader_mode_prefs_icon" />
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
+@@ -2064,6 +2064,14 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
+             RecordUserAction.record("MobileMenuRequestEnableJavascript");
+         } else if (id == R.id.reader_mode_prefs_id) {
+             DomDistillerUIUtils.openSettings(currentTab.getWebContents());
++        } else if (id == R.id.enable_adblock_id || id == R.id.enable_adblock_check_id) {
++            final boolean reloadOnChange = !currentTab.isNativePage();
++            final boolean adBlockEnabled = !PrefServiceBridge.getInstance().adsEnabled();
++            PrefServiceBridge.getInstance().setAllowAdsEnabled(adBlockEnabled);
++            if (reloadOnChange) {
++                currentTab.reload();
++            }
++            RecordUserAction.record("MobileMenuRequestEnableAdBlock");
+         } else {
+             return false;
+         }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -1724,6 +1724,14 @@ public class ChromeTabbedActivity
+             RecordUserAction.record("MobileTabClosedUndoShortCut");
+         } else if (id == R.id.enter_vr_id) {
+             VrShellDelegate.enterVrIfNecessary();
++        } else if (id == R.id.enable_adblock_id || id == R.id.enable_adblock_check_id) {
++            final boolean reloadOnChange = !currentTab.isNativePage();
++            final boolean adBlockEnabled = !PrefServiceBridge.getInstance().adsEnabled();
++            PrefServiceBridge.getInstance().setAllowAdsEnabled(adBlockEnabled);
++            if (reloadOnChange) {
++               currentTab.reload();
++            }
++            RecordUserAction.record("MobileMenuRequestEnableAdBlock");
+         } else {
+             return super.onMenuOrKeyboardAction(id, fromMenu);
+         }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
+@@ -212,6 +212,8 @@ public class AppMenuPropertiesDelegate {
+                     && !TextUtils.isEmpty(url);
+             prepareAddToHomescreenMenuItem(menu, currentTab, canShowHomeScreenMenuItem);
+ 
++            updateEnableAdBlockMenuItem(menu, currentTab);
++
+             updateRequestDesktopSiteMenuItem(menu, currentTab, true /* can show */);
+ 
+             updateEnableJavascriptMenuItem(menu, currentTab);
+@@ -445,6 +447,42 @@ public class AppMenuPropertiesDelegate {
+     }
+ 
+     /**
++     * Updates the enable AdBlock item's state.
++     *
++     * @param menu {@link Menu} for enable adblock
++     * @param currentTab      Current tab being displayed.
++     */
++    protected void updateEnableAdBlockMenuItem(
++            Menu menu, Tab currentTab) {
++        MenuItem enableMenuRow = menu.findItem(R.id.enable_adblock_row_menu_id);
++        MenuItem enableMenuLabel = menu.findItem(R.id.enable_adblock_id);
++        MenuItem enableMenuCheck = menu.findItem(R.id.enable_adblock_check_id);
++
++
++        // Hide enable adblock on all chrome:// pages except for the NTP.
++        String url = currentTab.getUrl();
++        boolean isChromeScheme = url.startsWith(UrlConstants.CHROME_URL_PREFIX)
++                || url.startsWith(UrlConstants.CHROME_NATIVE_URL_PREFIX);
++        // Also hide enable javascsript on Reader Mode.
++        boolean isDistilledPage = DomDistillerUrlUtils.isDistilledPage(url);
++
++        boolean itemVisible = (!isChromeScheme || currentTab.isNativePage()) && !isDistilledPage;
++        enableMenuRow.setVisible(itemVisible);
++        if (!itemVisible) return;
++
++        boolean adBlockEnabled = !PrefServiceBridge.getInstance().adsEnabled();
++
++        // Mark the checkbox if adblock is globally activate.
++        enableMenuCheck.setChecked(adBlockEnabled);
++
++        // This title doesn't seem to be displayed by Android, but it is used to set up
++        // accessibility text in {@link AppMenuAdapter#setupMenuButton}.
++        enableMenuLabel.setTitleCondensed(adBlockEnabled
++                        ? mActivity.getString(R.string.menu_enable_adblock_on)
++                        : mActivity.getString(R.string.menu_enable_adblock_off));
++    }
++
++    /**
+      * @return Whether bookmarks, downloads, and history should be shown in the menu.
+      */
+     public static boolean shouldShowNavMenuItems() {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
+@@ -170,6 +170,8 @@ public class CustomTabAppMenuPropertiesDelegate extends AppMenuPropertiesDelegat
+                 }
+             }
+ 
++            updateEnableAdBlockMenuItem(menu, currentTab);
++
+             updateRequestDesktopSiteMenuItem(menu, currentTab, requestDesktopSiteVisible);
+             updateEnableJavascriptMenuItem(menu, currentTab);
+             prepareAddToHomescreenMenuItem(menu, currentTab, addToHomeScreenVisible);
+diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/android/java/strings/android_chrome_strings.grd
+--- a/chrome/android/java/strings/android_chrome_strings.grd
++++ b/chrome/android/java/strings/android_chrome_strings.grd
+@@ -2568,6 +2568,17 @@ Google may use your browsing activity, content on some sites you visit, and othe
+       <message name="IDS_MENU_REQUEST_DESKTOP_SITE_OFF" desc="Accessibility description for when Request Desktop Site is disabled.">
+         Turn on Request desktop site
+       </message>
++
++      <message name="IDS_MENU_ENABLE_ADBLOCK" desc="Menu item in Chrome's overflow/options menu. If this menu item is unselected, Bromite will disable AdBlock engine for the page. [CHAR-LIMIT=27]">
++        Enable AdBlock
++      </message>
++      <message name="IDS_MENU_ENABLE_ADBLOCK_ON" desc="Accessibility description for when Enable AdBlock is selected.">
++        Turn off AdBlock
++      </message>
++      <message name="IDS_MENU_ENABLE_ADBLOCK_OFF" desc="Accessibility description for when Enable AdBlock is unselected.">
++        Turn on AdBlock
++      </message>
++
+       <message name="IDS_MENU_READER_MODE_PREFS" desc="Menu item to show reader mode preferences pane, which allows users to change the appearance (font size, theme, etc.) of the page. [CHAR-LIMIT=27]">
+         Appearance
+       </message>
+diff --git a/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc b/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc
+--- a/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc
++++ b/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc
+@@ -22,6 +22,7 @@
+ #include "components/keyed_service/core/service_access_type.h"
+ #include "components/subresource_filter/core/browser/subresource_filter_features.h"
+ #include "url/gurl.h"
++#include "net/url_request/adblock_intercept.h"
+ 
+ namespace {
+ 
+@@ -160,9 +161,11 @@ void SubresourceFilterContentSettingsManager::OnContentSettingChanged(
+     if (global_setting == CONTENT_SETTING_ALLOW) {
+       ChromeSubresourceFilterClient::LogAction(
+           kActionContentSettingsAllowedGlobal);
++      net::adblock_enabled = false;
+     } else if (global_setting == CONTENT_SETTING_BLOCK) {
+       ChromeSubresourceFilterClient::LogAction(
+           kActionContentSettingsBlockedGlobal);
++      net::adblock_enabled = true;
+     } else {
+       NOTREACHED();
+     }
+diff --git a/net/url_request/adblock_intercept.cc b/net/url_request/adblock_intercept.cc
+--- a/net/url_request/adblock_intercept.cc
++++ b/net/url_request/adblock_intercept.cc
+@@ -19,6 +19,8 @@
+ 
+ namespace net {
+ 
++bool adblock_enabled = true;
++
+ const char *LOG_TAG = "Bromite";
+ 
+ #ifdef ADB_TESTER
+diff --git a/net/url_request/adblock_intercept.h b/net/url_request/adblock_intercept.h
+--- a/net/url_request/adblock_intercept.h
++++ b/net/url_request/adblock_intercept.h
+@@ -11,6 +11,8 @@ int adblock_rules_count();
+ 
+ int adblock_intercept(const GURL &url, const std::string &origin_host);
+ 
++extern bool adblock_enabled;
++
+ } // namespace net
+ 
+ #endif // NET_URL_REQUEST_ADBLOCK_INTERCEPT_H_
+diff --git a/net/url_request/url_request.cc b/net/url_request/url_request.cc
+--- a/net/url_request/url_request.cc
++++ b/net/url_request/url_request.cc
+@@ -590,6 +590,7 @@ URLRequest::URLRequest(const GURL& url,
+   DCHECK(base::ThreadTaskRunnerHandle::IsSet());
+ 
+ #if defined(OS_ANDROID)
++  if (net::adblock_enabled) {
+   std::string initiatorHost;
+   if (initiator_.has_value()) {
+     initiatorHost = initiator_.value().host();
+@@ -600,6 +601,9 @@ URLRequest::URLRequest(const GURL& url,
+   } else {
+      url_chain_ = { url };
+   }
++  } else {
++     url_chain_ = { url };
++  }
+ #endif
+ 
+   context->url_requests()->insert(this);
+-- 
+2.7.4
+

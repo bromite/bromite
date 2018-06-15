@@ -1,0 +1,156 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Thu, 14 Jun 2018 18:45:31 +0200
+Subject: DNS-over-HTTPS: allow selection between Google and CloudFlare
+
+---
+ chrome/browser/about_flags.cc                                    | 8 +++++++-
+ chrome/browser/flag_descriptions.cc                              | 2 +-
+ chrome/browser/io_thread.cc                                      | 9 ++++++---
+ chrome/common/chrome_features.cc                                 | 7 -------
+ chrome/common/chrome_features.h                                  | 4 ----
+ .../network_session_configurator/common/network_features.cc      | 4 ++++
+ .../network_session_configurator/common/network_features.h       | 5 +++++
+ .../network_session_configurator/common/network_switch_list.h    | 4 ++++
+ 8 files changed, 27 insertions(+), 16 deletions(-)
+
+diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
+--- a/chrome/browser/about_flags.cc
++++ b/chrome/browser/about_flags.cc
+@@ -395,6 +395,12 @@ const FeatureEntry::Choice kChromeHomeSwipeLogicChoices[] = {
+      switches::kChromeHomeSwipeLogicType, "velocity"},
+ };
+ 
++const FeatureEntry::Choice kDnsOverHttpsChoices[] = {
++    {features::kDnsOverHttpsChoiceDefault, "", ""},
++    {features::kDnsOverHttpsChoiceGoogle, switches::kDnsOverHttpsServer, "https://dns.google.com/experimental"},
++    {features::kDnsOverHttpsChoiceCloudFlare, switches::kDnsOverHttpsServer, "https://1.1.1.1/dns-query"},
++};
++
+ #endif  // OS_ANDROID
+ 
+ const FeatureEntry::Choice kNumRasterThreadsChoices[] = {
+@@ -3547,7 +3553,7 @@ const FeatureEntry kFeatureEntries[] = {
+ #if defined(OS_ANDROID)
+     {"enable-dns-over-https", flag_descriptions::kDnsOverHttpsName,
+      flag_descriptions::kDnsOverHttpsDescription, kOsAndroid,
+-     FEATURE_VALUE_TYPE(features::kDnsOverHttps)},
++     MULTI_VALUE_TYPE(kDnsOverHttpsChoices)},
+ #endif  // defined(OS_ANDROID)
+ 
+     {"enable-overflow-icons-for-media-controls",
+diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
+--- a/chrome/browser/flag_descriptions.cc
++++ b/chrome/browser/flag_descriptions.cc
+@@ -1850,7 +1850,7 @@ const char kAsyncDnsName[] = "Async DNS resolver";
+ const char kAsyncDnsDescription[] = "Enables the built-in DNS resolver.";
+ 
+ const char kDnsOverHttpsName[] = "DNS over HTTPS";
+-const char kDnsOverHttpsDescription[] = "Enables DNS-over-HTTPS (experimental, non-IETF).";
++const char kDnsOverHttpsDescription[] = "Enables DNS-over-HTTPS (experimental).";
+ 
+ const char kAutofillAccessoryViewName[] =
+     "Autofill suggestions as keyboard accessory view";
+diff --git a/chrome/browser/io_thread.cc b/chrome/browser/io_thread.cc
+--- a/chrome/browser/io_thread.cc
++++ b/chrome/browser/io_thread.cc
+@@ -53,6 +53,7 @@
+ #include "components/metrics/metrics_service.h"
+ #include "components/net_log/chrome_net_log.h"
+ #include "components/network_session_configurator/common/network_features.h"
++#include "components/network_session_configurator/common/network_switches.h"
+ #include "components/policy/core/common/policy_service.h"
+ #include "components/policy/policy_constants.h"
+ #include "components/prefs/pref_registry_simple.h"
+@@ -375,12 +376,14 @@ IOThread::IOThread(
+                                       base::Unretained(this)));
+   dns_client_enabled_.MoveToThread(io_thread_proxy);
+ 
+-  if (base::FeatureList::IsEnabled(features::kDnsOverHttps)) {
++  std::string dnsOverHttpsServer =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++      switches::kDnsOverHttpsServer);
++  if (!dnsOverHttpsServer.empty()) {
+     base::Value specs(base::Value::Type::LIST);
+     base::Value methods(base::Value::Type::LIST);
+ 
+-    // use some hard-coded defaults
+-    base::Value spec("https://dns.google.com/experimental");
++    base::Value spec(dnsOverHttpsServer);
+     base::Value method("POST");
+ 
+     if (spec.GetString().size() > 0) {
+diff --git a/chrome/common/chrome_features.cc b/chrome/common/chrome_features.cc
+--- a/chrome/common/chrome_features.cc
++++ b/chrome/common/chrome_features.cc
+@@ -79,13 +79,6 @@ const base::Feature kAsyncDns {
+ #endif
+ };
+ 
+-// Enable DNS over HTTPS
+-// (https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-02.txt).
+-const base::Feature kDnsOverHttps {
+-  "dns-over-https",
+-      base::FEATURE_DISABLED_BY_DEFAULT
+-};
+-
+ #if defined(OS_WIN) || defined(OS_MACOSX)
+ // Enables automatic tab discarding, when the system is in low memory state.
+ const base::Feature kAutomaticTabDiscarding{"AutomaticTabDiscarding",
+diff --git a/chrome/common/chrome_features.h b/chrome/common/chrome_features.h
+--- a/chrome/common/chrome_features.h
++++ b/chrome/common/chrome_features.h
+@@ -48,10 +48,6 @@ extern const base::Feature kAssetDownloadSuggestionsFeature;
+ 
+ extern const base::Feature kAsyncDns;
+ 
+-// Enable DNS over HTTPS
+-// (https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-02.txt).
+-extern const base::Feature kDnsOverHttps;
+-
+ #if defined(OS_WIN) || defined(OS_MACOSX)
+ extern const base::Feature kAutomaticTabDiscarding;
+ #endif  // defined(OS_WIN) || defined(OS_MACOSX)
+diff --git a/components/network_session_configurator/common/network_features.cc b/components/network_session_configurator/common/network_features.cc
+--- a/components/network_session_configurator/common/network_features.cc
++++ b/components/network_session_configurator/common/network_features.cc
+@@ -9,4 +9,8 @@ namespace features {
+ const base::Feature kTokenBinding{"token-binding",
+                                   base::FEATURE_DISABLED_BY_DEFAULT};
+ 
++const char kDnsOverHttpsChoiceDefault[] = "Disabled",
++                 kDnsOverHttpsChoiceGoogle[] = "Google",
++                 kDnsOverHttpsChoiceCloudFlare[] = "CloudFlare";
++
+ }  // namespace features
+diff --git a/components/network_session_configurator/common/network_features.h b/components/network_session_configurator/common/network_features.h
+--- a/components/network_session_configurator/common/network_features.h
++++ b/components/network_session_configurator/common/network_features.h
+@@ -14,6 +14,11 @@ namespace features {
+ // (https://www.ietf.org/id/draft-ietf-tokbind-protocol-04.txt).
+ NETWORK_SESSION_CONFIGURATOR_EXPORT extern const base::Feature kTokenBinding;
+ 
++// DNS over HTTPS server endpoint choices
++// (https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-02.txt).
++NETWORK_SESSION_CONFIGURATOR_EXPORT extern const char kDnsOverHttpsChoiceDefault[],
++   kDnsOverHttpsChoiceGoogle[], kDnsOverHttpsChoiceCloudFlare[];
++
+ }  // namespace features
+ 
+ #endif  // COMPONENTS_NETWORK_SESSION_CONFIGURATOR_COMMON_NETWORK_FEATURES_H_
+diff --git a/components/network_session_configurator/common/network_switch_list.h b/components/network_session_configurator/common/network_switch_list.h
+--- a/components/network_session_configurator/common/network_switch_list.h
++++ b/components/network_session_configurator/common/network_switch_list.h
+@@ -35,6 +35,10 @@ NETWORK_SWITCH(kOriginToForceQuicOn, "origin-to-force-quic-on")
+ // the server.
+ NETWORK_SWITCH(kQuicConnectionOptions, "quic-connection-options")
+ 
++// Specifies an IETF DNS-over-HTTPS server endpoint
++// (https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-02.txt).
++NETWORK_SWITCH(kDnsOverHttpsServer, "dns-over-https-server")
++
+ // Specifies the maximum length for a QUIC packet.
+ NETWORK_SWITCH(kQuicMaxPacketLength, "quic-max-packet-length")
+ 
+-- 
+2.7.4
+
