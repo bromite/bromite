@@ -1,0 +1,267 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Wed, 2 May 2018 01:24:39 +0200
+Subject: Add Always Incognito option
+
+---
+ chrome/android/java/res/menu/custom_tabs_menu.xml  | 12 ++++++++
+ chrome/android/java/res/menu/main_menu.xml         | 12 ++++++++
+ .../chromium/chrome/browser/ChromeActivity.java    |  4 +++
+ .../chrome/browser/ChromeTabbedActivity.java       |  4 +++
+ .../org/chromium/chrome/browser/IntentHandler.java |  8 ++---
+ .../chrome/browser/LaunchIntentDispatcher.java     |  7 +++++
+ .../browser/appmenu/AppMenuPropertiesDelegate.java | 35 ++++++++++++++++++++++
+ .../CustomTabAppMenuPropertiesDelegate.java        |  2 ++
+ .../browser/preferences/PrefServiceBridge.java     | 17 +++++++++++
+ .../java/strings/android_chrome_strings.grd        | 10 +++++++
+ 10 files changed, 106 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/android/java/res/menu/custom_tabs_menu.xml b/chrome/android/java/res/menu/custom_tabs_menu.xml
+--- a/chrome/android/java/res/menu/custom_tabs_menu.xml
++++ b/chrome/android/java/res/menu/custom_tabs_menu.xml
+@@ -62,6 +62,18 @@
+           </menu>
+         </item>
+ 
++        <item android:id="@+id/enable_always_incognito_row_menu_id"
++            android:title="@null"
++            android:orderInCategory="2">
++          <menu>
++              <item android:id="@+id/enable_always_incognito_id"
++                  android:title="@string/menu_enable_always_incognito" />
++              <item android:id="@+id/enable_always_incognito_check_id"
++                  android:title="@null"
++                  android:checkable="true" />
++          </menu>
++        </item>
++
+         <item android:id="@+id/request_desktop_site_row_menu_id"
+             android:title="@null"
+             android:orderInCategory="2">
+diff --git a/chrome/android/java/res/menu/main_menu.xml b/chrome/android/java/res/menu/main_menu.xml
+--- a/chrome/android/java/res/menu/main_menu.xml
++++ b/chrome/android/java/res/menu/main_menu.xml
+@@ -72,6 +72,18 @@
+           </menu>
+         </item>
+ 
++        <item android:id="@+id/enable_always_incognito_row_menu_id"
++            android:title="@null"
++            android:orderInCategory="2">
++          <menu>
++              <item android:id="@+id/enable_always_incognito_id"
++                  android:title="@string/menu_enable_always_incognito" />
++              <item android:id="@+id/enable_always_incognito_check_id"
++                  android:title="@null"
++                  android:checkable="true" />
++          </menu>
++        </item>
++
+         <item android:id="@+id/request_desktop_site_row_menu_id"
+             android:title="@null">
+           <menu>
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
+@@ -1905,6 +1905,10 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
+             RecordUserAction.record("MobileMenuSettings");
+         } else if (id == R.id.show_menu) {
+             showAppMenuForKeyboardEvent();
++        } else if (id == R.id.enable_always_incognito_id || id == R.id.enable_always_incognito_check_id) {
++            final boolean alwaysIncognito = PrefServiceBridge.getInstance().alwaysIncognitoEnabled();
++            PrefServiceBridge.getInstance().setAlwaysIncognitoEnabled(!alwaysIncognito);
++            RecordUserAction.record("MobileMenuRequestEnableAlwaysIncognito");
+         } else if (id == R.id.find_in_page_id) {
+             if (mFindToolbarManager == null) return false;
+ 
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -1753,6 +1753,10 @@ public class ChromeTabbedActivity
+                 reportNewTabShortcutUsed(true);
+                 getTabCreator(true).launchNTP();
+             }
++        } else if (id == R.id.enable_always_incognito_id || id == R.id.enable_always_incognito_check_id) {
++            final boolean alwaysIncognito = PrefServiceBridge.getInstance().alwaysIncognitoEnabled();
++            PrefServiceBridge.getInstance().setAlwaysIncognitoEnabled(!alwaysIncognito);
++            RecordUserAction.record("MobileMenuRequestEnableAlwaysIncognito");
+         } else if (id == R.id.all_bookmarks_menu_id) {
+             if (currentTab != null) {
+                 getCompositorViewHolder().hideKeyboard(() -> {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/IntentHandler.java b/chrome/android/java/src/org/chromium/chrome/browser/IntentHandler.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/IntentHandler.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/IntentHandler.java
+@@ -732,7 +732,6 @@ public class IntentHandler {
+             // Determine if this intent came from a trustworthy source (either Chrome or Google
+             // first party applications).
+             boolean isInternal = isIntentChromeOrFirstParty(intent);
+-            boolean isFromChrome = wasIntentSenderChrome(intent);
+ 
+             // "Open new incognito tab" is currently limited to Chrome.
+             //
+@@ -741,11 +740,10 @@ public class IntentHandler {
+             // from the list.  In this case, we do not apply our Chrome token as the user has the
+             // option to select apps outside of our control, so we rely on this in memory check
+             // instead.
+-            if (!isFromChrome
+-                    && IntentUtils.safeGetBooleanExtra(
++            if (IntentUtils.safeGetBooleanExtra(
+                             intent, EXTRA_OPEN_NEW_INCOGNITO_TAB, false)
+-                    && (getPendingIncognitoUrl() == null
+-                            || !getPendingIncognitoUrl().equals(intent.getDataString()))) {
++                    && getPendingIncognitoUrl() != null
++                            && getPendingIncognitoUrl().equals(intent.getDataString())) {
+                 return true;
+             }
+ 
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcher.java b/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcher.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcher.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcher.java
+@@ -36,6 +36,7 @@ import org.chromium.chrome.browser.instantapps.InstantAppsHandler;
+ import org.chromium.chrome.browser.metrics.MediaNotificationUma;
+ import org.chromium.chrome.browser.multiwindow.MultiWindowUtils;
+ import org.chromium.chrome.browser.notifications.NotificationPlatformBridge;
++import org.chromium.chrome.browser.preferences.PrefServiceBridge;
+ import org.chromium.chrome.browser.partnercustomizations.PartnerBrowserCustomizations;
+ import org.chromium.chrome.browser.searchwidget.SearchActivity;
+ import org.chromium.chrome.browser.tab.Tab;
+@@ -185,6 +186,12 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
+         boolean incognito =
+                 mIntent.getBooleanExtra(IntentHandler.EXTRA_OPEN_NEW_INCOGNITO_TAB, false);
+ 
++        if (!incognito) {
++                incognito = PrefServiceBridge.getInstance().alwaysIncognitoEnabled();
++                if (incognito) {
++                       mIntent.putExtra(IntentHandler.EXTRA_OPEN_NEW_INCOGNITO_TAB, true);
++                }
++        }
+         // Check if a web search Intent is being handled.
+         IntentHandler intentHandler = new IntentHandler(this, mActivity.getPackageName());
+         String url = IntentHandler.getUrlFromIntent(mIntent);
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
+@@ -211,6 +211,8 @@ public class AppMenuPropertiesDelegate {
+                     && !TextUtils.isEmpty(url);
+             prepareAddToHomescreenMenuItem(menu, currentTab, canShowHomeScreenMenuItem);
+ 
++            updateEnableAlwaysIncognitoMenuItem(menu, currentTab);
++
+             updateRequestDesktopSiteMenuItem(menu, currentTab, true /* can show */);
+ 
+             updateEnableJavascriptMenuItem(menu, currentTab);
+@@ -410,6 +412,39 @@ public class AppMenuPropertiesDelegate {
+     }
+ 
+     /**
++     * Updates the enable Always Incognito item's state.
++     *
++     * @param menu {@link Menu} for enable always incognito
++     * @param currentTab      Current tab being displayed.
++     */
++    protected void updateEnableAlwaysIncognitoMenuItem(
++            Menu menu, Tab currentTab) {
++        MenuItem enableMenuRow = menu.findItem(R.id.enable_always_incognito_row_menu_id);
++        MenuItem enableMenuLabel = menu.findItem(R.id.enable_always_incognito_id);
++        MenuItem enableMenuCheck = menu.findItem(R.id.enable_always_incognito_check_id);
++
++        // Hide enable always incognito on all chrome:// pages and the NTP.
++        String url = currentTab.getUrl();
++        boolean isChromeScheme = url.startsWith(UrlConstants.CHROME_URL_PREFIX)
++                || url.startsWith(UrlConstants.CHROME_NATIVE_URL_PREFIX);
++
++        boolean itemVisible = !isChromeScheme && !currentTab.isNativePage();
++        enableMenuRow.setVisible(itemVisible);
++        if (!itemVisible) return;
++
++        boolean alwaysIncognito = PrefServiceBridge.getInstance().alwaysIncognitoEnabled();
++
++        // Mark the checkbox if always incognito is activated on this tab.
++        enableMenuCheck.setChecked(alwaysIncognito);
++
++        // This title doesn't seem to be displayed by Android, but it is used to set up
++        // accessibility text in {@link AppMenuAdapter#setupMenuButton}.
++        enableMenuLabel.setTitleCondensed(alwaysIncognito
++                        ? mActivity.getString(R.string.menu_enable_always_incognito_on)
++                        : mActivity.getString(R.string.menu_enable_always_incognito_off));
++    }
++
++    /**
+      * Updates the request desktop site item's state.
+      *
+      * @param menu {@link Menu} for request desktop site.
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
+@@ -163,6 +163,8 @@ public class CustomTabAppMenuPropertiesDelegate extends AppMenuPropertiesDelegat
+                 }
+             }
+ 
++            updateEnableAlwaysIncognitoMenuItem(menu, currentTab);
++
+             updateRequestDesktopSiteMenuItem(menu, currentTab, requestDesktopSiteVisible);
+             updateEnableJavascriptMenuItem(menu, currentTab);
+             prepareAddToHomescreenMenuItem(menu, currentTab, addToHomeScreenVisible);
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/PrefServiceBridge.java b/chrome/android/java/src/org/chromium/chrome/browser/preferences/PrefServiceBridge.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/preferences/PrefServiceBridge.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/preferences/PrefServiceBridge.java
+@@ -57,6 +57,8 @@ public class PrefServiceBridge {
+     private static final String CONTEXTUAL_SEARCH_DISABLED = "false";
+     private static final String CONTEXTUAL_SEARCH_ENABLED = "true";
+ 
++    private static boolean alwaysIncognito = false;
++
+     /**
+      * Structure that holds all the version information about the current Chrome browser.
+      */
+@@ -359,6 +361,14 @@ public class PrefServiceBridge {
+     }
+ 
+     /**
++     * @return true if always-incognito is enabled.
++     * The default is false.
++     */
++    public boolean alwaysIncognitoEnabled() {
++        return alwaysIncognito;
++    }
++
++    /**
+      * @return true if background sync is managed by policy.
+      */
+     public boolean isBackgroundSyncManaged() {
+@@ -422,6 +432,13 @@ public class PrefServiceBridge {
+     }
+ 
+     /**
++     * Enable or disable always-incognito mode.
++     */
++    public void setAlwaysIncognitoEnabled(boolean enabled) {
++        alwaysIncognito = enabled;
++    }
++
++    /**
+      * Enable or disable background sync.
+      */
+     public void setBackgroundSyncEnabled(boolean enabled) {
+diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/android/java/strings/android_chrome_strings.grd
+--- a/chrome/android/java/strings/android_chrome_strings.grd
++++ b/chrome/android/java/strings/android_chrome_strings.grd
+@@ -2502,6 +2502,16 @@ To obtain new licenses, connect to the internet and play your downloaded content
+         Turn on JavaScript
+       </message>
+ 
++      <message name="IDS_MENU_ENABLE_ALWAYS_INCOGNITO" desc="Menu item in Chrome's overflow/options menu. If this menu item is selected, Bromite will always open new pages in incognito mode. [CHAR-LIMIT=27]">
++        Always Incognito
++      </message>
++      <message name="IDS_MENU_ENABLE_ALWAYS_INCOGNITO_ON" desc="Accessibility description for when Always Incognito is selected.">
++        Turn off Always Incognito
++      </message>
++      <message name="IDS_MENU_ENABLE_ALWAYS_INCOGNITO_OFF" desc="Accessibility description for when Enable Always Incognito is unselected.">
++        Turn on Always Incognito
++      </message>
++
+       <message name="IDS_MENU_REQUEST_DESKTOP_SITE" desc="Menu item in Chrome's overflow/options menu. By default, when a user navigates to a web page, Chrome shows the mobile site, that is, the version of the site designed for mobile phones. If this menu item is selected, however, Chrome will try to load the 'desktop' site instead, i.e. the site designed for desktop computers or laptop computers, which have larger screens. [CHAR-LIMIT=24]">
+         Desktop site
+       </message>
+-- 
+2.7.4
+
