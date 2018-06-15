@@ -54,11 +54,10 @@ We cannot add add-ons to Bromite (merely some features) and anyway HTTPS everywh
 # Features
 
 * baked-in adblock engine with filters from EasyList, EasyPrivacy and others
-* remove click-tracking and AMP from Google search results
+* remove click-tracking and AMP from search results
 * DNS-over-HTTPS support via Google/CloudFlare servers
 * allow playing videos in background
 * [StartPage](https://startpage.com/), [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines
-* Google search engine English-only with reduced tracking
 * privacy enhancement patches from [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/), [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) and [Iridium](https://github.com/iridium-browser) projects
 * webRTC, canvas, audio and other anti-fingerprinting mitigations
 * all codecs included (proprietary, open H.264 etc.)
