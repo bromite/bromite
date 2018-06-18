@@ -21,7 +21,7 @@ Minimal UI changes are applied to help curbing the idea of "browser as an advert
 
 Please donate to support development of Bromite and the costs for the build system.
 
-[Become a patron on Patreon](https://www.patreon.com/bePatron?c=1807244)
+[Donate via LiberaPay](https://liberapay.com/csagan5/donate)
 
 Support development with a donation of 3 EUR: [![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=JP3XTQPVRNET2)
 
