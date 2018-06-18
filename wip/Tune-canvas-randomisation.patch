@@ -3,11 +3,13 @@ Date: Mon, 18 Jun 2018 09:03:52 +0200
 Subject: Tune canvas randomisation
 
 Randomise RGB for each pixel, change value up to to 8%
+
+Adopt some improvements for RGB randomisation
 ---
- .../blink/renderer/core/offscreencanvas/offscreen_canvas.cc  |  1 -
- .../modules/canvas/canvas2d/base_rendering_context_2d.cc     |  2 +-
- .../blink/renderer/platform/graphics/image_data_buffer.cc    | 12 ++++++------
- 3 files changed, 7 insertions(+), 8 deletions(-)
+ .../core/offscreencanvas/offscreen_canvas.cc       |  1 -
+ .../canvas/canvas2d/base_rendering_context_2d.cc   |  2 +-
+ .../platform/graphics/image_data_buffer.cc         | 53 +++++++++++-----------
+ 3 files changed, 28 insertions(+), 28 deletions(-)
 
 diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
 --- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
@@ -35,10 +37,27 @@ diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_c
 diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
 --- a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
 +++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
-@@ -134,17 +134,17 @@ void ImageDataBuffer::shuffleSubchannelColorData() const {
-   // second random number (for y/height)
-   double shuffleY = base::RandDouble();
+@@ -118,10 +118,12 @@ const unsigned char* ImageDataBuffer::Pixels() const {
+   return static_cast<const unsigned char*>(pixmap_.addr());
+ }
  
++#define shuffleComponent(color, max, delta) ((color) >= (max) ? -(delta) : (delta))
++
+ void ImageDataBuffer::shuffleSubchannelColorData() const {
+   auto w = pixmap_.width(), h = pixmap_.height();
+   // generate the first random number here
+-  double shuffleX = base::RandDouble();
++  double shuffleX = 0.5 + base::RandDouble() * 0.5;
+ 
+   // cap maximum pixels to change
+   auto pixels = (w + h) / 128;
+@@ -131,31 +133,29 @@ void ImageDataBuffer::shuffleSubchannelColorData() const {
+     pixels = 2;
+   }
+ 
+-  // second random number (for y/height)
+-  double shuffleY = base::RandDouble();
+-
 -  // calculate amounts to change per component
 -  double shuffleR = shuffleX - 0.5, shuffleG = shuffleY - 0.5, shuffleB = (shuffleX + shuffleY)/2 - 0.5;
 -  shuffleR *= 0.03;
@@ -47,18 +66,95 @@ diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b
 -
    auto colorType = pixmap_.colorType();
  
++  // second random number (for y/height)
++  double shuffleY = 0.5 + base::RandDouble() * 0.5;
++
    // calculate random coordinates using bisection
    auto currentW = w, currentH = h;
    for(;pixels >= 0; pixels--) {
-+    // calculate amounts to change per RGB component, +/- 4% max
-+    double shuffleR = base::RandDouble() - 0.5, shuffleG = base::RandDouble() - 0.5, shuffleB = base::RandDouble() - 0.5;
-+    shuffleR *= 0.08;
-+    shuffleG *= 0.08;
-+    shuffleB *= 0.08;
-+
      int x = currentW * shuffleX, y = currentH * shuffleY;
  
++    // calculate randomisation amounts for each RGB component
++    auto shuffleR = (uint8_t)base::RandInt(0, 4), shuffleG = (uint8_t)base::RandInt(0, 4), shuffleB = (uint8_t)base::RandInt(0, 4);
++
      // manipulate pixel data to slightly change the R, G, B components
+     switch (colorType) {
+       case kAlpha_8_SkColorType:
+       {
+          uint8_t *pixel = pixmap_.writable_addr8(x, y);
+          auto r = SkColorGetR(*pixel), g = SkColorGetG(*pixel), b = SkColorGetB(*pixel), a = SkColorGetA(*pixel);
+-         r *= shuffleR;
+-         g *= shuffleG;
+-         b *= shuffleB;
++
++         r += shuffleComponent(r, UINT8_MAX-1, shuffleR);
++         g += shuffleComponent(g, UINT8_MAX-1, shuffleG);
++         b += shuffleComponent(b, UINT8_MAX-1, shuffleB);
+          // alpha is left unchanged
+ 
+          *pixel = SkColorSetARGB(a, r, g, b);
+@@ -164,7 +164,7 @@ void ImageDataBuffer::shuffleSubchannelColorData() const {
+       case kGray_8_SkColorType:
+       {
+          uint8_t *pixel = pixmap_.writable_addr8(x, y);
+-         *pixel = *pixel * shuffleB;
++         *pixel += shuffleComponent(*pixel, UINT8_MAX-1, shuffleB);
+       }
+       break;
+       case kRGB_565_SkColorType:
+@@ -173,9 +173,10 @@ void ImageDataBuffer::shuffleSubchannelColorData() const {
+          unsigned    r = SkPacked16ToR32(*pixel);
+          unsigned    g = SkPacked16ToG32(*pixel);
+          unsigned    b = SkPacked16ToB32(*pixel);
+-         r *= shuffleR;
+-         g *= shuffleG;
+-         b *= shuffleB;
++
++         r += shuffleComponent(r, 31, shuffleR);
++         g += shuffleComponent(g, 63, shuffleG);
++         b += shuffleComponent(b, 31, shuffleB);
+ 
+          unsigned r16 = (r & SK_R16_MASK) << SK_R16_SHIFT;
+          unsigned g16 = (g & SK_G16_MASK) << SK_G16_SHIFT;
+@@ -189,9 +190,9 @@ void ImageDataBuffer::shuffleSubchannelColorData() const {
+          uint16_t *pixel = pixmap_.writable_addr16(x, y);
+          auto a = SkGetPackedA4444(*pixel), r = SkGetPackedR4444(*pixel), g = SkGetPackedG4444(*pixel), b = SkGetPackedB4444(*pixel);
+ 
+-         r *= shuffleR;
+-         g *= shuffleG;
+-         b *= shuffleB;
++         r += shuffleComponent(r, 15, shuffleR);
++         g += shuffleComponent(g, 15, shuffleG);
++         b += shuffleComponent(b, 15, shuffleB);
+          // alpha is left unchanged
+ 
+          unsigned a4 = (a & 0xF) << SK_A4444_SHIFT;
+@@ -207,9 +208,9 @@ void ImageDataBuffer::shuffleSubchannelColorData() const {
+          uint32_t *pixel = pixmap_.writable_addr32(x, y);
+          auto a = SkGetPackedA32(*pixel), r = SkGetPackedR32(*pixel), g = SkGetPackedG32(*pixel), b = SkGetPackedB32(*pixel);
+ 
+-         r *= shuffleR;
+-         g *= shuffleG;
+-         b *= shuffleB;
++         r += shuffleComponent(r, UINT8_MAX-1, shuffleR);
++         g += shuffleComponent(g, UINT8_MAX-1, shuffleG);
++         b += shuffleComponent(b, UINT8_MAX-1, shuffleB);
+          // alpha is left unchanged
+ 
+          *pixel = (a << SK_A32_SHIFT) | (r << SK_R32_SHIFT) |
+@@ -221,9 +222,9 @@ void ImageDataBuffer::shuffleSubchannelColorData() const {
+          uint32_t *pixel = pixmap_.writable_addr32(x, y);
+          auto a = SkGetPackedA32(*pixel), b = SkGetPackedR32(*pixel), g = SkGetPackedG32(*pixel), r = SkGetPackedB32(*pixel);
+ 
+-         r *= shuffleR;
+-         g *= shuffleG;
+-         b *= shuffleB;
++         r += shuffleComponent(r, UINT8_MAX-1, shuffleR);
++         g += shuffleComponent(g, UINT8_MAX-1, shuffleG);
++         b += shuffleComponent(b, UINT8_MAX-1, shuffleB);
+          // alpha is left unchanged
+ 
+          *pixel = (a << SK_BGRA_A32_SHIFT) | (r << SK_BGRA_R32_SHIFT) |
 -- 
 2.7.4
 
