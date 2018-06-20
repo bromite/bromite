@@ -1,5 +1,5 @@
 # 67.0.3396.92
-* improve randomisation for each retrieved Canvas data (fixes )https://github.com/bromite/bromite/issues/69
+* improve randomisation for each retrieved Canvas data (fixes https://github.com/bromite/bromite/issues/69)
 * updated AdBlock filters
 
 # 67.0.3396.88
