@@ -1,3 +1,7 @@
+# 67.0.3396.92
+* improve randomisation for each retrieved Canvas data (fixes )https://github.com/bromite/bromite/issues/69
+* updated AdBlock filters
+
 # 67.0.3396.88
 * add flag for DNS-over-HTTPS (Google experimental DNS) (fixes https://github.com/bromite/bromite/issues/68)
 * disable signin, translate and data saver UI/internal components (fixes https://github.com/bromite/bromite/issues/67)

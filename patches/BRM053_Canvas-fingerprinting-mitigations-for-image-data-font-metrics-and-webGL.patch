@@ -4,19 +4,21 @@ Subject: Canvas: fingerprinting mitigations for image data, font metrics and
  webGL
 
 Disable webGL renderering info, add shuffling to TextMetrics;
-additionally the color data returned by ToBlob and ToDataURL will
-contain randomly manipulated pixels (maximum 6) that slightly
+additionally, the color data returned by ToBlob and ToDataURL will
+contain randomly manipulated pixels (maximum 10) that slightly
 change the color R,G,B components without visibly altering the rendering.
+
+Credits to Slaviro (https://github.com/Slaviro) for coming up with a better
+approach to change color components.
 ---
  .../renderer/core/html/canvas/text_metrics.cc      |  20 +++
  .../blink/renderer/core/html/canvas/text_metrics.h |   2 +
- .../core/offscreencanvas/offscreen_canvas.cc       |   1 +
  .../canvas/canvas2d/base_rendering_context_2d.cc   |   3 +
  .../canvas/canvas2d/canvas_rendering_context_2d.cc |   6 +-
  .../modules/webgl/webgl_debug_renderer_info.cc     |   4 +-
- .../platform/graphics/image_data_buffer.cc         | 136 +++++++++++++++++++++
+ .../platform/graphics/image_data_buffer.cc         | 137 +++++++++++++++++++++
  .../renderer/platform/graphics/image_data_buffer.h |   2 +
- 8 files changed, 171 insertions(+), 3 deletions(-)
+ 7 files changed, 171 insertions(+), 3 deletions(-)
 
 diff --git a/third_party/blink/renderer/core/html/canvas/text_metrics.cc b/third_party/blink/renderer/core/html/canvas/text_metrics.cc
 --- a/third_party/blink/renderer/core/html/canvas/text_metrics.cc
@@ -60,17 +62,6 @@ diff --git a/third_party/blink/renderer/core/html/canvas/text_metrics.h b/third_
   private:
    void Update(const Font&,
                const TextDirection&,
-diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
---- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
-+++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
-@@ -403,6 +403,7 @@ ScriptPromise OffscreenCanvas::convertToBlob(ScriptState* script_state,
-     CanvasAsyncBlobCreator* async_creator = CanvasAsyncBlobCreator::Create(
-         snapshot, encoding_mime_type, start_time,
-         ExecutionContext::From(script_state), resolver);
-+
-     async_creator->ScheduleAsyncBlobCreation(options.quality());
-     return resolver->Promise();
-   } else {
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
@@ -79,7 +70,7 @@ diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_c
    scoped_refptr<StaticBitmapImage> snapshot = GetImage(kPreferNoAcceleration);
  
 +  //TODO: calculate some random value and use it to shuffle pixel data in 'snapshot'
-+  // it should StaticBitmapImage somehow
++  // it should be a StaticBitmapImage somehow
 +
    if (!StaticBitmapImage::ConvertToArrayBufferContents(
            snapshot, contents, image_data_rect, color_params, IsAccelerated())) {
@@ -137,14 +128,16 @@ diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b
  
  namespace blink {
  
-@@ -116,11 +118,145 @@ const unsigned char* ImageDataBuffer::Pixels() const {
+@@ -116,11 +118,146 @@ const unsigned char* ImageDataBuffer::Pixels() const {
    return static_cast<const unsigned char*>(pixmap_.addr());
  }
  
++#define shuffleComponent(color, max, delta) ((color) >= (max) ? -(delta) : (delta))
++
 +void ImageDataBuffer::shuffleSubchannelColorData() const {
 +  auto w = pixmap_.width(), h = pixmap_.height();
 +  // generate the first random number here
-+  double shuffleX = base::RandDouble();
++  double shuffleX = 0.5 + base::RandDouble() * 0.5;
 +
 +  // cap maximum pixels to change
 +  auto pixels = (w + h) / 128;
@@ -154,21 +147,18 @@ diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b
 +    pixels = 2;
 +  }
 +
-+  // second random number (for y/height)
-+  double shuffleY = base::RandDouble();
-+
-+  // calculate amounts to change per component
-+  double shuffleR = shuffleX - 0.5, shuffleG = shuffleY - 0.5, shuffleB = (shuffleX + shuffleY)/2 - 0.5;
-+  shuffleR *= 0.03;
-+  shuffleG *= 0.03;
-+  shuffleB *= 0.03;
-+
 +  auto colorType = pixmap_.colorType();
++
++  // second random number (for y/height)
++  double shuffleY = 0.5 + base::RandDouble() * 0.5;
 +
 +  // calculate random coordinates using bisection
 +  auto currentW = w, currentH = h;
 +  for(;pixels >= 0; pixels--) {
 +    int x = currentW * shuffleX, y = currentH * shuffleY;
++
++    // calculate randomisation amounts for each RGB component
++    auto shuffleR = (uint8_t)base::RandInt(0, 4), shuffleG = (uint8_t)base::RandInt(0, 4), shuffleB = (uint8_t)base::RandInt(0, 4);
 +
 +    // manipulate pixel data to slightly change the R, G, B components
 +    switch (colorType) {
@@ -176,9 +166,10 @@ diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b
 +      {
 +         uint8_t *pixel = pixmap_.writable_addr8(x, y);
 +         auto r = SkColorGetR(*pixel), g = SkColorGetG(*pixel), b = SkColorGetB(*pixel), a = SkColorGetA(*pixel);
-+         r *= shuffleR;
-+         g *= shuffleG;
-+         b *= shuffleB;
++
++         r += shuffleComponent(r, UINT8_MAX-1, shuffleR);
++         g += shuffleComponent(g, UINT8_MAX-1, shuffleG);
++         b += shuffleComponent(b, UINT8_MAX-1, shuffleB);
 +         // alpha is left unchanged
 +
 +         *pixel = SkColorSetARGB(a, r, g, b);
@@ -187,7 +178,7 @@ diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b
 +      case kGray_8_SkColorType:
 +      {
 +         uint8_t *pixel = pixmap_.writable_addr8(x, y);
-+         *pixel = *pixel * shuffleB;
++         *pixel += shuffleComponent(*pixel, UINT8_MAX-1, shuffleB);
 +      }
 +      break;
 +      case kRGB_565_SkColorType:
@@ -196,9 +187,10 @@ diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b
 +         unsigned    r = SkPacked16ToR32(*pixel);
 +         unsigned    g = SkPacked16ToG32(*pixel);
 +         unsigned    b = SkPacked16ToB32(*pixel);
-+         r *= shuffleR;
-+         g *= shuffleG;
-+         b *= shuffleB;
++
++         r += shuffleComponent(r, 31, shuffleR);
++         g += shuffleComponent(g, 63, shuffleG);
++         b += shuffleComponent(b, 31, shuffleB);
 +
 +         unsigned r16 = (r & SK_R16_MASK) << SK_R16_SHIFT;
 +         unsigned g16 = (g & SK_G16_MASK) << SK_G16_SHIFT;
@@ -212,9 +204,9 @@ diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b
 +         uint16_t *pixel = pixmap_.writable_addr16(x, y);
 +         auto a = SkGetPackedA4444(*pixel), r = SkGetPackedR4444(*pixel), g = SkGetPackedG4444(*pixel), b = SkGetPackedB4444(*pixel);
 +
-+         r *= shuffleR;
-+         g *= shuffleG;
-+         b *= shuffleB;
++         r += shuffleComponent(r, 15, shuffleR);
++         g += shuffleComponent(g, 15, shuffleG);
++         b += shuffleComponent(b, 15, shuffleB);
 +         // alpha is left unchanged
 +
 +         unsigned a4 = (a & 0xF) << SK_A4444_SHIFT;
@@ -230,9 +222,9 @@ diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b
 +         uint32_t *pixel = pixmap_.writable_addr32(x, y);
 +         auto a = SkGetPackedA32(*pixel), r = SkGetPackedR32(*pixel), g = SkGetPackedG32(*pixel), b = SkGetPackedB32(*pixel);
 +
-+         r *= shuffleR;
-+         g *= shuffleG;
-+         b *= shuffleB;
++         r += shuffleComponent(r, UINT8_MAX-1, shuffleR);
++         g += shuffleComponent(g, UINT8_MAX-1, shuffleG);
++         b += shuffleComponent(b, UINT8_MAX-1, shuffleB);
 +         // alpha is left unchanged
 +
 +         *pixel = (a << SK_A32_SHIFT) | (r << SK_R32_SHIFT) |
@@ -244,9 +236,9 @@ diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b
 +         uint32_t *pixel = pixmap_.writable_addr32(x, y);
 +         auto a = SkGetPackedA32(*pixel), b = SkGetPackedR32(*pixel), g = SkGetPackedG32(*pixel), r = SkGetPackedB32(*pixel);
 +
-+         r *= shuffleR;
-+         g *= shuffleG;
-+         b *= shuffleB;
++         r += shuffleComponent(r, UINT8_MAX-1, shuffleR);
++         g += shuffleComponent(g, UINT8_MAX-1, shuffleG);
++         b += shuffleComponent(b, UINT8_MAX-1, shuffleB);
 +         // alpha is left unchanged
 +
 +         *pixel = (a << SK_BGRA_A32_SHIFT) | (r << SK_BGRA_R32_SHIFT) |
