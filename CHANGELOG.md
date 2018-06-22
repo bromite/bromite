@@ -1,3 +1,10 @@
+# 67.0.3396.95
+* reduce headers sent in DoH requests (fixes https://github.com/bromite/bromite/issues/70)
+* serve DoH requests with maximum priority
+* `CloudFlare` -> `Cloudflare` (fixes https://github.com/bromite/bromite/issues/73)
+* fingerprint miitagions: cover also `ConvertToArrayBufferContents`
+* updated AdBlock filters
+
 # 67.0.3396.92
 * improve randomisation for each retrieved Canvas data (fixes https://github.com/bromite/bromite/issues/69)
 * updated AdBlock filters
