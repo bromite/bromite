@@ -1,0 +1,189 @@
+From: NoChromo <nochromo@nochromo.com>
+Date: Sun, 3 Apr 2016 12:44:50 +0800
+Subject: url_request: hooks and ad url data
+
+---
+ net/BUILD.gn                          |   2 +
+ net/url_request/nochromo_intercept.cc | 116 ++++++++++++++++++++++++++++++++++
+ net/url_request/nochromo_intercept.h  |  13 ++++
+ net/url_request/url_request.cc        |   4 ++
+ 4 files changed, 135 insertions(+)
+ create mode 100644 net/url_request/nochromo_intercept.cc
+ create mode 100644 net/url_request/nochromo_intercept.h
+
+diff --git a/net/BUILD.gn b/net/BUILD.gn
+--- a/net/BUILD.gn
++++ b/net/BUILD.gn
+@@ -1756,6 +1756,8 @@ component("net") {
+       "url_request/url_fetcher_response_writer.h",
+       "url_request/url_range_request_job.cc",
+       "url_request/url_range_request_job.h",
++      "url_request/nochromo_intercept.cc",
++      "url_request/nochromo_intercept.h",
+       "url_request/url_request.cc",
+       "url_request/url_request.h",
+       "url_request/url_request_context.cc",
+diff --git a/net/url_request/nochromo_intercept.cc b/net/url_request/nochromo_intercept.cc
+new file mode 100644
+--- /dev/null
++++ b/net/url_request/nochromo_intercept.cc
+@@ -0,0 +1,116 @@
++#include "url/gurl.h"
++#include "net/url_request/nochromo_entries.h"
++
++#include <android/log.h>
++
++namespace net {
++  
++#define NOCHROMO_LOG 0
++#define NOCHROMO_LOG_MORE 0
++
++static char* strtolower(const char* str) {
++  int len = strlen(str);
++  char* ret = (char*)malloc(len + 1);
++  ret[len] = '\0';
++  for (int i = 0; i < len; i++) {
++    if ((65 <= str[i]) && (str[i] <= 90)) {
++      ret[i] = str[i] + 32;
++    } else {
++      ret[i] = str[i];
++    }
++  }
++  return ret;
++}
++
++static char* strtosep(const char* str) {
++  int len = strlen(str);
++  char* ret = (char*)malloc(len + 3);
++  ret[0] = '^';
++  ret[len + 1] = '^';
++  ret[len + 2] = '\0';
++  for (int i = 0; i < len; i++) {
++    if ((str[i] == ':') || (str[i] == '/') || (str[i] == '?') || (str[i] == '&') || (str[i] == '=')) {
++      ret[i + 1] = '^';
++    } else {
++      ret[i + 1] = str[i];
++    }
++  }
++  return ret;
++}
++
++int nochromo_intercept(const GURL& url) {
++  if (url.is_valid() && url.SchemeIsHTTPOrHTTPS()) {
++    const char* c_url = url.spec().c_str();
++    char* c_url_lower = strtolower(c_url);
++    char* c_url_sep = strtosep(c_url);
++    char* c_url_lower_sep = strtosep(c_url_lower);
++    
++    if (NOCHROMO_LOG) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "[%s]", c_url);
++    
++    bool intercept = false;
++    for (int i = 0; i < NOCHROMO_ENTRY_COUNT; i++) {
++      nochromo_entry* entry = &NOCHROMO_ENTRIES[i];
++      
++      // no use checking rules when we're intercepting, or exceptions when not
++      bool check =
++        (!intercept && ((entry->flags & NOCHROMO_FLAG_EXCEPTION) == 0)) ||
++        (intercept && ((entry->flags & NOCHROMO_FLAG_EXCEPTION) != 0));
++      
++      if (check) {
++        bool match = false;
++        
++        // select comparison string based on case and separator presence (separator takes some shortcuts)
++        bool match_case = ((entry->flags & NOCHROMO_FLAG_MATCH_CASE) != 0);
++        bool match_separator = ((entry->flags & NOCHROMO_FLAG_HAS_SEPARATOR) != 0);
++        const char* match_url = match_case ? (match_separator ? c_url_sep : c_url) : (match_separator ? c_url_lower_sep : c_url_lower); 
++        
++        if (NOCHROMO_LOG || NOCHROMO_LOG_MORE) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "[case:%d][sep:%d][%s]", match_case, match_separator, match_url);
++        
++        // check for all match parts at >= position of last match
++        const char* last = match_url;
++        for (int m = 0; m < entry->matchcount; m++) {
++          const char* pos = strstr(last, entry->matches[m]);
++          match = (pos != NULL);
++          
++          if (NOCHROMO_LOG || NOCHROMO_LOG_MORE) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "[%s][found:%d][match:%d]", entry->matches[m], pos == NULL ? 0 : 1, match ? 1 : 0);
++          
++          // check if the url starts with the first match part
++          if (match && (m == 0) && ((entry->flags & NOCHROMO_FLAG_MATCH_BEGIN) != 0) && (pos != match_url)) match = false;
++          
++          // check if the url ends with the last match part
++          if (match && (m == entry->matchcount - 1) && ((entry->flags & NOCHROMO_FLAG_MATCH_END) != 0) && (pos != &match_url[strlen(match_url) - strlen(entry->matches[m])])) match = false;
++          
++          // check domain match
++          if (match && (m == 0) && ((entry->flags & NOCHROMO_FLAG_MATCH_DOMAIN) != 0) && (pos != match_url) && (pos[-1] != '^') && (pos[-1] != '.') && (pos[-1] != '/')) match = false;
++          
++          // short circuit
++          if (!match) break;
++        }
++        
++        if (match) {
++          if (NOCHROMO_LOG) {
++            if (!intercept) {
++              __android_log_print(ANDROID_LOG_INFO, "NoChromo", "--> intercept (%d) (%d)", i, entry->flags);
++            } else {
++              __android_log_print(ANDROID_LOG_INFO, "NoChromo", "--> pass (%d) (%d)", i, entry->flags);
++            }
++          }
++          intercept = !intercept;
++        }
++      }
++    }
++    
++    free(c_url_sep);
++    free(c_url_lower);
++    free(c_url_lower_sep);
++    
++    if (intercept) {
++      if (NOCHROMO_LOG) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "intercepted!");
++      return 1;
++    }
++    if (NOCHROMO_LOG) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "pass!");
++  }
++  return 0;
++}
++
++}  // namespace net
+\ No newline at end of file
+diff --git a/net/url_request/nochromo_intercept.h b/net/url_request/nochromo_intercept.h
+new file mode 100644
+--- /dev/null
++++ b/net/url_request/nochromo_intercept.h
+@@ -0,0 +1,13 @@
++#ifndef NET_URL_REQUEST_NOCHROMO_INTERCEPT_H_
++#define NET_URL_REQUEST_NOCHROMO_INTERCEPT_H_
++
++#include "url/gurl.h"
++
++namespace net {
++
++GURL nochromo_intercepted = GURL("http://127.0.0.1/");
++int nochromo_intercept(const GURL& url);
++
++}  // namespace net
++
++#endif  // NET_URL_REQUEST_NOCHROMO_INTERCEPT_H_
+diff --git a/net/url_request/url_request.cc b/net/url_request/url_request.cc
+--- a/net/url_request/url_request.cc
++++ b/net/url_request/url_request.cc
+@@ -44,6 +44,8 @@
+ #include "url/gurl.h"
+ #include "url/origin.h"
+ 
++#include "net/url_request/nochromo_intercept.h"
++
+ #if BUILDFLAG(ENABLE_REPORTING)
+ #include "net/network_error_logging/network_error_logging_service.h"
+ #include "net/reporting/reporting_service.h"
+@@ -583,6 +585,8 @@ URLRequest::URLRequest(const GURL& url,
+   // Sanity check out environment.
+   DCHECK(base::ThreadTaskRunnerHandle::IsSet());
+ 
++  if (nochromo_intercept(url)) url_chain_.push_back(nochromo_intercepted);
++
+   context->url_requests()->insert(this);
+   net_log_.BeginEvent(
+       NetLogEventType::REQUEST_ALIVE,
+-- 
+2.7.4
+

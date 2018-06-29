@@ -1,3 +1,20 @@
+# 67.0.3396.101
+* set home page to new tab page
+* adjust order of new menu entries, remove help menu item (fixes https://github.com/bromite/bromite/issues/76)
+* remove some Play Services integrations: Auth, Vision, GCM
+* remove TOS/metrics and translate
+* net/cert: increase default key length for newly-generated RSA keys
+* dns: send IPv6 connectivity probes to RIPE DNS rather than Google
+* profile-resetter: do not tick send-settings by default
+* autofill: disable autofill download manager
+* first_run: deactivate autoupdate globally
+* safe_browsing: disable incident reporting
+* safe_browsing: disable reporting of safebrowsing override
+* safe_browsing: disable cookie transmission
+* extensions: always show component extensions in the ext list
+* translate: disable fetching of translate languages from server
+* updated AdBlock filters
+
 # 67.0.3396.95
 * reduce headers sent in DoH requests (fixes https://github.com/bromite/bromite/issues/70)
 * serve DoH requests with maximum priority
