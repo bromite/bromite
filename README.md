@@ -27,7 +27,7 @@ Support development with a donation of 3 EUR: [![paypal](https://www.paypalobjec
 
 Support development with a free amount donation: [![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=LC7Q6A3UAQPY8)
 
-BTC donations address: `3MkC3idL61npQSCxL1gceksmRTkNkiCPcG`
+<a href="bitcoin:3MkC3idL61npQSCxL1gceksmRTkNkiCPcG">BTC donations address</a>: `3MkC3idL61npQSCxL1gceksmRTkNkiCPcG`
 
 ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 
