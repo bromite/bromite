@@ -1,3 +1,7 @@
+# 67.0.3396.107
+* updated AdBlock filters
+* removed patch to use Android Media Player for URLs (fixes https://github.com/bromite/bromite/issues/71)
+
 # 67.0.3396.101
 * set home page to new tab page
 * adjust order of new menu entries, remove help menu item (fixes https://github.com/bromite/bromite/issues/76)
