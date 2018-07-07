@@ -55,6 +55,15 @@ Bromite is about adblocking and privacy.
 No.
 We cannot add add-ons to Bromite (merely some features) and anyway HTTPS everywhere in particular is too invasive to be easily maintained across new releases.
 
+## Is Bromite on Play Store?
+No, and this is unlikely to change. The Play Store would not allow total freedom on the adblocking choice, amongst other limitations.
+
+## Is Bromite on F-Droid?
+Not (yet), for technical reasons. This is likely to change in future.
+
+## Does Bromite support WebRTC?
+No, it is not built-in.
+
 # Features
 
 * baked-in adblock engine with filters from EasyList, EasyPrivacy and others
@@ -71,12 +80,12 @@ You can inspect all functionality/privacy changes by reading the patches: https:
 
 # Releases
 
-All built versions are available as [releases](https://github.com/bromite/bromite/releases).
+All built versions are available as [releases](https://github.com/bromite/bromite/releases); the [official website](https://www.bromite.org/) points to those releases and - when browsing via Android - it will automatically select the one apt for your device.
 
-Each tag corresponds to a Chromium release tag.
+Each tag corresponds to a Chromium Stable release tag.
 
 Bromite is currently built for ARM, ARM64 and x86 and for the Android SDKs versions 16 and 21
-Additionally, SystemWebView, Monochrome and the [vanilla Chromium](https://www.bromite.org/chromium) builds are provided.
+Additionally, [SystemWebView](https://www.bromite.org/system_web_view), Monochrome and the [vanilla Chromium](https://www.bromite.org/chromium) builds are provided.
 
 # How to build
 
@@ -87,9 +96,9 @@ Please refer to [official Chromium build documentation](https://www.chromium.org
 # Credits
 
 * [Chromium project](https://www.chromium.org/Home) and developers
+* [Iridium project](https://github.com/iridium-browser) for some patches
 * [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) for some patches
-* [Iridium project](https://github.com/iridium-browser) for some patches (taken from above ungoogled-chromium)
-* [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (taken from above ungoogled-chromium)
+* [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (via ungoogled-chromium)
 * [Brave Browser](https://github.com/brave/browser-android-tabs) for some patches
 * nochromo for the original adblock patch
 * [AdBlock Plus](https://adblockplus.org/), [uBlock](https://www.ublock.org/), [Peter Lowe's adservers list](https://pgl.yoyo.org/adservers/), [EasyList and EasyPrivacy](https://easylist.to/) for the filters included
