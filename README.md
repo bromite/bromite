@@ -87,6 +87,31 @@ Each tag corresponds to a Chromium Stable release tag.
 Bromite is currently built for ARM, ARM64 and x86 and for the Android SDKs versions 16 and 21
 Additionally, [SystemWebView](https://www.bromite.org/system_web_view), Monochrome and the [vanilla Chromium](https://www.bromite.org/chromium) builds are provided.
 
+## Integrity and authenticity
+
+You can verify the integrity of a downloaded APK file from this project with any `sha256sum`-compatible tool by downloading the corresponding `brm_X.Y.Z.sha256.txt` or `chr_X.Y.Z.sha256.txt` file, where X.Y.Z is the release version number. Example:
+```
+$ sha256sum --check brm_68.0.3440.54.sha256.txt
+arm64_SystemWebView.apk: OK
+arm64_ChromePublic.apk: OK
+arm64_ChromeModernPublic.apk: OK
+arm64_MonochromePublic.apk: OK
+```
+
+If you prefer an UI-based tool, you might want to look into [GtkHash](https://github.com/tristanheaven/gtkhash).
+
+You can verify authenticity, e.g. that the author ([csagan5](https://github.com/csagan5)) released the file, by using gpg2:
+```
+$ gpg2 --quiet --verify brm_68.0.3440.54.sha256.txt.asc
+gpg: assuming signed data in 'brm_68.0.3440.54.sha256.txt'
+gpg: Signature made Sun 08 Jul 2018 04:22:52 PM CEST using RSA key ID D85DC0C5
+gpg: Good signature from "csagan5 <32685696+csagan5@users.noreply.github.com>"
+```
+
+You can download csagan5's public GnuPG key from here: [csagan5.asc](./csagan5.asc).
+
+**NOTE:** releases before v68 did not have published signed hashes files.
+
 # How to build
 
 The [Bromite main repository](https://github.com/bromite/bromite) contains tags for each corresponding Chromium release (see https://chromium.googlesource.com/chromium/src.git).
