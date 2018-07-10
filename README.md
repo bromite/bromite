@@ -126,7 +126,7 @@ Please refer to [official Chromium build documentation](https://www.chromium.org
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (via ungoogled-chromium)
 * [Brave Browser](https://github.com/brave/browser-android-tabs) for some patches
 * nochromo for the original adblock patch
-* [AdBlock Plus](https://adblockplus.org/), [uBlock](https://www.ublock.org/), [Peter Lowe's adservers list](https://pgl.yoyo.org/adservers/), [EasyList and EasyPrivacy](https://easylist.to/) for the filters included
+* [AdBlock Plus](https://adblockplus.org/), [uBlock Origin](https://github.com/uBlockOrigin), [Peter Lowe's adservers list](https://pgl.yoyo.org/adservers/), [EasyList and EasyPrivacy](https://easylist.to/) for the filters included
 
 # License
 
