@@ -1,6 +1,16 @@
-# 67.0.3396.107
+# 68.x
+* add a flag to enable higher maximum connections per host limit (fixes https://github.com/bromite/bromite/issues/61)
+* add a flag to disable custom tab intents (fixes https://github.com/bromite/bromite/issues/81)
+* add a flag to have an always-empty new tab page (fixes https://github.com/bromite/bromite/issues/82)
+* reduced randomization of TextMetrics and ClientRects results
+* disable ads metrics by default
+* disable all field trials (fixes https://github.com/bromite/bromite/issues/83)
+* re-introduced own battery API patch (fixes https://github.com/bromite/bromite/issues/80)
 * updated AdBlock filters
+
+# 67.0.3396.107
 * removed patch to use Android Media Player for URLs (fixes https://github.com/bromite/bromite/issues/71)
+* updated AdBlock filters
 
 # 67.0.3396.101
 * set home page to new tab page
@@ -24,17 +34,18 @@
 * serve DoH requests with maximum priority
 * `CloudFlare` -> `Cloudflare` (fixes https://github.com/bromite/bromite/issues/73)
 * fingerprint mitigations: cover also `ConvertToArrayBufferContents`
+* removed redundant own patch for battery API
 * updated AdBlock filters
 
 # 67.0.3396.92
-* improve randomisation for each retrieved Canvas data (fixes https://github.com/bromite/bromite/issues/69)
+* improve randomization for each retrieved Canvas data (fixes https://github.com/bromite/bromite/issues/69)
 * updated AdBlock filters
 
 # 67.0.3396.88
 * add flag for DNS-over-HTTPS (Google experimental DNS) (fixes https://github.com/bromite/bromite/issues/68)
 * disable signin, translate and data saver UI/internal components (fixes https://github.com/bromite/bromite/issues/67)
 * rename `GoogleEN` -> `Google In English` (fixes https://github.com/bromite/bromite/issues/66)
-* re-enabled text metrics and ToDataURL, ToBlob with randomisation of color data (fixes https://github.com/bromite/bromite/issues/52)
+* re-enabled text metrics and ToDataURL, ToBlob with randomization of color data (fixes https://github.com/bromite/bromite/issues/52)
 * open YouTube links in Bromite
 * use Android Media Player for URLs
 * add exit menu item
@@ -76,7 +87,7 @@
 # 66.0.3359.148
 * disable permanently all custom tab intents (https://github.com/bromite/bromite/issues/17)
 * updated AdBlock filters
-* reduce randomisation for client rects from 5% to 3%
+* reduce randomization for client rects from 5% to 3%
 
 # 65.0.3325.230
 * fixed permission to access Google account issue (https://github.com/bromite/bromite/issues/11)
