@@ -57,7 +57,9 @@ We cannot add add-ons to Bromite (merely some features) and anyway HTTPS everywh
 No, and this is unlikely to change. The Play Store would not allow total freedom on the adblocking choice, amongst other limitations.
 
 ## Is Bromite on F-Droid?
-No and there are no plans to support it; but feel free to submit it yourself.
+It is not on the official F-Droid repository and there are no (more) plans to submit it.
+
+You can use F-Droid client to install and receive updates via [the official Bromite F-Droid repository](https://www.bromite.org/fdroid).
 
 ## Does Bromite support WebRTC?
 No, it is not built-in.
