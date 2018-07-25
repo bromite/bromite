@@ -1,0 +1,61 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sat, 28 Oct 2017 10:09:41 +0200
+Subject: Cure AMP and tracking from search results
+
+---
+ third_party/blink/renderer/core/dom/BUILD.gn    |  1 +
+ third_party/blink/renderer/core/dom/document.cc | 20 +++++++++++++++++++-
+ 2 files changed, 20 insertions(+), 1 deletion(-)
+
+diff --git a/third_party/blink/renderer/core/dom/BUILD.gn b/third_party/blink/renderer/core/dom/BUILD.gn
+--- a/third_party/blink/renderer/core/dom/BUILD.gn
++++ b/third_party/blink/renderer/core/dom/BUILD.gn
+@@ -147,6 +147,7 @@ blink_core_sources("dom") {
+     "events/tree_scope_event_context.h",
+     "events/window_event_context.cc",
+     "events/window_event_context.h",
++    "extensions/dont-track-me.h",
+     "exception_code.h",
+     "first_letter_pseudo_element.cc",
+     "first_letter_pseudo_element.h",
+diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
+--- a/third_party/blink/renderer/core/dom/document.cc
++++ b/third_party/blink/renderer/core/dom/document.cc
+@@ -277,6 +277,8 @@
+ #include "third_party/blink/renderer/platform/wtf/text/text_encoding_registry.h"
+ #include "third_party/blink/renderer/platform/wtf/time.h"
+ 
++#include "extensions/anti_amp_cure.h"
++
+ #ifndef NDEBUG
+ using WeakDocumentSet =
+     blink::PersistentHeapHashSet<blink::WeakMember<blink::Document>>;
+@@ -5882,8 +5884,24 @@ void Document::FinishedParsing() {
+     fetcher_->ClearResourcesFromPreviousFetcher();
+   }
+ 
+-  if (IsPrefetchOnly())
++  if (IsPrefetchOnly()) {
+     WebPrerenderingSupport::Current()->PrefetchFinished();
++    return;
++  }
++
++  // determine whether this is a Google search results page
++  const SecurityOrigin *origin = GetSecurityOrigin();
++  if (origin) {
++    WTF::String domain = origin->Domain();
++    size_t pos = domain.Find(".google.");
++    auto* bodyElement = body();
++    if (bodyElement && (pos != WTF::kNotFound) && (domain.length() - pos - 8 < 4)) {
++      LOG(INFO) << "injecting anti-AMP-cure Javascript payload";
++      HTMLScriptElement* e = HTMLScriptElement::Create(*this, CreateElementFlags());
++      e->setText(ANTI_AMP_CURE_JS);
++      bodyElement->AppendChild(e);
++    }
++  }
+ 
+   FirstMeaningfulPaintDetector::From(*this).CheckNetworkStable();
+ }
+-- 
+2.7.4
+

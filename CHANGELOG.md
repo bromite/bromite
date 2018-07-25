@@ -1,4 +1,6 @@
-# 68.x
+# 68.0.3440.72
+* fix crash during some canvas rendering (fixes https://github.com/bromite/bromite/issues/95)
+* new approach to adblock filtering (fixes https://github.com/bromite/bromite/issues/90)
 * add a flag to enable higher maximum connections per host limit (fixes https://github.com/bromite/bromite/issues/61)
 * add a flag to disable custom tab intents (fixes https://github.com/bromite/bromite/issues/81)
 * add a flag to have an always-empty new tab page (fixes https://github.com/bromite/bromite/issues/82)
