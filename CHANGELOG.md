@@ -1,3 +1,7 @@
+# 68.0.3440.81
+* fix issue with filters with an excluded domain option
+* updated AdBlock filters
+
 # 68.0.3440.72
 * fix crash during some canvas rendering (fixes https://github.com/bromite/bromite/issues/95)
 * new approach to adblock filtering (fixes https://github.com/bromite/bromite/issues/90)

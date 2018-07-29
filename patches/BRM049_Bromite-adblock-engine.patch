@@ -22,12 +22,12 @@ Perform adblock interception in StartJob to address lagging issues
  .../java/strings/android_chrome_strings.grd        |  11 +
  .../subresource_filter_content_settings_manager.cc |   3 +
  net/BUILD.gn                                       |   9 +-
- net/url_request/adblock_intercept.cc               | 326 +++++++++++++++++++++
+ net/url_request/adblock_intercept.cc               | 329 +++++++++++++++++++++
  net/url_request/adblock_intercept.h                |  18 ++
  net/url_request/nochromo_intercept.cc              | 116 --------
  net/url_request/nochromo_intercept.h               |  13 -
  net/url_request/url_request.cc                     |  36 ++-
- 14 files changed, 477 insertions(+), 134 deletions(-)
+ 14 files changed, 480 insertions(+), 134 deletions(-)
  create mode 100644 net/url_request/adblock_intercept.cc
  create mode 100644 net/url_request/adblock_intercept.h
  delete mode 100644 net/url_request/nochromo_intercept.cc
@@ -251,7 +251,7 @@ diff --git a/net/url_request/adblock_intercept.cc b/net/url_request/adblock_inte
 new file mode 100644
 --- /dev/null
 +++ b/net/url_request/adblock_intercept.cc
-@@ -0,0 +1,326 @@
+@@ -0,0 +1,329 @@
 +#include "url/gurl.h"
 +
 +#ifdef ADB_TESTER
@@ -431,69 +431,69 @@ new file mode 100644
 +  return match;
 +}
 +
-+bool url_match_domain(adblock_entry *entry, const std::string &origin_host) {
-+  bool match_domain = true;
-+  // check for a negative domain match
-+  if (entry->domains_neg) {
-+    if (origin_host.empty()) {
-+      // skip this rule, cannot match on domain
-+      return false;
-+    }
-+    for (int d = 0; const char *domain = entry->domains_neg[d]; d++) {
++static int url_match_domain(adblock_entry *entry, const std::string &origin_host) {
++  if (entry->domains_skip && !origin_host.empty()) {
++    // filter will not be activated on these domains
++    for (int d = 0; const char *domain = entry->domains_skip[d]; d++) {
 +      if (domain == origin_host) {
-+        match_domain = false;
-+        break;
++        // this domain is whitelisted, do not further process this rule in any way
++        return 0;
 +      }
++    }
++  }
++  // fallthrough is desired
++
++  if (!entry->domains || origin_host.empty()) {
++    // undetermined
++    return 3;
++  }
++
++  // filter will be active only if a domain matches
++  // if none matches, the filter is to be skipped
++  for (int d = 0; const char *domain = entry->domains[d]; d++) {
++    if (domain == origin_host) {
++      // this domain is one of those that activate the rule
++      return 1;
 +    }
 +  }
 +
-+  // check for a required positive domain match
-+  if (entry->domains) {
-+    if (origin_host.empty()) {
-+      // skip this rule, cannot match on domain
-+      return false;
-+    }
-+    for (int d = 0; const char *domain = entry->domains[d]; d++) {
-+      if (domain != origin_host) {
-+        match_domain = false;
-+        break;
-+      }
-+    }
-+  }
-+  return match_domain;
++  // at least one domain should have been found, but none was
++  // thus the filter must be skipped
++  return 0;
 +}
 +
-+static bool url_match_party(adblock_entry *entry, const GURL &url,
-+                            const std::string &origin_host, bool &checked_fp,
-+                            bool &fp) {
-+  bool wanted_fp;
++static int url_match_party(adblock_entry *entry, const GURL &url,
++                            const std::string &origin_host, int &fp) {
++  int desired_fp;
 +  if ((entry->flags & ADBLOCK_FLAG_THIRD_PARTY) != 0) {
-+    wanted_fp = false;
++    desired_fp = 0;
 +  } else if ((entry->flags & ADBLOCK_FLAG_FIRST_PARTY) != 0) {
-+    wanted_fp = true;
++    desired_fp = 1;
 +  } else {
-+    // no-op
-+    return true;
++    // undetermined, it does not test for first/third party
++    return 3;
 +  }
 +
 +  if (origin_host.empty()) {
 +    // cannot match this rule, no origin host to determine first/third party
-+    return false;
++    return 0;
 +  }
 +
 +#ifdef ADB_TESTER
 +//__android_log_print(ANDROID_LOG_INFO, LOG_TAG, "matchFirst=%d matchThird=%d",
 +// matchFirstParty, matchThirdParty);
 +#endif
-+  if (!checked_fp) {
++  if (fp == 3) {
 +    // lower-case version
 +    char *l_host = strtolower(origin_host.c_str()),
 +         *l_url_host = strtolower(url.host().c_str());
 +
 +    // is the URL a first-party to the current page's host?
-+    fp = is_first_party(l_host, l_url_host);
++    if (is_first_party(l_host, l_url_host))
++      fp = 1;
++    else
++      fp = 0;
 +
-+    checked_fp = true;
 +#ifdef ADB_TESTER
 +    __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
 +                        "is_first_party(\"%s\", \"%s\") = %s", l_host,
@@ -503,7 +503,7 @@ new file mode 100644
 +    free(l_url_host);
 +  }
 +
-+  return fp == wanted_fp;
++  return fp == desired_fp ? 1 : 0;
 +}
 +
 +int adblock_intercept(const GURL &url, const std::string &origin_host) {
@@ -522,7 +522,7 @@ new file mode 100644
 +                        c_url, url.host().c_str(), origin_host.c_str());
 +#endif
 +
-+    bool checked_fp = false, fp = false;
++    int fp = 3;
 +
 +    bool intercept = false;
 +    for (int i = 0; i < ADBLOCK_ENTRY_COUNT; i++) {
@@ -532,19 +532,22 @@ new file mode 100644
 +      bool check =
 +          (!intercept && ((entry->flags & ADBLOCK_FLAG_EXCEPTION) == 0)) ||
 +          (intercept && ((entry->flags & ADBLOCK_FLAG_EXCEPTION) != 0));
++
 +      if (!check)
 +        continue;
 +
 +      // first check for domain matches, a quick branch out if matching
-+      if (!url_match_domain(entry, origin_host))
++      if (0 == url_match_domain(entry, origin_host)) {
 +        continue;
++      }
++      // fallthrough with values 3 (undetermined / no domain options) or 1 (matched)
 +
 +      // check on the URL matcher
 +      if (!url_matches(c_url, c_url_sep, c_url_lower, c_url_lower_sep, entry))
 +        continue;
 +
 +      // finally check first/third-party
-+      if (!url_match_party(entry, url, origin_host, checked_fp, fp))
++      if (0 == url_match_party(entry, url, origin_host, fp))
 +        continue;
 +
 +#ifdef ADBLOCK_LOG
@@ -566,12 +569,12 @@ new file mode 100644
 +
 +    if (intercept) {
 +#ifdef ADBLOCK_LOG
-+      __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "blocked");
++      __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "blocked (fp=%d)", fp);
 +#endif
 +      return 1;
 +    }
 +#ifdef ADBLOCK_LOG
-+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "pass");
++    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "pass (fp=%d)", fp);
 +#endif
 +  }
 +  return 0;
