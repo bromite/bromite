@@ -1,6 +1,6 @@
 # Bromite - Take back your browser
 
-<img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> [![license][license-image]][license-url]
+<img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> <img src="https://www.bromite.org/license.svg" alt="GNU GPL v3" title="GNU VPL v3" />
 
 <img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
 
