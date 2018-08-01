@@ -69,10 +69,12 @@ No, it is not built-in.
 * baked-in adblock engine with filters from EasyList, EasyPrivacy and others
 * remove click-tracking and AMP from search results
 * DNS-over-HTTPS support via Google/CloudFlare servers
-* allow playing videos in background
 * [StartPage](https://startpage.com/), [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
 * webRTC, canvas, audio and other anti-fingerprinting mitigations
+
+## Features not related to privacy
+* allow playing videos in background
 * all codecs included (proprietary, open H.264 etc.)
 * built with official speed optimizations
 
