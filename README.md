@@ -70,6 +70,7 @@ No, it is not built-in.
 * remove click-tracking and AMP from search results
 * DNS-over-HTTPS support via Google/CloudFlare servers
 * [StartPage](https://startpage.com/), [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines
+* chrome flag to hide NTP tiles and to disable custom intents
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
 * webRTC, canvas, audio and other anti-fingerprinting mitigations
 
