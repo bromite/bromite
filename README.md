@@ -74,6 +74,7 @@ No, it is not built-in.
 * webRTC, canvas, audio and other anti-fingerprinting mitigations
 
 ## Features not related to privacy
+* export bookmarks
 * allow playing videos in background
 * all codecs included (proprietary, open H.264 etc.)
 * built with official speed optimizations
