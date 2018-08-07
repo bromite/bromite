@@ -1,3 +1,7 @@
+# 68.0.3440.90
+* reduce rects randomisation by factor of 100
+* use a fixed user-agent (fixes https://github.com/bromite/bromite/issues/103)
+
 # 68.0.3440.87
 * add export button to Bookmarks activity page
 
