@@ -10,7 +10,7 @@ Bromite is only available for Android v4.1 and above.
 
 See [open issues](https://github.com/bromite/bromite/issues) for the development in progress.
 
-<img src="https://www.bromite.org/bromite_bromite_gh_downloads.svg" alt="downloads on Github" title="downloads on Github" /> <img src="https://www.bromite.org/bromite_bromite_xda_downloads.svg" alt="downloads on XDA Labs" title="downloads on XDA Labs" />
+<img src="https://www.bromite.org/bromite_bromite_gh_downloads.svg" alt="downloads on Github" title="downloads on Github" />
 
 # Goals
 
@@ -75,7 +75,7 @@ No, it is not built-in.
 * webRTC, canvas, audio and other anti-fingerprinting mitigations
 
 ## Features not related to privacy
-* export bookmarks
+* import/export bookmarks
 * allow playing videos in background
 * all codecs included (proprietary, open H.264 etc.)
 * built with official speed optimizations
