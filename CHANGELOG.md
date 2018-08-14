@@ -1,9 +1,13 @@
+# 68.0.3440.110
+* add import action to Bookmarks activity page
+* use different user-agent version based on Android OS version
+
 # 68.0.3440.90
 * reduce rects randomisation by factor of 100
 * use a fixed user-agent (fixes https://github.com/bromite/bromite/issues/103)
 
 # 68.0.3440.87
-* add export button to Bookmarks activity page
+* add export action to Bookmarks activity page
 
 # 68.0.3440.81
 * fix issue with filters with an excluded domain option
