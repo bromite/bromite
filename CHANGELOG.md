@@ -1,3 +1,11 @@
+# 68.0.3440.121
+* add option to not persist tabs across sessions (fixes https://github.com/bromite/bromite/issues/106)
+* always incognito mode (fixes https://github.com/bromite/bromite/issues/18)
+* disable domain reliability (ungoogled-chromium)
+* more efficient adblock interception by using proper handler
+* fix log message about default maximum connections
+* improvement for exit menu patch
+
 # 68.0.3440.110
 * add import action to Bookmarks activity page
 * use different user-agent version based on Android OS version

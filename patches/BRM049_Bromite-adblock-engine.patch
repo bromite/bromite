@@ -1,17 +1,15 @@
 From: csagan5 <32685696+csagan5@users.noreply.github.com>
-Date: Wed, 28 Mar 2018 15:55:11 +0200
+Date: Thu, 23 Aug 2018 19:30:15 +0200
 Subject: Bromite adblock engine
 
-Ported from NoChromo patch
+Original adblock engine ported from NoChromo patch
 Make interception testable
 Add domain support
 Re-land: third-party filters support
-
 Add menu option to toggle global Adblock preference
-
 Allow toggling Chromium's "ads enabled" content settings option together with Bromite adblock engine.
-
 Perform adblock interception in StartJob to address lagging issues
+New mechanism for adblocking based on Brave's adblocking hook
 ---
  chrome/android/java/res/menu/custom_tabs_menu.xml  |  12 +
  chrome/android/java/res/menu/main_menu.xml         |  11 +
@@ -20,18 +18,14 @@ Perform adblock interception in StartJob to address lagging issues
  .../browser/appmenu/AppMenuPropertiesDelegate.java |  38 +++
  .../CustomTabAppMenuPropertiesDelegate.java        |   2 +
  .../java/strings/android_chrome_strings.grd        |  11 +
+ chrome/browser/net/chrome_network_delegate.cc      |  55 ++++
  .../subresource_filter_content_settings_manager.cc |   3 +
- net/BUILD.gn                                       |   9 +-
- net/url_request/adblock_intercept.cc               | 326 +++++++++++++++++++++
- net/url_request/adblock_intercept.h                |  18 ++
- net/url_request/nochromo_intercept.cc              | 116 --------
- net/url_request/nochromo_intercept.h               |  13 -
- net/url_request/url_request.cc                     |  36 ++-
- 14 files changed, 477 insertions(+), 134 deletions(-)
+ net/BUILD.gn                                       |   7 +
+ net/url_request/adblock_intercept.cc               | 323 +++++++++++++++++++++
+ net/url_request/adblock_intercept.h                |  19 ++
+ 12 files changed, 497 insertions(+)
  create mode 100644 net/url_request/adblock_intercept.cc
  create mode 100644 net/url_request/adblock_intercept.h
- delete mode 100644 net/url_request/nochromo_intercept.cc
- delete mode 100644 net/url_request/nochromo_intercept.h
 
 diff --git a/chrome/android/java/res/menu/custom_tabs_menu.xml b/chrome/android/java/res/menu/custom_tabs_menu.xml
 --- a/chrome/android/java/res/menu/custom_tabs_menu.xml
@@ -198,6 +192,90 @@ diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/and
        <message name="IDS_MENU_READER_MODE_PREFS" desc="Menu item to show reader mode preferences pane, which allows users to change the appearance (font size, theme, etc.) of the page. [CHAR-LIMIT=27]">
          Appearance
        </message>
+diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/chrome_network_delegate.cc
+--- a/chrome/browser/net/chrome_network_delegate.cc
++++ b/chrome/browser/net/chrome_network_delegate.cc
+@@ -62,6 +62,7 @@
+ #if defined(OS_ANDROID)
+ #include "base/android/path_utils.h"
+ #include "chrome/browser/io_thread.h"
++#include "net/url_request/adblock_intercept.h"
+ #endif
+ 
+ #if defined(OS_CHROMEOS)
+@@ -269,11 +270,63 @@ void ChromeNetworkDelegate::InitializePrefsOnUIThread(
+   }
+ }
+ 
++#define TRANSPARENT1PXGIF "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
++
+ int ChromeNetworkDelegate::OnBeforeURLRequest(
+     net::URLRequest* request,
+     const net::CompletionCallback& callback,
+     GURL* new_url) {
+ 
++#if defined(OS_ANDROID)
++  if (request) {
++    bool block = false, isValidUrl;
++
++    //LOG(INFO) << "OnBeforeURLRequest " << request->url();
++    isValidUrl = request->url().is_valid();
++    std::string scheme = request->url().scheme();
++    if (isValidUrl && scheme.length()) {
++      std::transform(scheme.begin(), scheme.end(), scheme.begin(), ::tolower);
++        if ("http" != scheme && "https" != scheme) {
++          isValidUrl = false;
++        }
++    }
++    const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
++
++    if (isValidUrl && info) {
++#if 0
++      // not working
++      const content::ResourceRequestInfo::WebContentsGetter& web_contents_getter = info->GetWebContentsGetterForRequest();
++      content::WebContents* web_contents = web_contents_getter.Run();
++      if (web_contents) {
++        TabSpecificContentSettings* content_settings =
++        TabSpecificContentSettings::FromWebContents(web_contents);
++        if (content_settings) {
++          bool adblock_enabled = content_settings->IsContentBlocked(CONTENT_SETTINGS_TYPE_ADS);
++          LOG(INFO) << "adblock_enabled from tab: " << adblock_enabled;
++        }
++      }
++#endif
++
++      if (net::adblock_enabled
++        && content::RESOURCE_TYPE_MAIN_FRAME != info->GetResourceType()
++        && net::adblock_intercept(request->url(),
++                                request->site_for_cookies().host(),
++                                info->GetResourceType())) {
++        block = true;
++      }
++
++      if (block) {
++        if (content::RESOURCE_TYPE_IMAGE == info->GetResourceType()) {
++          *new_url = GURL(TRANSPARENT1PXGIF);
++        } else {
++          *new_url = GURL("");
++        }
++        return net::ERR_BLOCKED_BY_ADMINISTRATOR;
++      }
++    } // valid URL and info
++  } // request
++#endif // OS_ANDROID
++
+   extensions_delegate_->ForwardStartRequestStatus(request);
+ 
+   if (!enable_referrers_->GetValue())
+@@ -307,6 +360,8 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
+   return rv;
+ }
+ 
++#undef TRANSPARENT1PXGIF
++
+ int ChromeNetworkDelegate::OnBeforeStartTransaction(
+     net::URLRequest* request,
+     const net::CompletionCallback& callback,
 diff --git a/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc b/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc
 --- a/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc
 +++ b/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc
@@ -224,16 +302,7 @@ diff --git a/chrome/browser/subresource_filter/subresource_filter_content_settin
 diff --git a/net/BUILD.gn b/net/BUILD.gn
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -1734,8 +1734,6 @@ component("net") {
-       "url_request/url_fetcher_response_writer.h",
-       "url_request/url_range_request_job.cc",
-       "url_request/url_range_request_job.h",
--      "url_request/nochromo_intercept.cc",
--      "url_request/nochromo_intercept.h",
-       "url_request/url_request.cc",
-       "url_request/url_request.h",
-       "url_request/url_request_context.cc",
-@@ -1793,6 +1791,13 @@ component("net") {
+@@ -1791,6 +1791,13 @@ component("net") {
        "//third_party/zlib",
      ]
  
@@ -251,8 +320,9 @@ diff --git a/net/url_request/adblock_intercept.cc b/net/url_request/adblock_inte
 new file mode 100644
 --- /dev/null
 +++ b/net/url_request/adblock_intercept.cc
-@@ -0,0 +1,326 @@
+@@ -0,0 +1,323 @@
 +#include "url/gurl.h"
++#include "content/public/common/resource_type.h"
 +
 +#ifdef ADB_TESTER
 +#include <cstddef>
@@ -506,11 +576,7 @@ new file mode 100644
 +  return fp == wanted_fp;
 +}
 +
-+int adblock_intercept(const GURL &url, const std::string &origin_host) {
-+  //  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
-+  //     return 0;
-+  //  }
-+
++int adblock_intercept(const GURL &url, const std::string &origin_host, content::ResourceType resource_type) {
 +  if (url.is_valid() && url.SchemeIsHTTPOrHTTPS()) {
 +    const char *c_url = url.spec().c_str();
 +    char *c_url_lower = strtolower(c_url);
@@ -582,11 +648,12 @@ diff --git a/net/url_request/adblock_intercept.h b/net/url_request/adblock_inter
 new file mode 100644
 --- /dev/null
 +++ b/net/url_request/adblock_intercept.h
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,19 @@
 +#ifndef NET_URL_REQUEST_ADBLOCK_INTERCEPT_H_
 +#define NET_URL_REQUEST_ADBLOCK_INTERCEPT_H_
 +
 +#include "url/gurl.h"
++#include "content/public/common/resource_type.h"
 +
 +namespace net {
 +
@@ -594,213 +661,13 @@ new file mode 100644
 +int adblock_rules_count();
 +#endif
 +
-+int adblock_intercept(const GURL &url, const std::string &origin_host);
++int adblock_intercept(const GURL &url, const std::string &origin_host, content::ResourceType resource_type);
 +
 +extern bool adblock_enabled;
 +
 +} // namespace net
 +
 +#endif // NET_URL_REQUEST_ADBLOCK_INTERCEPT_H_
-diff --git a/net/url_request/nochromo_intercept.cc b/net/url_request/nochromo_intercept.cc
-deleted file mode 100644
---- a/net/url_request/nochromo_intercept.cc
-+++ /dev/null
-@@ -1,116 +0,0 @@
--#include "url/gurl.h"
--#include "net/url_request/nochromo_entries.h"
--
--#include <android/log.h>
--
--namespace net {
--  
--#define NOCHROMO_LOG 0
--#define NOCHROMO_LOG_MORE 0
--
--static char* strtolower(const char* str) {
--  int len = strlen(str);
--  char* ret = (char*)malloc(len + 1);
--  ret[len] = '\0';
--  for (int i = 0; i < len; i++) {
--    if ((65 <= str[i]) && (str[i] <= 90)) {
--      ret[i] = str[i] + 32;
--    } else {
--      ret[i] = str[i];
--    }
--  }
--  return ret;
--}
--
--static char* strtosep(const char* str) {
--  int len = strlen(str);
--  char* ret = (char*)malloc(len + 3);
--  ret[0] = '^';
--  ret[len + 1] = '^';
--  ret[len + 2] = '\0';
--  for (int i = 0; i < len; i++) {
--    if ((str[i] == ':') || (str[i] == '/') || (str[i] == '?') || (str[i] == '&') || (str[i] == '=')) {
--      ret[i + 1] = '^';
--    } else {
--      ret[i + 1] = str[i];
--    }
--  }
--  return ret;
--}
--
--int nochromo_intercept(const GURL& url) {
--  if (url.is_valid() && url.SchemeIsHTTPOrHTTPS()) {
--    const char* c_url = url.spec().c_str();
--    char* c_url_lower = strtolower(c_url);
--    char* c_url_sep = strtosep(c_url);
--    char* c_url_lower_sep = strtosep(c_url_lower);
--    
--    if (NOCHROMO_LOG) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "[%s]", c_url);
--    
--    bool intercept = false;
--    for (int i = 0; i < NOCHROMO_ENTRY_COUNT; i++) {
--      nochromo_entry* entry = &NOCHROMO_ENTRIES[i];
--      
--      // no use checking rules when we're intercepting, or exceptions when not
--      bool check =
--        (!intercept && ((entry->flags & NOCHROMO_FLAG_EXCEPTION) == 0)) ||
--        (intercept && ((entry->flags & NOCHROMO_FLAG_EXCEPTION) != 0));
--      
--      if (check) {
--        bool match = false;
--        
--        // select comparison string based on case and separator presence (separator takes some shortcuts)
--        bool match_case = ((entry->flags & NOCHROMO_FLAG_MATCH_CASE) != 0);
--        bool match_separator = ((entry->flags & NOCHROMO_FLAG_HAS_SEPARATOR) != 0);
--        const char* match_url = match_case ? (match_separator ? c_url_sep : c_url) : (match_separator ? c_url_lower_sep : c_url_lower); 
--        
--        if (NOCHROMO_LOG || NOCHROMO_LOG_MORE) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "[case:%d][sep:%d][%s]", match_case, match_separator, match_url);
--        
--        // check for all match parts at >= position of last match
--        const char* last = match_url;
--        for (int m = 0; m < entry->matchcount; m++) {
--          const char* pos = strstr(last, entry->matches[m]);
--          match = (pos != NULL);
--          
--          if (NOCHROMO_LOG || NOCHROMO_LOG_MORE) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "[%s][found:%d][match:%d]", entry->matches[m], pos == NULL ? 0 : 1, match ? 1 : 0);
--          
--          // check if the url starts with the first match part
--          if (match && (m == 0) && ((entry->flags & NOCHROMO_FLAG_MATCH_BEGIN) != 0) && (pos != match_url)) match = false;
--          
--          // check if the url ends with the last match part
--          if (match && (m == entry->matchcount - 1) && ((entry->flags & NOCHROMO_FLAG_MATCH_END) != 0) && (pos != &match_url[strlen(match_url) - strlen(entry->matches[m])])) match = false;
--          
--          // check domain match
--          if (match && (m == 0) && ((entry->flags & NOCHROMO_FLAG_MATCH_DOMAIN) != 0) && (pos != match_url) && (pos[-1] != '^') && (pos[-1] != '.') && (pos[-1] != '/')) match = false;
--          
--          // short circuit
--          if (!match) break;
--        }
--        
--        if (match) {
--          if (NOCHROMO_LOG) {
--            if (!intercept) {
--              __android_log_print(ANDROID_LOG_INFO, "NoChromo", "--> intercept (%d) (%d)", i, entry->flags);
--            } else {
--              __android_log_print(ANDROID_LOG_INFO, "NoChromo", "--> pass (%d) (%d)", i, entry->flags);
--            }
--          }
--          intercept = !intercept;
--        }
--      }
--    }
--    
--    free(c_url_sep);
--    free(c_url_lower);
--    free(c_url_lower_sep);
--    
--    if (intercept) {
--      if (NOCHROMO_LOG) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "intercepted!");
--      return 1;
--    }
--    if (NOCHROMO_LOG) __android_log_print(ANDROID_LOG_INFO, "NoChromo", "pass!");
--  }
--  return 0;
--}
--
--}  // namespace net
-\ No newline at end of file
-diff --git a/net/url_request/nochromo_intercept.h b/net/url_request/nochromo_intercept.h
-deleted file mode 100644
---- a/net/url_request/nochromo_intercept.h
-+++ /dev/null
-@@ -1,13 +0,0 @@
--#ifndef NET_URL_REQUEST_NOCHROMO_INTERCEPT_H_
--#define NET_URL_REQUEST_NOCHROMO_INTERCEPT_H_
--
--#include "url/gurl.h"
--
--namespace net {
--
--GURL nochromo_intercepted = GURL("http://127.0.0.1/");
--int nochromo_intercept(const GURL& url);
--
--}  // namespace net
--
--#endif  // NET_URL_REQUEST_NOCHROMO_INTERCEPT_H_
-diff --git a/net/url_request/url_request.cc b/net/url_request/url_request.cc
---- a/net/url_request/url_request.cc
-+++ b/net/url_request/url_request.cc
-@@ -44,7 +44,9 @@
- #include "url/gurl.h"
- #include "url/origin.h"
- 
--#include "net/url_request/nochromo_intercept.h"
-+#if defined(OS_ANDROID)
-+#include "net/url_request/adblock_intercept.h"
-+#endif
- 
- #if BUILDFLAG(ENABLE_REPORTING)
- #include "net/network_error_logging/network_error_logging_service.h"
-@@ -585,8 +587,6 @@ URLRequest::URLRequest(const GURL& url,
-   // Sanity check out environment.
-   DCHECK(base::ThreadTaskRunnerHandle::IsSet());
- 
--  if (nochromo_intercept(url)) url_chain_.push_back(nochromo_intercepted);
--
-   context->url_requests()->insert(this);
-   net_log_.BeginEvent(
-       NetLogEventType::REQUEST_ALIVE,
-@@ -665,6 +665,36 @@ void URLRequest::StartJob(URLRequestJob* job) {
-     }
-   }
- 
-+#if defined(OS_ANDROID)
-+  if (net::adblock_enabled) {
-+    std::string initiatorHost;
-+    if (initiator_.has_value()) {
-+      initiatorHost = initiator_.value().host();
-+    }
-+
-+    if (adblock_intercept(url(), initiatorHost)) {
-+      std::string source("delegate");
-+      net_log_.AddEvent(NetLogEventType::CANCELLED,
-+                        NetLog::StringCallback("source", &source));
-+
-+      job_.reset(new URLRequestErrorJob(
-+          this, network_delegate_, ERR_BLOCKED_BY_CLIENT));
-+
-+      job_->SetExtraRequestHeaders(extra_request_headers_);
-+      job_->SetPriority(priority_);
-+      job_->SetRequestHeadersCallback(request_headers_callback_);
-+      job_->SetResponseHeadersCallback(response_headers_callback_);
-+
-+      if (upload_data_stream_.get())
-+        job_->SetUpload(upload_data_stream_.get());
-+
-+      // on fallthrough the initial status will be ERR_IO_PENDING,
-+      // but the URLRequestErrorJob will then call NotifyResponseStarted
-+      // with the correct ERR_BLOCKED_BYCLIENT status
-+    }
-+  }
-+#endif
-+
-   // Start() always completes asynchronously.
-   //
-   // Status is generally set by URLRequestJob itself, but Start() calls
 -- 
 2.7.4
 
