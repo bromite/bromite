@@ -1,3 +1,9 @@
+# 68.0.3440.126
+* add option to disallow custom tab intents (fixes https://github.com/bromite/bromite/issues/117)
+* add option to keep local data until browser exit (fixes https://github.com/bromite/bromite/issues/56)
+* fix for do not persist tabs preference saving
+* extend anti-AMP to all search results
+
 # 68.0.3440.121
 * add option to not persist tabs across sessions (fixes https://github.com/bromite/bromite/issues/106)
 * always incognito mode (fixes https://github.com/bromite/bromite/issues/18)
