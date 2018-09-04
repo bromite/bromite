@@ -62,7 +62,7 @@ It is not on the official F-Droid repository and there are no (more) plans to su
 You can use F-Droid client to install and receive updates via [the official Bromite F-Droid repository](https://www.bromite.org/fdroid).
 
 ## Does Bromite support WebRTC?
-No, it is not built-in.
+Yes, since version 69. While the desktop version of Chromium has an option to disable it (video/audio site settings), the Android version cannot.
 
 # Features
 
@@ -73,7 +73,7 @@ No, it is not built-in.
 * chrome flags to hide NTP tiles, disable custom intents and clear session on exit
 * always-incognito mode
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
-* webRTC, canvas, audio and other anti-fingerprinting mitigations
+* canvas, audio and other anti-fingerprinting mitigations
 
 ## Features not related to privacy
 * import/export bookmarks
