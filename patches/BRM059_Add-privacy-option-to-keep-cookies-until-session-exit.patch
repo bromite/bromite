@@ -1,0 +1,200 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Tue, 28 Aug 2018 23:27:23 +0200
+Subject: Add privacy option to keep cookies until session exit
+
+---
+ chrome/android/java/res/values/values.xml          |  3 +++
+ .../android/java/res/xml/website_preferences.xml   |  7 +++++++
+ .../browser/preferences/PrefServiceBridge.java     | 10 ++++++++++
+ .../website/SingleCategoryPreferences.java         | 23 ++++++++++++++++++++++
+ .../java/strings/android_chrome_strings.grd        |  6 ++++++
+ .../android/preferences/pref_service_bridge.cc     | 19 ++++++++++++++++++
+ 6 files changed, 68 insertions(+)
+
+diff --git a/chrome/android/java/res/values/values.xml b/chrome/android/java/res/values/values.xml
+--- a/chrome/android/java/res/values/values.xml
++++ b/chrome/android/java/res/values/values.xml
+@@ -39,6 +39,9 @@
+     <integer name="reload_button_level_reload">0</integer>
+     <integer name="reload_button_level_stop">1</integer>
+ 
++    <string name="allow_cookies_session_only_title">Keep cookies only until you quit your browser</string>
++    <string name="allow_cookies_session_only_summary">When enabled, all cookies will be erased when the browsing session is over</string>
++
+     <!-- Help and Feedback
+          These constants should be in sync with the context names on go/mobilehelprecs.
+          If the context ID cannot be found, the default help page will be shown to the user.-->
+diff --git a/chrome/android/java/res/xml/website_preferences.xml b/chrome/android/java/res/xml/website_preferences.xml
+--- a/chrome/android/java/res/xml/website_preferences.xml
++++ b/chrome/android/java/res/xml/website_preferences.xml
+@@ -19,6 +19,13 @@
+         android:summary="@string/allow_third_party_cookies_summary"
+         android:defaultValue="true"
+         android:persistent="false" />
++    <!-- A toggle for cookies to be saved only until session exit, only shown for the Cookies category. -->
++    <org.chromium.chrome.browser.preferences.ChromeBaseCheckBoxPreference
++        android:key="cookies_session_only"
++        android:title="@string/allow_cookies_session_only_title"
++        android:summary="@string/allow_cookies_session_only_summary"
++        android:defaultValue="true"
++        android:persistent="false" />
+     <!-- A toggle for enabling vibration in notifications. -->
+     <org.chromium.chrome.browser.preferences.ChromeBaseCheckBoxPreference
+         android:key="notifications_vibrate"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/PrefServiceBridge.java b/chrome/android/java/src/org/chromium/chrome/browser/preferences/PrefServiceBridge.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/preferences/PrefServiceBridge.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/preferences/PrefServiceBridge.java
+@@ -245,6 +245,10 @@ public class PrefServiceBridge {
+         return nativeGetBlockThirdPartyCookiesEnabled();
+     }
+ 
++    public boolean isCookiesSessionOnlyEnabled() {
++        return nativeGetCookiesSessionOnlyEnabled();
++    }
++
+     /**
+      * @return Whether third-party cookie blocking is configured by policy
+      */
+@@ -630,6 +634,10 @@ public class PrefServiceBridge {
+         nativeSetBlockThirdPartyCookiesEnabled(enabled);
+     }
+ 
++    public void setCookiesSessionOnlyEnabled(boolean enabled) {
++        nativeSetCookiesSessionOnlyEnabled(enabled);
++    }
++
+     public void setDoNotTrackEnabled(boolean enabled) {
+         nativeSetDoNotTrackEnabled(enabled);
+     }
+@@ -1026,6 +1034,7 @@ public class PrefServiceBridge {
+     private native boolean nativeGetAutoplayEnabled();
+     private native boolean nativeGetBackgroundSyncEnabled();
+     private native boolean nativeGetBlockThirdPartyCookiesEnabled();
++    private native boolean nativeGetCookiesSessionOnlyEnabled();
+     private native boolean nativeGetBlockThirdPartyCookiesManaged();
+     private native boolean nativeGetRememberPasswordsEnabled();
+     private native boolean nativeGetPasswordManagerAutoSigninEnabled();
+@@ -1073,6 +1082,7 @@ public class PrefServiceBridge {
+     private native void nativeSetAllowCookiesEnabled(boolean allow);
+     private native void nativeSetBackgroundSyncEnabled(boolean allow);
+     private native void nativeSetBlockThirdPartyCookiesEnabled(boolean enabled);
++    private native void nativeSetCookiesSessionOnlyEnabled(boolean enabled);
+     private native void nativeSetClipboardEnabled(boolean allow);
+     private native void nativeSetDoNotTrackEnabled(boolean enabled);
+     private native void nativeSetRememberPasswordsEnabled(boolean allow);
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/website/SingleCategoryPreferences.java b/chrome/android/java/src/org/chromium/chrome/browser/preferences/website/SingleCategoryPreferences.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/preferences/website/SingleCategoryPreferences.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/preferences/website/SingleCategoryPreferences.java
+@@ -104,6 +104,7 @@ public class SingleCategoryPreferences extends PreferenceFragment
+     // Keys for individual preferences.
+     public static final String READ_WRITE_TOGGLE_KEY = "read_write_toggle";
+     public static final String THIRD_PARTY_COOKIES_TOGGLE_KEY = "third_party_cookies";
++    public static final String COOKIES_SESSION_ONLY_TOGGLE_KEY = "cookies_session_only";
+     public static final String NOTIFICATIONS_VIBRATE_TOGGLE_KEY = "notifications_vibrate";
+     public static final String EXPLAIN_PROTECTED_MEDIA_KEY = "protected_content_learn_more";
+     private static final String ADD_EXCEPTION_KEY = "add_exception";
+@@ -459,6 +460,7 @@ public class SingleCategoryPreferences extends PreferenceFragment
+ 
+                 if (type == SiteSettingsCategory.Type.COOKIES) {
+                     updateThirdPartyCookiesCheckBox();
++                    updateCookiesSessionOnlyCheckBox();
+                 } else if (type == SiteSettingsCategory.Type.NOTIFICATIONS) {
+                     updateNotificationsVibrateCheckBox();
+                 }
+@@ -491,6 +493,8 @@ public class SingleCategoryPreferences extends PreferenceFragment
+             getInfoForOrigins();
+         } else if (THIRD_PARTY_COOKIES_TOGGLE_KEY.equals(preference.getKey())) {
+             PrefServiceBridge.getInstance().setBlockThirdPartyCookiesEnabled(!((boolean) newValue));
++        } else if (COOKIES_SESSION_ONLY_TOGGLE_KEY.equals(preference.getKey())) {
++            PrefServiceBridge.getInstance().setCookiesSessionOnlyEnabled(!((boolean) newValue));
+         } else if (NOTIFICATIONS_VIBRATE_TOGGLE_KEY.equals(preference.getKey())) {
+             PrefServiceBridge.getInstance().setNotificationsVibrateEnabled((boolean) newValue);
+         }
+@@ -734,6 +738,16 @@ public class SingleCategoryPreferences extends PreferenceFragment
+             getPreferenceScreen().removePreference(thirdPartyCookies);
+         }
+ 
++        // Configure/hide the keep cookies until session is over toggle, as needed.
++        Preference cookiesSessionOnly = getPreferenceScreen().findPreference(
++                COOKIES_SESSION_ONLY_TOGGLE_KEY);
++        if (mCategory.showSites(SiteSettingsCategory.Type.COOKIES)) {
++            cookiesSessionOnly.setOnPreferenceChangeListener(this);
++            updateCookiesSessionOnlyCheckBox();
++        } else {
++            getPreferenceScreen().removePreference(cookiesSessionOnly);
++        }
++
+         // Configure/hide the notifications vibrate toggle, as needed.
+         Preference notificationsVibrate =
+                 getPreferenceScreen().findPreference(NOTIFICATIONS_VIBRATE_TOGGLE_KEY);
+@@ -847,6 +861,15 @@ public class SingleCategoryPreferences extends PreferenceFragment
+                 preference -> PrefServiceBridge.getInstance().isBlockThirdPartyCookiesManaged());
+     }
+ 
++    private void updateCookiesSessionOnlyCheckBox() {
++        ChromeBaseCheckBoxPreference cookiesSessionOnlyPref = (ChromeBaseCheckBoxPreference)
++                getPreferenceScreen().findPreference(COOKIES_SESSION_ONLY_TOGGLE_KEY);
++        cookiesSessionOnlyPref.setChecked(
++                !PrefServiceBridge.getInstance().isCookiesSessionOnlyEnabled());
++        cookiesSessionOnlyPref.setEnabled(PrefServiceBridge.getInstance().isCategoryEnabled(
++                ContentSettingsType.CONTENT_SETTINGS_TYPE_COOKIES));
++    }
++
+     private void updateNotificationsVibrateCheckBox() {
+         ChromeBaseCheckBoxPreference preference =
+                 (ChromeBaseCheckBoxPreference) getPreferenceScreen().findPreference(
+diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/android/java/strings/android_chrome_strings.grd
+--- a/chrome/android/java/strings/android_chrome_strings.grd
++++ b/chrome/android/java/strings/android_chrome_strings.grd
+@@ -861,6 +861,12 @@ Your Google account may have other forms of browsing history like searches and a
+       <message name="IDS_ALLOW_THIRD_PARTY_COOKIES_SUMMARY" desc="Summary text for Allow Third Party Cookies preference">
+         Third-party websites can save and read cookie data
+       </message>
++      <message name="IDS_ALLOW_COOKIES_SESSION_ONLY_TITLE" desc="Title for Allow Cookies Session Only preference">
++        Keep cookies only until you quit your browser
++      </message>
++      <message name="IDS_ALLOW_COOKIES_SESSION_ONLY_SUMMARY" desc="Summary text for Allow Session Only Cookies preference">
++        When enabled, all cookies will be erased when the browsing session is over
++      </message>
+       <message name="IDS_JAVASCRIPT_PERMISSION_TITLE" desc="Title of the permission to run javascript [CHAR-LIMIT=32]">
+         JavaScript
+       </message>
+diff --git a/chrome/browser/android/preferences/pref_service_bridge.cc b/chrome/browser/android/preferences/pref_service_bridge.cc
+--- a/chrome/browser/android/preferences/pref_service_bridge.cc
++++ b/chrome/browser/android/preferences/pref_service_bridge.cc
+@@ -282,6 +282,14 @@ static jboolean JNI_PrefServiceBridge_GetBlockThirdPartyCookiesEnabled(
+   return GetPrefService()->GetBoolean(prefs::kBlockThirdPartyCookies);
+ }
+ 
++static jboolean JNI_PrefServiceBridge_GetCookiesSessionOnlyEnabled(
++    JNIEnv* env,
++    const JavaParamRef<jobject>& obj) {
++  HostContentSettingsMap* host_content_settings_map =
++      HostContentSettingsMapFactory::GetForProfile(GetOriginalProfile());
++  return CONTENT_SETTING_SESSION_ONLY == host_content_settings_map->GetDefaultContentSetting(CONTENT_SETTINGS_TYPE_COOKIES, nullptr);
++}
++
+ static jboolean JNI_PrefServiceBridge_GetBlockThirdPartyCookiesManaged(
+     JNIEnv* env,
+     const JavaParamRef<jobject>& obj) {
+@@ -741,6 +749,17 @@ static void JNI_PrefServiceBridge_SetBlockThirdPartyCookiesEnabled(
+   GetPrefService()->SetBoolean(prefs::kBlockThirdPartyCookies, enabled);
+ }
+ 
++static void JNI_PrefServiceBridge_SetCookiesSessionOnlyEnabled(
++    JNIEnv* env,
++    const JavaParamRef<jobject>& obj,
++    jboolean enabled) {
++  HostContentSettingsMap* host_content_settings_map =
++      HostContentSettingsMapFactory::GetForProfile(GetOriginalProfile());
++  host_content_settings_map->SetDefaultContentSetting(
++      CONTENT_SETTINGS_TYPE_COOKIES,
++      enabled ? CONTENT_SETTING_ALLOW : CONTENT_SETTING_SESSION_ONLY);
++}
++
+ static void JNI_PrefServiceBridge_SetRememberPasswordsEnabled(
+     JNIEnv* env,
+     const JavaParamRef<jobject>& obj,
+-- 
+2.7.4
+
