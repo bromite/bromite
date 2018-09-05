@@ -4,10 +4,11 @@ about: Create a Bromite bug report
 
 ---
 
-**Version**
+**Bromite version**
 
 Version: `v67...`
 Arch: `arm` or `arm64` or `x86`
+Android version: ... (example: `lollipop`)
 
 **Is the bug reproducible with latest version?**
 `Bug must be reproducible with latest version`
