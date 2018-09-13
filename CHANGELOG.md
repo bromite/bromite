@@ -1,3 +1,6 @@
+# 69.0.3497.91
+* fixed crash when accessing site settings media preferences (fixes https://github.com/bromite/bromite/issues/122)
+
 # 69.0.3497.73
 * enabled WebRTC
 * drop clear HTTP cache patch
