@@ -6,7 +6,7 @@ about: Create a Bromite bug report
 
 **Bromite version**
 
-Version: `v67...`
+Version: `69.0...`
 Arch: `arm` or `arm64` or `x86`
 Android version: ... (example: `lollipop`)
 
