@@ -1,0 +1,175 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Fri, 30 Mar 2018 10:09:03 +0200
+Subject: getClientRects, getBoundingClientRect, measureText: add
+ fingerprinting mitigation
+
+Scale the result of Range::getClientRects, Element::getBoundingClientRect and
+Canvas::measureText by a random +/-3/1000000th of the original value for each
+float in the returned Rect/Quad.
+
+Rationale is that the returned values are within the same order of magnitude
+of the floating point precision being used for fingerprinting and sufficient
+to poison the well.
+
+See also: http://www.gsd.inesc-id.pt/~mpc/pubs/fingerprinting-trustcom2016.pdf
+---
+ third_party/blink/renderer/core/dom/element.cc       | 17 +++++++++++++++++
+ third_party/blink/renderer/core/dom/range.cc         | 20 +++++++++++++++++++-
+ .../blink/renderer/core/html/canvas/text_metrics.cc  | 18 ++++++++++++++++++
+ .../blink/renderer/core/html/canvas/text_metrics.h   |  2 ++
+ .../canvas/canvas2d/canvas_rendering_context_2d.cc   | 10 +++++++++-
+ 5 files changed, 65 insertions(+), 2 deletions(-)
+
+diff --git a/third_party/blink/renderer/core/dom/element.cc b/third_party/blink/renderer/core/dom/element.cc
+--- a/third_party/blink/renderer/core/dom/element.cc
++++ b/third_party/blink/renderer/core/dom/element.cc
+@@ -27,6 +27,7 @@
+ #include "third_party/blink/renderer/core/dom/element.h"
+ 
+ #include <memory>
++#include "base/rand_util.h"
+ 
+ #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
+ #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
+@@ -1382,6 +1383,15 @@ DOMRectList* Element::getClientRects() {
+   DCHECK(element_layout_object);
+   GetDocument().AdjustFloatQuadsForScrollAndAbsoluteZoom(
+       quads, *element_layout_object);
++
++  // scale all quads
++  auto shuffleX = 1 + (base::RandDouble() - 0.5) * 0.000003;
++  auto shuffleY = 1 + (base::RandDouble() - 0.5) * 0.000003;
++
++  for (FloatQuad& quad : quads) {
++    quad.Scale(shuffleX, shuffleY);
++  }
++
+   return DOMRectList::Create(quads);
+ }
+ 
+@@ -1399,6 +1409,13 @@ DOMRect* Element::getBoundingClientRect() {
+   DCHECK(element_layout_object);
+   GetDocument().AdjustFloatRectForScrollAndAbsoluteZoom(result,
+                                                         *element_layout_object);
++
++  // scale rect by 3/1000000th
++  auto shuffleX = 1 + (base::RandDouble() - 0.5) * 0.000003;
++  auto shuffleY = 1 + (base::RandDouble() - 0.5) * 0.000003;
++
++  result.Scale(shuffleX, shuffleY);
++
+   return DOMRect::FromFloatRect(result);
+ }
+ 
+diff --git a/third_party/blink/renderer/core/dom/range.cc b/third_party/blink/renderer/core/dom/range.cc
+--- a/third_party/blink/renderer/core/dom/range.cc
++++ b/third_party/blink/renderer/core/dom/range.cc
+@@ -25,6 +25,8 @@
+ 
+ #include "third_party/blink/renderer/core/dom/range.h"
+ 
++#include "base/rand_util.h"
++
+ #include "third_party/blink/renderer/bindings/core/v8/string_or_trusted_html.h"
+ #include "third_party/blink/renderer/core/dom/character_data.h"
+ #include "third_party/blink/renderer/core/dom/container_node.h"
+@@ -1604,11 +1606,27 @@ DOMRectList* Range::getClientRects() const {
+   Vector<FloatQuad> quads;
+   GetBorderAndTextQuads(quads);
+ 
++  // scale all quads by 3/1000000th
++  auto shuffleX = 1 + (base::RandDouble() - 0.5) * 0.000003;
++  auto shuffleY = 1 + (base::RandDouble() - 0.5) * 0.000003;
++
++  for (FloatQuad& quad : quads) {
++    quad.Scale(shuffleX, shuffleY);
++  }
++
+   return DOMRectList::Create(quads);
+ }
+ 
+ DOMRect* Range::getBoundingClientRect() const {
+-  return DOMRect::FromFloatRect(BoundingRect());
++  auto rect = BoundingRect();
++
++  // scale rect by 3/1000000th
++  auto shuffleX = 1 + (base::RandDouble() - 0.5) * 0.000003;
++  auto shuffleY = 1 + (base::RandDouble() - 0.5) * 0.000003;
++
++  rect.Scale(shuffleX, shuffleY);
++
++  return DOMRect::FromFloatRect(rect);
+ }
+ 
+ // TODO(editing-dev): We should make
+diff --git a/third_party/blink/renderer/core/html/canvas/text_metrics.cc b/third_party/blink/renderer/core/html/canvas/text_metrics.cc
+--- a/third_party/blink/renderer/core/html/canvas/text_metrics.cc
++++ b/third_party/blink/renderer/core/html/canvas/text_metrics.cc
+@@ -48,6 +48,24 @@ float TextMetrics::GetFontBaseline(const TextBaseline& text_baseline,
+   return 0;
+ }
+ 
++void TextMetrics::Shuffle(const double factor) {
++  // x-direction
++  width_ *= factor;
++  actual_bounding_box_left_ *= factor;
++  actual_bounding_box_right_ *= factor;
++
++  // y-direction
++  font_bounding_box_ascent_ *= factor;
++  font_bounding_box_descent_ *= factor;
++  actual_bounding_box_ascent_ *= factor;
++  actual_bounding_box_descent_ *= factor;
++  em_height_ascent_ *= factor;
++  em_height_descent_ *= factor;
++  hanging_baseline_ *= factor;
++  alphabetic_baseline_ *= factor;
++  ideographic_baseline_ *= factor;
++}
++
+ void TextMetrics::Update(const Font& font,
+                          const TextDirection& direction,
+                          const TextBaseline& baseline,
+diff --git a/third_party/blink/renderer/core/html/canvas/text_metrics.h b/third_party/blink/renderer/core/html/canvas/text_metrics.h
+--- a/third_party/blink/renderer/core/html/canvas/text_metrics.h
++++ b/third_party/blink/renderer/core/html/canvas/text_metrics.h
+@@ -68,6 +68,8 @@ class CORE_EXPORT TextMetrics final : public ScriptWrappable {
+ 
+   static float GetFontBaseline(const TextBaseline&, const FontMetrics&);
+ 
++  void Shuffle(const double factor);
++
+  private:
+   void Update(const Font&,
+               const TextDirection&,
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.cc
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.cc
+@@ -33,6 +33,8 @@
+ 
+ #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h"
+ 
++#include "base/rand_util.h"
++
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/public/platform/task_type.h"
+ #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
+@@ -775,8 +777,14 @@ TextMetrics* CanvasRenderingContext2D::measureText(const String& text) {
+   else
+     direction = ToTextDirection(GetState().GetDirection(), canvas());
+ 
+-  return TextMetrics::Create(font, direction, GetState().GetTextBaseline(),
++  TextMetrics* textMetrics = TextMetrics::Create(font, direction, GetState().GetTextBaseline(),
+                              GetState().GetTextAlign(), text);
++
++  // scale text metrics by 3/1000000th
++  auto shuffleFactor = 1 + (base::RandDouble() - 0.5) * 0.000003;
++  textMetrics->Shuffle(shuffleFactor);
++
++  return textMetrics;
+ }
+ 
+ void CanvasRenderingContext2D::DrawTextInternal(
+-- 
+2.7.4
+

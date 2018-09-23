@@ -1,3 +1,10 @@
+# 69.0.3497.102
+* ungoogled-chromium: disable network time tracker
+* ungoogled-chromium: remove third-party/analytics
+* ungoogled-chromium: always use local Devtools instead of remote files
+* build without safebrowsing
+* drop "Hide NTP tiles" flag
+
 # 69.0.3497.91
 * fixed crash when accessing site settings media preferences (fixes https://github.com/bromite/bromite/issues/122)
 
