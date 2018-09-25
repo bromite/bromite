@@ -1,3 +1,5 @@
+# 69.0.3497.109
+
 # 69.0.3497.102
 * ungoogled-chromium: disable network time tracker
 * ungoogled-chromium: remove third-party/analytics
