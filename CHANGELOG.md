@@ -1,3 +1,6 @@
+# 69.0.3497.113
+* disabled DNS-over-HTTPS (DoH) flag, not working since 69.0.3497.73 (see https://github.com/bromite/bromite/issues/139)
+
 # 69.0.3497.109
 
 # 69.0.3497.102
