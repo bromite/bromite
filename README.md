@@ -136,6 +136,7 @@ Please refer to [official Chromium build documentation](https://www.chromium.org
 * [Brave Browser](https://github.com/brave/browser-android-tabs) for some patches
 * nochromo for the original adblock patch
 * [AdBlock Plus](https://adblockplus.org/), [uBlock Origin](https://github.com/uBlockOrigin), [Peter Lowe's adservers list](https://pgl.yoyo.org/adservers/), [EasyList and EasyPrivacy](https://easylist.to/) for the filters included
+* [Vadim Pleshkov](http://vadimpleshkov.me/) for Bromite's logo
 
 # License
 

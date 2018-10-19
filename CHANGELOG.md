@@ -2,7 +2,6 @@
 * re-enabled DNS-over-HTTPS (DoH) flag (fixes https://github.com/bromite/bromite/issues/139)
 * dropped GCM removal patch
 * disable kSigninAllowedOnNextStartup by default
-* fix issue with cookies not cleared on quit (fixes https://github.com/bromite/bromite/issues/142)
 * permanently disable query-in-omnibox (fixes https://github.com/bromite/bromite/issues/143)
 
 # 69.0.3497.113
