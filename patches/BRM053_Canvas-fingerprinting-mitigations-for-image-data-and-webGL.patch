@@ -11,10 +11,11 @@ Credits to Slaviro (https://github.com/Slaviro) for coming up with a better
 approach to change color components.
 ---
  .../modules/webgl/webgl_debug_renderer_info.cc     |   4 +-
+ third_party/blink/renderer/platform/BUILD.gn       |   4 +-
  .../platform/graphics/image_data_buffer.cc         |   5 +
- .../platform/graphics/static_bitmap_image.cc       | 154 +++++++++++++++++++++
+ .../platform/graphics/static_bitmap_image.cc       | 156 +++++++++++++++++++++
  .../platform/graphics/static_bitmap_image.h        |   2 +
- 4 files changed, 163 insertions(+), 2 deletions(-)
+ 5 files changed, 168 insertions(+), 3 deletions(-)
 
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc b/third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc
 --- a/third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc
@@ -33,6 +34,20 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.
  }
  
  const char* WebGLDebugRendererInfo::ExtensionName() {
+diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/renderer/platform/BUILD.gn
+--- a/third_party/blink/renderer/platform/BUILD.gn
++++ b/third_party/blink/renderer/platform/BUILD.gn
+@@ -1428,7 +1428,9 @@ jumbo_component("platform") {
+     "//third_party/blink/renderer:non_test_config",
+   ]
+ 
+-  include_dirs = []
++  include_dirs = [
++    "//third_party/skia/include/private", # For shuffler in graphics/static_bitmap_image.cc
++  ]
+ 
+   public_deps = [
+     ":blink_platform_public_deps",
 diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
 --- a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
 +++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
@@ -45,16 +60,16 @@ diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b
  #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
  #include "third_party/blink/renderer/platform/image-encoders/image_encoder.h"
  #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-@@ -129,6 +131,9 @@ bool ImageDataBuffer::EncodeImageInternal(const ImageEncodingMimeType mime_type,
+@@ -128,6 +130,9 @@ bool ImageDataBuffer::EncodeImageInternal(const ImageEncodingMimeType mime_type,
+                                           const SkPixmap& pixmap) const {
    DCHECK(is_valid_);
  
-   if (mime_type == kMimeTypeJpeg) {
 +  // shuffle subchannel color data within the pixmap
 +  StaticBitmapImage::ShuffleSubchannelColorData(pixmap_.writable_addr(), pixmap_.info(), 0, 0);
 +
+   if (mime_type == kMimeTypeJpeg) {
      SkJpegEncoder::Options options;
      options.fQuality = ImageEncoder::ComputeJpegQuality(quality);
-     options.fAlphaOption = SkJpegEncoder::AlphaOption::kBlendOnBlack;
 diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc b/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
 --- a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
 +++ b/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
@@ -75,7 +90,7 @@ diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
  #include "third_party/skia/include/gpu/GrContext.h"
  
  namespace blink {
-@@ -154,10 +157,161 @@ bool StaticBitmapImage::ConvertToArrayBufferContents(
+@@ -154,10 +157,163 @@ bool StaticBitmapImage::ConvertToArrayBufferContents(
    DCHECK(read_pixels_successful ||
           !sk_image->bounds().intersect(SkIRect::MakeXYWH(
               rect.X(), rect.Y(), info.width(), info.height())));
@@ -124,7 +139,9 @@ diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
 +    int x = currentW * shuffleX, y = currentH * shuffleY;
 +
 +    // calculate randomisation amounts for each RGB component
-+    auto shuffleR = (uint8_t)base::RandInt(0, 4), shuffleG = (uint8_t)base::RandInt(0, 4), shuffleB = (uint8_t)base::RandInt(0, 4);
++    uint8_t shuffleR = base::RandInt(0, 4);
++    uint8_t shuffleG = (shuffleR + x) % 4;
++    uint8_t shuffleB = (shuffleG + y) % 4;
 +
 +    // manipulate pixel data to slightly change the R, G, B components
 +    switch (colorType) {

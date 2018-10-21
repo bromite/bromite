@@ -1,3 +1,6 @@
+# 70.0.3538.71
+* fix bug with canvas fingerprinting (fixes https://github.com/bromite/bromite/issues/154)
+
 # 70.0.3538.67
 * re-enabled DNS-over-HTTPS (DoH) flag (fixes https://github.com/bromite/bromite/issues/139)
 * dropped GCM removal patch
