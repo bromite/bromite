@@ -70,12 +70,12 @@ Yes, since version 69. While the desktop version of Chromium has an option to di
 
 * baked-in adblock engine with filters from EasyList, EasyPrivacy and others
 * remove click-tracking and AMP from search results
-* DNS-over-HTTPS support via Google/CloudFlare servers
+* DNS-over-HTTPS support via Google, Cloudflare and Quad9 servers
 * [StartPage](https://startpage.com/), [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines
 * chrome flags to disable custom intents and clear session on exit
 * always-incognito mode
 * completely removed safe browsing and other privacy-unfriendly features
-* anti-fingerprinting mitigations for canvas, audio, client rects and webGL
+* anti-fingerprinting mitigations for canvas, audio, client rects, webGL and sensor APIs
 * use fixed User-Agent to conceal real model and browser version
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
 

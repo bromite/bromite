@@ -1,3 +1,8 @@
+# 70.0.3538.77
+* disable generic sensor APIs by default (fixes https://github.com/bromite/bromite/issues/160)
+* introduce flag to disable device motion API (fixes https://github.com/bromite/bromite/issues/160)
+* add Quad9 as a DNS-over-HTTPS (DoH) option (fixes https://github.com/bromite/bromite/issues/140)
+
 # 70.0.3538.71
 * fix bug with canvas fingerprinting (fixes https://github.com/bromite/bromite/issues/154)
 
