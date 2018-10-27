@@ -1,3 +1,8 @@
+# 70.0.3538.80
+* add flag to disable video resume functionality, allowing to not pause video playback on tab switch (fixes https://github.com/bromite/bromite/issues/108)
+* prevent "are you there" prompts from appearing when playing videos
+* completely disable update scheduler checks to fix a related crash
+
 # 70.0.3538.77
 * disable generic sensor APIs by default (fixes https://github.com/bromite/bromite/issues/160)
 * introduce flag to disable device motion API (fixes https://github.com/bromite/bromite/issues/160)
