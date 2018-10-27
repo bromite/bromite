@@ -81,7 +81,7 @@ Yes, since version 69. While the desktop version of Chromium has an option to di
 
 ## Features not related to privacy
 * import/export bookmarks
-* allow playing videos in background
+* allow playing videos in background tabs and disable pause on switching tabs
 * all codecs included (proprietary, open H.264 etc.)
 * built with official speed optimizations
 
