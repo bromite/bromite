@@ -1,3 +1,8 @@
+# 70.0.3538.83
+* fix keep session cookies option showing on all site settings views
+* fix blank site settings entry showing (fixes https://github.com/bromite/bromite/issues/166)
+* offer builtin autocomplete for chrome://flags quick access
+
 # 70.0.3538.80
 * add flag to disable video resume functionality, allowing to not pause video playback on tab switch (fixes https://github.com/bromite/bromite/issues/108)
 * prevent "are you there" prompts from appearing when playing videos
