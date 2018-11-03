@@ -1,3 +1,11 @@
+# 70.0.3538.87
+* enable history requirement of user gesture (fixes https://github.com/bromite/bromite/issues/171)
+* enable serialization of scroll position changes while loading (fixes https://github.com/bromite/bromite/issues/171)
+* remove passwords keyboard accessory option (fixes https://github.com/bromite/bromite/issues/171)
+* some improvements to bookmark import/export interaction
+* add flag to disable orientation API, disabled by default
+* disable device motion API by default (fixes https://github.com/bromite/bromite/issues/171)
+
 # 70.0.3538.83
 * fix keep session cookies option showing on all site settings views
 * fix blank site settings entry showing (fixes https://github.com/bromite/bromite/issues/166)

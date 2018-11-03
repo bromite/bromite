@@ -2,24 +2,25 @@ From: csagan5 <32685696+csagan5@users.noreply.github.com>
 Date: Wed, 1 Aug 2018 09:19:40 +0200
 Subject: Add bookmark import/export actions in bookmarks activity and page
 
+Thanks to Arnaud for the snippet on how to add toast notifications
 ---
  .../java/res/menu/bookmark_action_bar_menu.xml     |  14 ++
  .../browser/bookmarks/BookmarkActionBar.java       |  12 ++
  .../chrome/browser/bookmarks/BookmarkActivity.java |  19 ++
- .../chrome/browser/bookmarks/BookmarkBridge.java   |  21 ++
+ .../chrome/browser/bookmarks/BookmarkBridge.java   |  55 ++++++
  .../chrome/browser/bookmarks/BookmarkDelegate.java |  10 +
  .../chrome/browser/bookmarks/BookmarkManager.java  |  20 ++
  .../chrome/browser/bookmarks/BookmarkPage.java     |   1 +
  .../java/strings/android_chrome_strings.grd        |   6 +
  chrome/browser/BUILD.gn                            |   8 +-
- .../browser/android/bookmarks/bookmark_bridge.cc   | 219 +++++++++++++++++++++
- chrome/browser/android/bookmarks/bookmark_bridge.h |  19 +-
+ .../browser/android/bookmarks/bookmark_bridge.cc   | 215 +++++++++++++++++++++
+ chrome/browser/android/bookmarks/bookmark_bridge.h |  20 +-
  chrome/browser/importer/profile_writer.cc          |   2 +
  chrome/common/BUILD.gn                             |   3 +
  chrome/utility/BUILD.gn                            |   7 +-
  chrome/utility/importer/bookmark_html_reader.cc    |  27 ++-
  chrome/utility/importer/bookmark_html_reader.h     |   9 +
- 16 files changed, 387 insertions(+), 10 deletions(-)
+ 16 files changed, 418 insertions(+), 10 deletions(-)
 
 diff --git a/chrome/android/java/res/menu/bookmark_action_bar_menu.xml b/chrome/android/java/res/menu/bookmark_action_bar_menu.xml
 --- a/chrome/android/java/res/menu/bookmark_action_bar_menu.xml
@@ -141,15 +142,36 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java
-@@ -18,6 +18,7 @@ import org.chromium.chrome.browser.profiles.Profile;
+@@ -4,7 +4,11 @@
+ 
+ package org.chromium.chrome.browser.bookmarks;
+ 
++import android.content.Intent;
++import android.content.Context;
++import android.net.Uri;
+ import android.os.SystemClock;
++import android.provider.Browser;
+ import android.text.TextUtils;
+ import android.util.Pair;
+ 
+@@ -13,11 +17,16 @@ import org.chromium.base.ObserverList;
+ import org.chromium.base.VisibleForTesting;
+ import org.chromium.base.annotations.CalledByNative;
+ import org.chromium.base.metrics.RecordHistogram;
++import org.chromium.chrome.browser.document.ChromeLauncherActivity;
++import org.chromium.chrome.browser.IntentHandler;
+ import org.chromium.chrome.browser.partnerbookmarks.PartnerBookmarksShim;
+ import org.chromium.chrome.browser.profiles.Profile;
  import org.chromium.components.bookmarks.BookmarkId;
  import org.chromium.components.bookmarks.BookmarkType;
  import org.chromium.components.url_formatter.UrlFormatter;
++import org.chromium.ui.base.PageTransition;
 +import org.chromium.ui.base.WindowAndroid;
++import org.chromium.ui.widget.Toast;
  
  import java.util.ArrayList;
  import java.util.List;
-@@ -508,6 +509,24 @@ public class BookmarkBridge {
+@@ -508,6 +517,24 @@ public class BookmarkBridge {
      }
  
      /**
@@ -174,7 +196,40 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
       * Synchronously gets a list of bookmarks that match the specified search query.
       * @param query Keyword used for searching bookmarks.
       * @param maxNumberOfResult Maximum number of result to fetch.
-@@ -906,6 +925,8 @@ public class BookmarkBridge {
+@@ -840,6 +867,32 @@ public class BookmarkBridge {
+         depthList.add(depth);
+     }
+ 
++
++    @CalledByNative
++    public void bookmarksImported() {
++        Context context = ContextUtils.getApplicationContext();
++
++        Toast.makeText(ContextUtils.getApplicationContext(), "Bookmarks imported", Toast.LENGTH_LONG).show();
++    }
++
++    @CalledByNative
++    public void bookmarksExported(String bookmarksPath) {
++        Context context = ContextUtils.getApplicationContext();
++
++        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("file://" + bookmarksPath));
++        intent.putExtra(Browser.EXTRA_APPLICATION_ID,
++                        context.getPackageName());
++        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++        intent.putExtra(IntentHandler.EXTRA_PAGE_TRANSITION_TYPE, PageTransition.AUTO_BOOKMARK);
++
++        // If the bookmark manager is shown in a tab on a phone (rather than in a separate
++        // activity) the component name may be null. Send the intent through
++        // ChromeLauncherActivity instead to avoid crashing. See crbug.com/615012.
++        intent.setClass(context, ChromeLauncherActivity.class);
++
++        IntentHandler.startActivityForTrustedIntent(intent);
++    }
++
+     private static List<Pair<Integer, Integer>> createPairsList(int[] left, int[] right) {
+         List<Pair<Integer, Integer>> pairList = new ArrayList<Pair<Integer, Integer>>();
+         for (int i = 0; i < left.length; i++) {
+@@ -906,6 +959,8 @@ public class BookmarkBridge {
              boolean getFolders, boolean getBookmarks, List<BookmarkId> bookmarksList);
      private native BookmarkId nativeGetChildAt(long nativeBookmarkBridge, long id, int type,
              int index);
@@ -437,7 +492,7 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browse
  }
  
  void BookmarkBridge::Destroy(JNIEnv*, const JavaParamRef<jobject>&) {
-@@ -470,6 +539,156 @@ jint BookmarkBridge::GetTotalBookmarkCount(
+@@ -470,6 +539,152 @@ jint BookmarkBridge::GetTotalBookmarkCount(
    return count;
  }
  
@@ -445,6 +500,7 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browse
 +                                       const JavaParamRef<jobject>& obj,
 +                                       const JavaParamRef<jobject>& java_window) {
 +  DCHECK(IsLoaded());
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 +
 +  ui::WindowAndroid* window =
 +      ui::WindowAndroid::FromJavaWindowAndroid(java_window);
@@ -462,39 +518,39 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browse
 +  file_type_info.allowed_paths =
 +      ui::SelectFileDialog::FileTypeInfo::NATIVE_OR_DRIVE_PATH;
 +
-+  const base::FilePath file_path;
-+
 +  select_file_dialog_->SelectFile(
 +        ui::SelectFileDialog::SELECT_OPEN_FILE,
 +        base::string16(),
-+        file_path,
-+        NULL,
++        import_path_,
++        &file_type_info,
 +        0,
 +        base::FilePath::StringType(),
 +        window,
 +        NULL);
-+}
 +
-+void ExporterCallback(Profile* profile, const base::FilePath& path) {
-+  bookmark_html_writer::WriteBookmarks(profile, path, NULL);
-+  //NOTE: nothing will be written if write permission has not been granted before
-+  LOG(INFO) << "Bookmarks exported successfully in " << path;
++  //NOTE: this should be called after the actual import
++  Java_BookmarkBridge_bookmarksImported(env, obj);
 +}
 +
 +void BookmarkBridge::ExportBookmarks(JNIEnv* env,
 +                                       const JavaParamRef<jobject>& obj) {
 +  DCHECK(IsLoaded());
-+  base::FilePath path;
-+  if (!base::android::GetDownloadsDirectory(&path)) {
-+    LOG(ERROR) << "Could not retrieve downloads directory for bookmarks export";
-+    return;
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++
++  if (import_path_.empty()) {
++    if (!base::android::GetDownloadsDirectory(&import_path_)) {
++      LOG(ERROR) << "Could not retrieve downloads directory for bookmarks export";
++      return;
++    }
++    import_path_ = import_path_.Append(FILE_PATH_LITERAL("bookmarks.html"));
 +  }
 +
-+  path = path.Append(FILE_PATH_LITERAL("bookmarks.html"));
++  bookmark_html_writer::WriteBookmarks(profile_, import_path_, NULL);
 +
-+//  base::PostTaskWithTraits(FROM_HERE, {base::MayBlock()},
-+//                            base::BindOnce(&ExporterCallback, profile_, path));
-+  ExporterCallback(profile_, path);
++  //NOTE: nothing will be written if write permission has not been granted before
++  LOG(INFO) << "Bookmarks exported successfully in " << import_path_;
++
++  Java_BookmarkBridge_bookmarksExported(env, obj, ConvertUTF8ToJavaString(env, import_path_.MaybeAsASCII()));
 +}
 +
 +// Attempts to create a TemplateURL from the provided data. |title| is optional.
@@ -511,40 +567,6 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browse
 +  data.SetShortName(title.empty() ? keyword : title);
 +  data.SetURL(TemplateURLRef::DisplayURLToURLRef(url));
 +  return std::make_unique<TemplateURL>(data);
-+}
-+
-+void ImporterCallback(Profile* profile, const base::FilePath& path, const std::string& contents) {
-+  // this import logic comes from BookmarksFileImporter class
-+  std::vector<ImportedBookmarkEntry> bookmarks;
-+  std::vector<importer::SearchEngineInfo> search_engines;
-+
-+  bookmark_html_reader::ImportBookmarksFile(
-+      base::Callback<bool(void)>(),
-+      base::Bind(internal::CanImportURL),
-+      contents,
-+      &bookmarks,
-+      &search_engines,
-+      nullptr);
-+
-+  // writing to profile will begin extensive changes and use the same bookmarks model for persisting changes
-+  auto *writer = new ProfileWriter(profile);
-+
-+  if (!bookmarks.empty()) {
-+    writer->AddBookmarks(bookmarks, base::ASCIIToUTF16("Imported"));
-+  }
-+  if (!search_engines.empty()) {
-+    TemplateURLService::OwnedTemplateURLVector owned_template_urls;
-+    for (const auto& search_engine : search_engines) {
-+      std::unique_ptr<TemplateURL> owned_template_url = CreateTemplateURL(
-+          search_engine.url, search_engine.keyword, search_engine.display_name);
-+      if (owned_template_url)
-+        owned_template_urls.push_back(std::move(owned_template_url));
-+    }
-+    writer->AddKeywords(std::move(owned_template_urls), false);
-+  }
-+
-+  LOG(INFO) << "Imported " << bookmarks.size() << " bookmarks and " <<
-+		search_engines.size() << " search engines from " << path;
 +}
 +
 +void BookmarkBridge::FileSelected(const base::FilePath& path, int index,
@@ -582,10 +604,39 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browse
 +    return;
 +  }
 +
-+  std::string content(buffer.begin(), buffer.end());
-+//  base::PostTaskWithTraits(FROM_HERE, {base::MayBlock()},
-+//                            base::BindOnce(&ImporterCallback, profile_, path, content));
-+  ImporterCallback(profile_, path, content);
++  std::string contents(buffer.begin(), buffer.end());
++
++  // the following import logic comes from BookmarksFileImporter class
++  std::vector<ImportedBookmarkEntry> bookmarks;
++  std::vector<importer::SearchEngineInfo> search_engines;
++
++  bookmark_html_reader::ImportBookmarksFile(
++      base::Callback<bool(void)>(),
++      base::Bind(internal::CanImportURL),
++      contents,
++      &bookmarks,
++      &search_engines,
++      nullptr);
++
++  // writing to profile will begin extensive changes and use the same bookmarks model for persisting changes
++  auto *writer = new ProfileWriter(profile_);
++
++  if (!bookmarks.empty()) {
++    writer->AddBookmarks(bookmarks, base::ASCIIToUTF16("Imported"));
++  }
++  if (!search_engines.empty()) {
++    TemplateURLService::OwnedTemplateURLVector owned_template_urls;
++    for (const auto& search_engine : search_engines) {
++      std::unique_ptr<TemplateURL> owned_template_url = CreateTemplateURL(
++          search_engine.url, search_engine.keyword, search_engine.display_name);
++      if (owned_template_url)
++        owned_template_urls.push_back(std::move(owned_template_url));
++    }
++    writer->AddKeywords(std::move(owned_template_urls), false);
++  }
++
++  LOG(INFO) << "Imported " << bookmarks.size() << " bookmarks and " <<
++		search_engines.size() << " search engines from " << import_path_;
 +}
 +
 +void BookmarkBridge::FileSelectionCanceled(void* params) {
@@ -643,7 +694,14 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.h b/chrome/browser
    void SetBookmarkTitle(JNIEnv* env,
                          const base::android::JavaParamRef<jobject>& obj,
                          jlong id,
-@@ -267,6 +283,7 @@ class BookmarkBridge : public bookmarks::BaseBookmarkModelObserver,
+@@ -261,12 +277,14 @@ class BookmarkBridge : public bookmarks::BaseBookmarkModelObserver,
+   void ShimBeingDeleted(PartnerBookmarksShim* shim) override;
+ 
+   Profile* profile_;
++  base::FilePath import_path_;
+   JavaObjectWeakGlobalRef weak_java_ref_;
+   bookmarks::BookmarkModel* bookmark_model_;  // weak
+   bookmarks::ManagedBookmarkService* managed_bookmark_service_;  // weak
    std::unique_ptr<bookmarks::ScopedGroupBookmarkActions>
        grouped_bookmark_actions_;
    PrefChangeRegistrar pref_change_registrar_;
