@@ -1,3 +1,9 @@
+# 70.0.3538.95
+* fix crash on bookmark edit activity (fixes https://github.com/bromite/bromite/issues/172)
+* fix slow chrome://flags (fixes https://github.com/bromite/bromite/issues/173)
+* enable TLS 1.3 final support by default (fixes https://github.com/bromite/bromite/issues/174)
+* dropped some patches related to GCM/GMS on suspicion of being related to random crashes
+
 # 70.0.3538.87
 * enable history requirement of user gesture (fixes https://github.com/bromite/bromite/issues/171)
 * enable serialization of scroll position changes while loading (fixes https://github.com/bromite/bromite/issues/171)
