@@ -1,3 +1,8 @@
+# 70.0.3538.102
+* do not grant notifications to default search engine
+* remove all promos from bookmark manager page
+* re-introduced various patches to eradicate binary blob dependencies (only Cast left)
+
 # 70.0.3538.95
 * fix crash on bookmark edit activity (fixes https://github.com/bromite/bromite/issues/172)
 * fix slow chrome://flags (fixes https://github.com/bromite/bromite/issues/173)
