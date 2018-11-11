@@ -2,6 +2,7 @@
 * do not grant notifications to default search engine
 * remove all promos from bookmark manager page
 * re-introduced various patches to eradicate binary blob dependencies (only Cast left)
+* remove contacts picker permission
 
 # 70.0.3538.95
 * fix crash on bookmark edit activity (fixes https://github.com/bromite/bromite/issues/172)
