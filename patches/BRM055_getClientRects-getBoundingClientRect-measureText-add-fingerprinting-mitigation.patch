@@ -13,32 +13,85 @@ to poison the well.
 
 See also: http://www.gsd.inesc-id.pt/~mpc/pubs/fingerprinting-trustcom2016.pdf
 ---
- third_party/blink/renderer/core/dom/element.cc       | 17 +++++++++++++++++
- third_party/blink/renderer/core/dom/range.cc         | 20 +++++++++++++++++++-
- .../blink/renderer/core/html/canvas/text_metrics.cc  | 18 ++++++++++++++++++
- .../blink/renderer/core/html/canvas/text_metrics.h   |  2 ++
- .../canvas/canvas2d/canvas_rendering_context_2d.cc   | 10 +++++++++-
- 5 files changed, 65 insertions(+), 2 deletions(-)
+ third_party/blink/renderer/core/dom/document.cc        | 13 +++++++++++++
+ third_party/blink/renderer/core/dom/document.h         |  5 +++++
+ third_party/blink/renderer/core/dom/element.cc         | 16 ++++++++++++++++
+ third_party/blink/renderer/core/dom/range.cc           | 18 +++++++++++++++++-
+ .../blink/renderer/core/html/canvas/text_metrics.cc    | 18 ++++++++++++++++++
+ .../blink/renderer/core/html/canvas/text_metrics.h     |  2 ++
+ .../canvas/canvas2d/canvas_rendering_context_2d.cc     | 10 +++++++++-
+ 7 files changed, 80 insertions(+), 2 deletions(-)
 
+diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
+--- a/third_party/blink/renderer/core/dom/document.cc
++++ b/third_party/blink/renderer/core/dom/document.cc
+@@ -33,6 +33,7 @@
+ 
+ #include "base/auto_reset.h"
+ #include "base/optional.h"
++#include "base/rand_util.h"
+ #include "services/metrics/public/cpp/mojo_ukm_recorder.h"
+ #include "services/metrics/public/cpp/ukm_builders.h"
+ #include "services/metrics/public/cpp/ukm_source_id.h"
+@@ -725,6 +726,10 @@ Document::Document(const DocumentInit& initializer,
+   }
+   DCHECK(fetcher_);
+ 
++  // add X/Y noise factors that will be used to mitigate fingerprinting
++  shuffleFactorX_ = base::RandDouble();
++  shuffleFactorY_ = base::RandDouble();
++
+   root_scroller_controller_ = RootScrollerController::Create(*this);
+ 
+   // We depend on the url getting immediately set in subframes, but we
+@@ -790,6 +795,14 @@ Range* Document::CreateRangeAdjustedToTreeScope(const TreeScope& tree_scope,
+                        Position::BeforeNode(*shadow_host));
+ }
+ 
++double Document::GetShuffleFactorX() {
++	return shuffleFactorX_;
++}
++
++double Document::GetShuffleFactorY() {
++	return shuffleFactorY_;
++}
++
+ SelectorQueryCache& Document::GetSelectorQueryCache() {
+   if (!selector_query_cache_)
+     selector_query_cache_ = std::make_unique<SelectorQueryCache>();
+diff --git a/third_party/blink/renderer/core/dom/document.h b/third_party/blink/renderer/core/dom/document.h
+--- a/third_party/blink/renderer/core/dom/document.h
++++ b/third_party/blink/renderer/core/dom/document.h
+@@ -422,6 +422,9 @@ class CORE_EXPORT Document : public ContainerNode,
+ 
+   String origin() const;
+ 
++  double GetShuffleFactorX();
++  double GetShuffleFactorY();
++
+   String visibilityState() const;
+   mojom::PageVisibilityState GetPageVisibilityState() const;
+   bool hidden() const;
+@@ -1751,6 +1754,8 @@ class CORE_EXPORT Document : public ContainerNode,
+ 
+   double start_time_;
+ 
++  double shuffleFactorX_, shuffleFactorY_;
++
+   TraceWrapperMember<ScriptRunner> script_runner_;
+ 
+   HeapVector<Member<ScriptElementBase>> current_script_stack_;
 diff --git a/third_party/blink/renderer/core/dom/element.cc b/third_party/blink/renderer/core/dom/element.cc
 --- a/third_party/blink/renderer/core/dom/element.cc
 +++ b/third_party/blink/renderer/core/dom/element.cc
-@@ -27,6 +27,7 @@
- #include "third_party/blink/renderer/core/dom/element.h"
- 
- #include <memory>
-+#include "base/rand_util.h"
- 
- #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
- #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
-@@ -1384,6 +1385,15 @@ DOMRectList* Element::getClientRects() {
+@@ -1384,6 +1384,15 @@ DOMRectList* Element::getClientRects() {
    DCHECK(element_layout_object);
    GetDocument().AdjustFloatQuadsForScrollAndAbsoluteZoom(
        quads, *element_layout_object);
 +
 +  // scale all quads
-+  auto shuffleX = 1 + (base::RandDouble() - 0.5) * 0.000003;
-+  auto shuffleY = 1 + (base::RandDouble() - 0.5) * 0.000003;
++  auto shuffleX = 1 + (GetDocument().GetShuffleFactorX() - 0.5) * 0.000003;
++  auto shuffleY = 1 + (GetDocument().GetShuffleFactorY() - 0.5) * 0.000003;
 +
 +  for (FloatQuad& quad : quads) {
 +    quad.Scale(shuffleX, shuffleY);
@@ -47,14 +100,14 @@ diff --git a/third_party/blink/renderer/core/dom/element.cc b/third_party/blink/
    return DOMRectList::Create(quads);
  }
  
-@@ -1401,6 +1411,13 @@ DOMRect* Element::getBoundingClientRect() {
+@@ -1401,6 +1410,13 @@ DOMRect* Element::getBoundingClientRect() {
    DCHECK(element_layout_object);
    GetDocument().AdjustFloatRectForScrollAndAbsoluteZoom(result,
                                                          *element_layout_object);
 +
 +  // scale rect by 3/1000000th
-+  auto shuffleX = 1 + (base::RandDouble() - 0.5) * 0.000003;
-+  auto shuffleY = 1 + (base::RandDouble() - 0.5) * 0.000003;
++  auto shuffleX = 1 + (GetDocument().GetShuffleFactorX() - 0.5) * 0.000003;
++  auto shuffleY = 1 + (GetDocument().GetShuffleFactorY() - 0.5) * 0.000003;
 +
 +  result.Scale(shuffleX, shuffleY);
 +
@@ -64,22 +117,13 @@ diff --git a/third_party/blink/renderer/core/dom/element.cc b/third_party/blink/
 diff --git a/third_party/blink/renderer/core/dom/range.cc b/third_party/blink/renderer/core/dom/range.cc
 --- a/third_party/blink/renderer/core/dom/range.cc
 +++ b/third_party/blink/renderer/core/dom/range.cc
-@@ -25,6 +25,8 @@
- 
- #include "third_party/blink/renderer/core/dom/range.h"
- 
-+#include "base/rand_util.h"
-+
- #include "third_party/blink/renderer/bindings/core/v8/string_or_trusted_html.h"
- #include "third_party/blink/renderer/core/dom/character_data.h"
- #include "third_party/blink/renderer/core/dom/container_node.h"
-@@ -1607,11 +1609,27 @@ DOMRectList* Range::getClientRects() const {
+@@ -1607,11 +1607,27 @@ DOMRectList* Range::getClientRects() const {
    Vector<FloatQuad> quads;
    GetBorderAndTextQuads(quads);
  
 +  // scale all quads by 3/1000000th
-+  auto shuffleX = 1 + (base::RandDouble() - 0.5) * 0.000003;
-+  auto shuffleY = 1 + (base::RandDouble() - 0.5) * 0.000003;
++  auto shuffleX = 1 + (owner_document_->GetShuffleFactorX() - 0.5) * 0.000003;
++  auto shuffleY = 1 + (owner_document_->GetShuffleFactorY() - 0.5) * 0.000003;
 +
 +  for (FloatQuad& quad : quads) {
 +    quad.Scale(shuffleX, shuffleY);
@@ -93,8 +137,8 @@ diff --git a/third_party/blink/renderer/core/dom/range.cc b/third_party/blink/re
 +  auto rect = BoundingRect();
 +
 +  // scale rect by 3/1000000th
-+  auto shuffleX = 1 + (base::RandDouble() - 0.5) * 0.000003;
-+  auto shuffleY = 1 + (base::RandDouble() - 0.5) * 0.000003;
++  auto shuffleX = 1 + (owner_document_->GetShuffleFactorX() - 0.5) * 0.000003;
++  auto shuffleY = 1 + (owner_document_->GetShuffleFactorY() - 0.5) * 0.000003;
 +
 +  rect.Scale(shuffleX, shuffleY);
 +
