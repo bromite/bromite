@@ -1,3 +1,8 @@
+# 70.0.3538.107
+* added adaptive icon (fixes https://github.com/bromite/bromite/issues/181)
+* do not change randomisation at each call (fixes https://github.com/bromite/bromite/issues/177)
+* do not enable #enable-scroll-anchor-serialization by default
+
 # 70.0.3538.102
 * do not grant notifications to default search engine
 * remove all promos from bookmark manager page
