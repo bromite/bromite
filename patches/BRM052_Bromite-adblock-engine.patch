@@ -18,12 +18,12 @@ New mechanism for adblocking based on Brave's adblocking hook
  .../browser/appmenu/AppMenuPropertiesDelegate.java |  38 +++
  .../CustomTabAppMenuPropertiesDelegate.java        |   2 +
  .../java/strings/android_chrome_strings.grd        |  11 +
- chrome/browser/net/chrome_network_delegate.cc      |  62 ++++
+ chrome/browser/net/chrome_network_delegate.cc      |  83 ++++--
  .../subresource_filter_content_settings_manager.cc |   1 +
  net/BUILD.gn                                       |   7 +
  net/url_request/adblock_intercept.cc               | 325 +++++++++++++++++++++
  net/url_request/adblock_intercept.h                |  24 ++
- 12 files changed, 509 insertions(+)
+ 12 files changed, 510 insertions(+), 20 deletions(-)
  create mode 100644 net/url_request/adblock_intercept.cc
  create mode 100644 net/url_request/adblock_intercept.h
 
@@ -52,7 +52,7 @@ diff --git a/chrome/android/java/res/menu/custom_tabs_menu.xml b/chrome/android/
 diff --git a/chrome/android/java/res/menu/main_menu.xml b/chrome/android/java/res/menu/main_menu.xml
 --- a/chrome/android/java/res/menu/main_menu.xml
 +++ b/chrome/android/java/res/menu/main_menu.xml
-@@ -82,6 +82,17 @@
+@@ -84,6 +84,17 @@
            </menu>
          </item>
  
@@ -73,7 +73,7 @@ diff --git a/chrome/android/java/res/menu/main_menu.xml b/chrome/android/java/re
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
-@@ -2121,6 +2121,14 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
+@@ -2205,6 +2205,14 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
              RecordUserAction.record("MobileMenuRequestEnableJavascript");
          } else if (id == R.id.reader_mode_prefs_id) {
              DomDistillerUIUtils.openSettings(currentTab.getWebContents());
@@ -91,7 +91,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-@@ -1669,6 +1669,14 @@ public class ChromeTabbedActivity
+@@ -1676,6 +1676,14 @@ public class ChromeTabbedActivity
                  reportNewTabShortcutUsed(true);
                  getTabCreator(true).launchNTP();
              }
@@ -109,7 +109,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedAct
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
-@@ -196,6 +196,8 @@ public class AppMenuPropertiesDelegate {
+@@ -208,6 +208,8 @@ public class AppMenuPropertiesDelegate {
                      && !TextUtils.isEmpty(url);
              prepareAddToHomescreenMenuItem(menu, currentTab, canShowHomeScreenMenuItem);
  
@@ -118,7 +118,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenu
              updateRequestDesktopSiteMenuItem(menu, currentTab, true /* can show */);
  
              updateEnableJavascriptMenuItem(menu, currentTab);
-@@ -474,6 +476,42 @@ public class AppMenuPropertiesDelegate {
+@@ -486,6 +488,42 @@ public class AppMenuPropertiesDelegate {
      }
  
      /**
@@ -164,7 +164,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenu
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
-@@ -171,6 +171,8 @@ public class CustomTabAppMenuPropertiesDelegate extends AppMenuPropertiesDelegat
+@@ -181,6 +181,8 @@ public class CustomTabAppMenuPropertiesDelegate extends AppMenuPropertiesDelegat
                  }
              }
  
@@ -176,7 +176,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/Cust
 diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/android/java/strings/android_chrome_strings.grd
 --- a/chrome/android/java/strings/android_chrome_strings.grd
 +++ b/chrome/android/java/strings/android_chrome_strings.grd
-@@ -2926,6 +2926,17 @@ To obtain new licenses, connect to the internet and play your downloaded content
+@@ -2997,6 +2997,17 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
        <message name="IDS_MENU_REQUEST_DESKTOP_SITE_OFF" desc="Accessibility description for when Request Desktop Site is disabled.">
          Turn on Request desktop site
        </message>
@@ -197,7 +197,7 @@ diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/and
 diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/chrome_network_delegate.cc
 --- a/chrome/browser/net/chrome_network_delegate.cc
 +++ b/chrome/browser/net/chrome_network_delegate.cc
-@@ -24,6 +24,7 @@
+@@ -25,6 +25,7 @@
  #include "build/build_config.h"
  #include "chrome/browser/browser_process.h"
  #include "chrome/browser/content_settings/cookie_settings_factory.h"
@@ -205,7 +205,7 @@ diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/
  #include "chrome/browser/content_settings/tab_specific_content_settings.h"
  #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
  #include "chrome/browser/net/chrome_extensions_network_delegate.h"
-@@ -57,6 +58,7 @@
+@@ -60,6 +61,7 @@
  #if defined(OS_ANDROID)
  #include "base/android/path_utils.h"
  #include "chrome/browser/io_thread.h"
@@ -213,7 +213,7 @@ diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/
  #endif
  
  #if defined(OS_CHROMEOS)
-@@ -174,15 +176,75 @@ void ChromeNetworkDelegate::set_cookie_settings(
+@@ -207,34 +209,75 @@ void ChromeNetworkDelegate::set_cookie_settings(
    cookie_settings_ = cookie_settings;
  }
  
@@ -223,7 +223,26 @@ diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/
      net::URLRequest* request,
      net::CompletionOnceCallback callback,
      GURL* new_url) {
-+
+-  extensions_delegate_->ForwardStartRequestStatus(request);
+-
+-  // The non-redirect case is handled in GoogleURLLoaderThrottle.
+-  bool force_safe_search =
+-      (force_google_safe_search_ && force_google_safe_search_->GetValue() &&
+-       request->is_redirecting());
+-
+-  net::CompletionOnceCallback wrapped_callback = std::move(callback);
+-
+-  if (force_safe_search) {
+-    wrapped_callback = base::BindOnce(
+-        &ForceGoogleSafeSearchCallbackWrapper, std::move(wrapped_callback),
+-        base::Unretained(request), base::Unretained(new_url));
+-  }
+ 
+-  int rv = extensions_delegate_->NotifyBeforeURLRequest(
+-      request, std::move(wrapped_callback), new_url);
+-
+-  if (force_safe_search && rv == net::OK && new_url->is_empty())
+-    safe_search_util::ForceGoogleSafeSearch(request->url(), new_url);
 +#if defined(OS_ANDROID)
 +  if (request) {
 +    bool block = false, isValidUrl;
@@ -278,10 +297,11 @@ diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/
 +    } // valid URL and info
 +  } // request
 +#endif // OS_ANDROID
-+
-   extensions_delegate_->ForwardStartRequestStatus(request);
-   return extensions_delegate_->NotifyBeforeURLRequest(
-       request, std::move(callback), new_url);
+ 
+-  return rv;
++  extensions_delegate_->ForwardStartRequestStatus(request);
++  return extensions_delegate_->NotifyBeforeURLRequest(
++      request, std::move(callback), new_url);
  }
  
 +#undef TRANSPARENT1PXGIF
@@ -303,7 +323,7 @@ diff --git a/chrome/browser/subresource_filter/subresource_filter_content_settin
 diff --git a/net/BUILD.gn b/net/BUILD.gn
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -1712,6 +1712,13 @@ component("net") {
+@@ -1731,6 +1731,13 @@ component("net") {
        "url_request/websocket_handshake_userdata_key.h",
      ]
  

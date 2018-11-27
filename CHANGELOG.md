@@ -1,3 +1,6 @@
+# 71.0.3578.72
+* add flag to disable IPv6 probes
+
 # 70.0.3538.107
 * added adaptive icon (fixes https://github.com/bromite/bromite/issues/181)
 * do not change randomisation at each call (fixes https://github.com/bromite/bromite/issues/177)
