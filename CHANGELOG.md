@@ -1,4 +1,9 @@
+# 71.0.3578.88
+* add proxy configuration page (see https://github.com/bromite/bromite/wiki/ProxyConfiguration)
+* use more recent versions in User-Agent (fixes https://github.com/bromite/bromite/issues/156)
+
 # 71.0.3578.85
+* fix blurry adaptive icon (fixes https://github.com/bromite/bromite/issues/197)
 
 # 71.0.3578.76
 

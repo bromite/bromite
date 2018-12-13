@@ -76,6 +76,7 @@ Yes, since version 69. While the desktop version of Chromium has an option to di
 * baked-in adblock engine with filters from EasyList, EasyPrivacy and others
 * remove click-tracking and AMP from search results
 * DNS-over-HTTPS support via Google, Cloudflare and Quad9 servers
+* [proxy configuration page](https://github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
 * [StartPage](https://startpage.com/), [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines
 * chrome flags to disable custom intents and clear session on exit
 * always-incognito mode
