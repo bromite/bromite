@@ -1,3 +1,6 @@
+# 71.0.3578.98
+* do not ask permissions for camera when importing bookmarks (fixes https://github.com/bromite/bromite/issues/200)
+
 # 71.0.3578.88
 * add proxy configuration page (see https://github.com/bromite/bromite/wiki/ProxyConfiguration)
 * use more recent versions in User-Agent (fixes https://github.com/bromite/bromite/issues/156)
