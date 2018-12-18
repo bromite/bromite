@@ -1,3 +1,5 @@
+# 71.0.3578.101
+
 # 71.0.3578.98
 * do not ask permissions for camera when importing bookmarks (fixes https://github.com/bromite/bromite/issues/200)
 
