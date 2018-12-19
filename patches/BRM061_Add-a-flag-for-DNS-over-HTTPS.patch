@@ -1,0 +1,285 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sat, 28 Apr 2018 08:30:26 +0200
+Subject: Add a flag for DNS-over-HTTPS
+
+Allow selection between Google and Cloudflare endpoints.
+Serve DoH requests with maximum priority, remove traffic annotation.
+Reduce HTTP headers in DoH requests to bare minimum.
+
+See also: https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-12.txt
+---
+ chrome/browser/about_flags.cc                      | 13 ++++++++++
+ chrome/browser/flag_descriptions.cc                |  3 +++
+ chrome/browser/flag_descriptions.h                 |  3 +++
+ .../browser/net/system_network_context_manager.cc  | 16 ++++++-------
+ .../common/network_features.cc                     |  6 +++--
+ .../common/network_features.h                      |  4 +++-
+ .../common/network_switch_list.h                   |  4 ++++
+ net/base/load_flags_list.h                         |  6 +++++
+ net/dns/dns_transaction.cc                         | 28 +++-------------------
+ net/url_request/url_request_http_job.cc            | 26 ++++++++++++--------
+ 10 files changed, 62 insertions(+), 47 deletions(-)
+
+diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
+--- a/chrome/browser/about_flags.cc
++++ b/chrome/browser/about_flags.cc
+@@ -461,6 +461,13 @@ const FeatureEntry::FeatureVariation kCCTModuleCacheVariations[] = {
+      base::size(kCCTModuleCache_ThirtyMinutes), nullptr},
+ };
+ 
++const FeatureEntry::Choice kDnsOverHttpsChoices[] = {
++    {features::kDnsOverHttpsChoiceDefault, "", ""},
++    {features::kDnsOverHttpsChoiceGoogle, switches::kDnsOverHttpsServer, "https://dns.google.com/experimental"},
++    {features::kDnsOverHttpsChoiceCloudflare, switches::kDnsOverHttpsServer, "https://1.1.1.1/dns-query"},
++    {features::kDnsOverHttpsChoiceQuad9, switches::kDnsOverHttpsServer, "https://9.9.9.9/dns-query"}
++};
++
+ #endif  // OS_ANDROID
+ 
+ const FeatureEntry::Choice kNumRasterThreadsChoices[] = {
+@@ -3659,6 +3666,12 @@ const FeatureEntry kFeatureEntries[] = {
+      FEATURE_VALUE_TYPE(features::kAsyncDns)},
+ #endif  // defined(OS_ANDROID)
+ 
++#if defined(OS_ANDROID)
++    {"enable-dns-over-https", flag_descriptions::kDnsOverHttpsName,
++     flag_descriptions::kDnsOverHttpsDescription, kOsAndroid,
++     MULTI_VALUE_TYPE(kDnsOverHttpsChoices)},
++#endif  // defined(OS_ANDROID)
++
+     {"enable-overflow-icons-for-media-controls",
+      flag_descriptions::kOverflowIconsForMediaControlsName,
+      flag_descriptions::kOverflowIconsForMediaControlsDescription, kOsAll,
+diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
+--- a/chrome/browser/flag_descriptions.cc
++++ b/chrome/browser/flag_descriptions.cc
+@@ -2209,6 +2209,9 @@ const char kAutoFetchOnNetErrorPageDescription[] =
+     "When enabled, and navigation fails with an offline error, schedule a "
+     "fetch of the page when online again.";
+ 
++const char kDnsOverHttpsName[] = "DNS over HTTPS";
++const char kDnsOverHttpsDescription[] = "Enables DNS-over-HTTPS (experimental).";
++
+ const char kAutofillAccessoryViewName[] =
+     "Autofill suggestions as keyboard accessory view";
+ const char kAutofillAccessoryViewDescription[] =
+diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptions.h
+--- a/chrome/browser/flag_descriptions.h
++++ b/chrome/browser/flag_descriptions.h
+@@ -1343,6 +1343,9 @@ extern const char kAsyncDnsDescription[];
+ extern const char kAutoFetchOnNetErrorPageName[];
+ extern const char kAutoFetchOnNetErrorPageDescription[];
+ 
++extern const char kDnsOverHttpsName[];
++extern const char kDnsOverHttpsDescription[];
++
+ extern const char kAutofillAccessoryViewName[];
+ extern const char kAutofillAccessoryViewDescription[];
+ 
+diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/browser/net/system_network_context_manager.cc
+--- a/chrome/browser/net/system_network_context_manager.cc
++++ b/chrome/browser/net/system_network_context_manager.cc
+@@ -22,6 +22,7 @@
+ #include "chrome/browser/component_updater/sth_set_component_installer.h"
+ #include "chrome/browser/io_thread.h"
+ #include "chrome/browser/net/chrome_mojo_proxy_resolver_factory.h"
++#include "components/network_session_configurator/common/network_switches.h"
+ #include "chrome/browser/safe_browsing/safe_browsing_service.h"
+ #include "chrome/browser/ssl/ssl_config_service_manager.h"
+ #include "chrome/common/channel_info.h"
+@@ -389,15 +390,12 @@ SystemNetworkContextManager::SystemNetworkContextManager(
+                                     base::Value(ShouldEnableAsyncDns()));
+   base::ListValue default_doh_servers;
+   base::ListValue default_doh_server_methods;
+-  if (base::FeatureList::IsEnabled(features::kDnsOverHttps)) {
+-    std::string server(variations::GetVariationParamValueByFeature(
+-        features::kDnsOverHttps, "server"));
+-    std::string method(variations::GetVariationParamValueByFeature(
+-        features::kDnsOverHttps, "method"));
+-    if (!server.empty()) {
+-      default_doh_servers.AppendString(server);
+-      default_doh_server_methods.AppendString(method);
+-    }
++  std::string server =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++      switches::kDnsOverHttpsServer);
++  if (!server.empty()) {
++    default_doh_servers.AppendString(server);
++    default_doh_server_methods.AppendString("POST");
+   }
+   local_state_->SetDefaultPrefValue(prefs::kDnsOverHttpsServers,
+                                     std::move(default_doh_servers));
+diff --git a/components/network_session_configurator/common/network_features.cc b/components/network_session_configurator/common/network_features.cc
+--- a/components/network_session_configurator/common/network_features.cc
++++ b/components/network_session_configurator/common/network_features.cc
+@@ -10,7 +10,9 @@ namespace features {
+ 
+ const base::Feature kChannelID{"channel-id", base::FEATURE_DISABLED_BY_DEFAULT};
+ 
+-const base::Feature kDnsOverHttps{"dns-over-https",
+-                                  base::FEATURE_DISABLED_BY_DEFAULT};
++const char kDnsOverHttpsChoiceDefault[] = "Disabled",
++                 kDnsOverHttpsChoiceGoogle[] = "Google",
++                 kDnsOverHttpsChoiceCloudflare[] = "Cloudflare",
++                 kDnsOverHttpsChoiceQuad9[] = "Quad9";
+ 
+ }  // namespace features
+diff --git a/components/network_session_configurator/common/network_features.h b/components/network_session_configurator/common/network_features.h
+--- a/components/network_session_configurator/common/network_features.h
++++ b/components/network_session_configurator/common/network_features.h
+@@ -13,9 +13,11 @@ namespace features {
+ // Enables Channel ID.
+ NETWORK_SESSION_CONFIGURATOR_EXPORT extern const base::Feature kChannelID;
+ 
+-// Enabled DNS over HTTPS
++// DNS over HTTPS server endpoint choices
+ // (https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-12.txt).
+ NETWORK_SESSION_CONFIGURATOR_EXPORT extern const base::Feature kDnsOverHttps;
++NETWORK_SESSION_CONFIGURATOR_EXPORT extern const char kDnsOverHttpsChoiceDefault[],
++   kDnsOverHttpsChoiceGoogle[], kDnsOverHttpsChoiceCloudflare[], kDnsOverHttpsChoiceQuad9[];
+ 
+ }  // namespace features
+ 
+diff --git a/components/network_session_configurator/common/network_switch_list.h b/components/network_session_configurator/common/network_switch_list.h
+--- a/components/network_session_configurator/common/network_switch_list.h
++++ b/components/network_session_configurator/common/network_switch_list.h
+@@ -35,6 +35,10 @@ NETWORK_SWITCH(kOriginToForceQuicOn, "origin-to-force-quic-on")
+ // the server.
+ NETWORK_SWITCH(kQuicConnectionOptions, "quic-connection-options")
+ 
++// Specifies an IETF DNS-over-HTTPS server endpoint
++// (https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-02.txt).
++NETWORK_SWITCH(kDnsOverHttpsServer, "dns-over-https-server")
++
+ // Specifies the maximum length for a QUIC packet.
+ NETWORK_SWITCH(kQuicMaxPacketLength, "quic-max-packet-length")
+ 
+diff --git a/net/base/load_flags_list.h b/net/base/load_flags_list.h
+--- a/net/base/load_flags_list.h
++++ b/net/base/load_flags_list.h
+@@ -92,6 +92,12 @@ LOAD_FLAG(MAYBE_USER_GESTURE, 1 << 14)
+ LOAD_FLAG(DO_NOT_USE_EMBEDDED_IDENTITY, 1 << 15)
+ 
+ // Indicates that this request is not to be migrated to a cellular network when
++
++// This load will not send Accept-Language or User-Agent headers, and not
++// advertise brotli encoding.
++// Used to comply with IETF (draft) DNS-over-HTTPS:
++// "Implementors SHOULD NOT set non-essential HTTP headers in DoH client requests."
++LOAD_FLAG(MINIMAL_HEADERS, 1 << 18)
+ // QUIC connection migration is enabled.
+ LOAD_FLAG(DISABLE_CONNECTION_MIGRATION_TO_CELLULAR, 1 << 16)
+ 
+diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
+--- a/net/dns/dns_transaction.cc
++++ b/net/dns/dns_transaction.cc
+@@ -358,30 +358,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
+ 
+     HttpRequestHeaders extra_request_headers;
+     extra_request_headers.SetHeader("Accept", kDnsOverHttpResponseContentType);
+-
+-    request_ = url_request_context->CreateRequest(
+-        url, request_priority_, this,
+-        net::DefineNetworkTrafficAnnotation("dns_over_https", R"(
+-        semantics {
+-          sender: "DNS over HTTPS"
+-          description: "Domain name resolution over HTTPS"
+-          trigger: "User enters a navigates to a domain or Chrome otherwise "
+-                   "makes a connection to a domain whose IP address isn't cached"
+-          data: "The domain name that is being requested"
+-          destination: OTHER
+-          destination_other: "The user configured DNS over HTTPS server, which"
+-                             "may be dns.google.com"
+-        }
+-        policy {
+-          cookies_allowed: NO
+-          setting:
+-            "You can configure this feature via that 'dns_over_https_servers' and"
+-            "'dns_over_https.method' prefs. Empty lists imply this feature is"
+-            "disabled"
+-          policy_exception_justification: "Experimental feature that"
+-                                          "is disabled by default"
+-        }
+-      )"));
++    request_ = url_request_context->CreateRequest(url, request_priority_, this);
+     net_log_ = request_->net_log();
+ 
+     if (use_post) {
+@@ -397,6 +374,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
+ 
+     request_->SetExtraRequestHeaders(extra_request_headers);
+     request_->SetLoadFlags(request_->load_flags() | LOAD_DISABLE_CACHE |
++                           LOAD_IGNORE_LIMITS | LOAD_MINIMAL_HEADERS |
+                            LOAD_BYPASS_PROXY);
+     request_->set_allow_credentials(false);
+   }
+@@ -819,7 +797,7 @@ class DnsTransactionImpl : public DnsTransaction,
+         had_tcp_attempt_(false),
+         doh_attempt_(false),
+         first_server_index_(0),
+-        request_priority_(DEFAULT_PRIORITY) {
++        request_priority_(MAXIMUM_PRIORITY) {
+     DCHECK(session_.get());
+     DCHECK(!hostname_.empty());
+     DCHECK(!callback_.is_null());
+diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_request_http_job.cc
+--- a/net/url_request/url_request_http_job.cc
++++ b/net/url_request/url_request_http_job.cc
+@@ -434,19 +434,23 @@ void URLRequestHttpJob::Start() {
+   // plugin could set a referrer although sending the referrer is inhibited.
+   request_info_.extra_headers.RemoveHeader(HttpRequestHeaders::kReferer);
+ 
+-  // Our consumer should have made sure that this is a safe referrer. See for
+-  // instance WebCore::FrameLoader::HideReferrer.
+-  if (referrer.is_valid()) {
+-    request_info_.extra_headers.SetHeader(HttpRequestHeaders::kReferer,
++  if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
++    // Our consumer should have made sure that this is a safe referrer. See for
++    // instance WebCore::FrameLoader::HideReferrer.
++    if (referrer.is_valid()) {
++      request_info_.extra_headers.SetHeader(HttpRequestHeaders::kReferer,
+                                           referrer.spec());
++    }
+   }
+ 
+   // This should be kept in sync with the corresponding code in
+   // URLRequest::GetUserAgent.
+-  request_info_.extra_headers.SetHeaderIfMissing(
++  if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
++    request_info_.extra_headers.SetHeaderIfMissing(
+       HttpRequestHeaders::kUserAgent,
+       http_user_agent_settings_ ?
+           http_user_agent_settings_->GetUserAgent() : std::string());
++  }
+ 
+   AddExtraHeaders();
+   AddCookieHeaderAndStart();
+@@ -664,10 +668,12 @@ void URLRequestHttpJob::AddExtraHeaders() {
+           HttpRequestHeaders::kAcceptEncoding)) {
+     // Advertise "br" encoding only if transferred data is opaque to proxy.
+     bool advertise_brotli = false;
+-    if (request()->context()->enable_brotli()) {
+-      if (request()->url().SchemeIsCryptographic() ||
+-          IsLocalhost(request()->url())) {
+-        advertise_brotli = true;
++    if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
++      if (request()->context()->enable_brotli()) {
++        if (request()->url().SchemeIsCryptographic() ||
++            IsLocalhost(request()->url())) {
++          advertise_brotli = true;
++        }
+       }
+     }
+ 
+@@ -684,7 +690,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
+                                           advertised_encodings);
+   }
+ 
+-  if (http_user_agent_settings_) {
++  if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS) && http_user_agent_settings_) {
+     // Only add default Accept-Language if the request didn't have it
+     // specified.
+     std::string accept_language =
+-- 
+2.11.0
+

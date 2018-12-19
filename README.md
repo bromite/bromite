@@ -8,8 +8,6 @@ Bromite is [Chromium](https://www.chromium.org/Home) plus some patches for ad bl
 
 Bromite is only available for Android v4.1 and above.
 
-See [open issues](https://github.com/bromite/bromite/issues) for the development in progress.
-
 <img src="https://www.bromite.org/bromite_bromite_gh_downloads.svg" alt="downloads on Github" title="downloads on Github" />
 
 # Goals
@@ -35,8 +33,15 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 No.
 This is not a limitation of Bromite but of all Chromium-based projects in general, as general public is not allowed to use Google's APIs for free unless when using Chrome.
 
+Additionally, these features would not be privacy-friendly.
+
 ## Does Bromite require root?
 No.
+
+## Is Bromite de-googled?
+
+Yes, although this has not been verified (and hardly can be) under all situations; if you were to find connections to cloud-based services please report them via the issue tracker.
+Projects which follow a strict approach on this are [Iridium](https://iridiumbrowser.de/) and [Inox patchset](https://github.com/gcarq/inox-patchset).
 
 ## What is the SystemWebView?
 It is the core component of Android for all web page visualizations. For example when you access a new wifi network and need to activate it, that is using the SystemWebView. If you do not know what it is then you do not need to install it.
@@ -47,14 +52,16 @@ See [this wiki page](https://github.com/bromite/bromite/wiki/Enabling-DNS-over-H
 
 ## Can you add dark mode/some cool themes?
 No.
-Bromite is about adblocking and privacy.
+Bromite is about privacy and adblocking.
 
 ## Can you add HTTPS everywhere?
 No.
-We cannot add add-ons to Bromite (merely some features) and anyway HTTPS everywhere in particular is too invasive to be easily maintained across new releases.
+We cannot add add-ons to Bromite (merely some features).
 
 ## Is Bromite on Play Store?
-No, and this is unlikely to change. The Play Store would not allow total freedom on the adblocking choice, amongst other limitations.
+No, and this is unlikely to change. Many limitations apply for submissions there, including which ads are allowed to be blocked.
+
+Bromite favors user freedom in software choice: the device is yours so you get to choose which software to run on it, end of the story.
 
 ## Is Bromite on F-Droid?
 It is not on the official F-Droid repository and there are no (more) plans to submit it.
@@ -68,16 +75,19 @@ Yes, since version 69. While the desktop version of Chromium has an option to di
 
 * baked-in adblock engine with filters from EasyList, EasyPrivacy and others
 * remove click-tracking and AMP from search results
-* DNS-over-HTTPS support via Google/CloudFlare servers
+* DNS-over-HTTPS support via Google, Cloudflare and Quad9 servers
+* [proxy configuration page](https://github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
 * [StartPage](https://startpage.com/), [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines
-* chrome flags to hide NTP tiles, disable custom intents and clear session on exit
+* chrome flags to disable custom intents and clear session on exit
 * always-incognito mode
+* completely removed safe browsing and other privacy-unfriendly features
+* anti-fingerprinting mitigations for canvas, audio, client rects, webGL and sensor APIs
+* use fixed User-Agent to conceal real model and browser version
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
-* canvas, audio and other anti-fingerprinting mitigations
 
 ## Features not related to privacy
 * import/export bookmarks
-* allow playing videos in background
+* allow playing videos in background tabs and disable pause on switching tabs
 * all codecs included (proprietary, open H.264 etc.)
 * built with official speed optimizations
 
@@ -85,14 +95,14 @@ You can inspect all functionality/privacy changes by reading the patches: https:
 
 # Releases
 
-All built versions are available as [releases](https://github.com/bromite/bromite/releases); the [official website](https://www.bromite.org/) points to those releases and - when browsing via Android - it will automatically select the one apt for your device.
+All built versions are available as [releases](https://github.com/bromite/bromite/releases); the [official website](https://www.bromite.org/) points to those releases and - when browsing via Android - it will automatically select the one apt for your device (or none otherwise).
 
 Each tag corresponds to a Chromium Stable release tag.
 
-Bromite is currently built for ARM, ARM64 and x86 and for the Android SDKs versions 16 and 21
-Additionally, [SystemWebView](https://www.bromite.org/system_web_view) and the [vanilla Chromium](https://www.bromite.org/chromium) builds are provided.
+Bromite is currently built for ARM, ARM64 and x86 and for the Android SDK versions 16 and 21; [Bromite SystemWebView](https://www.bromite.org/system_web_view) is provided as well (SDK21+).
+For every Bromite build you can always find a matching [vanilla Chromium](https://www.bromite.org/chromium) build which is used for example to verify which issues are specific to Bromite or not.
 
-The official releases are also available through the [official third-party F-Droid repository](https://www.bromite.org/fdroid).
+All official releases are also available through the [official third-party F-Droid repository](https://www.bromite.org/fdroid).
 
 ## Integrity and authenticity
 
@@ -102,7 +112,6 @@ $ sha256sum --check brm_68.0.3440.54.sha256.txt
 arm64_SystemWebView.apk: OK
 arm64_ChromePublic.apk: OK
 arm64_ChromeModernPublic.apk: OK
-arm64_MonochromePublic.apk: OK
 ```
 
 If you prefer an UI-based tool, you might want to look into [GtkHash](https://github.com/tristanheaven/gtkhash).
@@ -134,6 +143,7 @@ Please refer to [official Chromium build documentation](https://www.chromium.org
 * [Brave Browser](https://github.com/brave/browser-android-tabs) for some patches
 * nochromo for the original adblock patch
 * [AdBlock Plus](https://adblockplus.org/), [uBlock Origin](https://github.com/uBlockOrigin), [Peter Lowe's adservers list](https://pgl.yoyo.org/adservers/), [EasyList and EasyPrivacy](https://easylist.to/) for the filters included
+* [Vadim Pleshkov](http://vadimpleshkov.me/) for Bromite's logo
 
 # License
 

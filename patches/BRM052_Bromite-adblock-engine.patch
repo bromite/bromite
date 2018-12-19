@@ -1,0 +1,734 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Thu, 23 Aug 2018 19:30:15 +0200
+Subject: Bromite adblock engine
+
+Original adblock engine ported from NoChromo patch
+Make interception testable
+Add domain support
+Re-land: third-party filters support
+Add menu option to toggle global Adblock preference
+Allow toggling Chromium's "ads enabled" content settings option together with Bromite adblock engine.
+Perform adblock interception in StartJob to address lagging issues
+New mechanism for adblocking based on Brave's adblocking hook
+---
+ chrome/android/java/res/menu/custom_tabs_menu.xml  |  12 +
+ chrome/android/java/res/menu/main_menu.xml         |  11 +
+ .../chromium/chrome/browser/ChromeActivity.java    |   8 +
+ .../chrome/browser/ChromeTabbedActivity.java       |   8 +
+ .../browser/appmenu/AppMenuPropertiesDelegate.java |  38 +++
+ .../CustomTabAppMenuPropertiesDelegate.java        |   2 +
+ .../java/strings/android_chrome_strings.grd        |  11 +
+ chrome/browser/net/chrome_network_delegate.cc      |  83 +++--
+ .../subresource_filter_content_settings_manager.cc |   1 +
+ net/BUILD.gn                                       |   7 +
+ net/url_request/adblock_intercept.cc               | 341 +++++++++++++++++++++
+ net/url_request/adblock_intercept.h                |  41 +++
+ 12 files changed, 543 insertions(+), 20 deletions(-)
+ create mode 100644 net/url_request/adblock_intercept.cc
+ create mode 100644 net/url_request/adblock_intercept.h
+
+diff --git a/chrome/android/java/res/menu/custom_tabs_menu.xml b/chrome/android/java/res/menu/custom_tabs_menu.xml
+--- a/chrome/android/java/res/menu/custom_tabs_menu.xml
++++ b/chrome/android/java/res/menu/custom_tabs_menu.xml
+@@ -74,6 +74,18 @@
+           </menu>
+         </item>
+ 
++        <item android:id="@+id/enable_adblock_row_menu_id"
++            android:title="@null"
++            android:orderInCategory="2">
++          <menu>
++              <item android:id="@+id/enable_adblock_id"
++                  android:title="@string/menu_enable_adblock" />
++              <item android:id="@+id/enable_adblock_check_id"
++                  android:title="@null"
++                  android:checkable="true" />
++          </menu>
++        </item>
++
+         <!-- Title is intentionally left blank in xml and will be set in java. -->
+         <item android:id="@+id/open_in_browser_id"
+             android:title=""
+diff --git a/chrome/android/java/res/menu/main_menu.xml b/chrome/android/java/res/menu/main_menu.xml
+--- a/chrome/android/java/res/menu/main_menu.xml
++++ b/chrome/android/java/res/menu/main_menu.xml
+@@ -84,6 +84,17 @@
+           </menu>
+         </item>
+ 
++        <item android:id="@+id/enable_adblock_row_menu_id"
++            android:title="@null">
++          <menu>
++              <item android:id="@+id/enable_adblock_id"
++                  android:title="@string/menu_enable_adblock" />
++              <item android:id="@+id/enable_adblock_check_id"
++                  android:title="@null"
++                  android:checkable="true" />
++          </menu>
++        </item>
++
+         <item android:id="@+id/reader_mode_prefs_id"
+             android:title="@string/menu_reader_mode_prefs"
+             android:icon="@drawable/reader_mode_prefs_icon" />
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
+@@ -2205,6 +2205,14 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
+             RecordUserAction.record("MobileMenuRequestEnableJavascript");
+         } else if (id == R.id.reader_mode_prefs_id) {
+             DomDistillerUIUtils.openSettings(currentTab.getWebContents());
++        } else if (id == R.id.enable_adblock_id || id == R.id.enable_adblock_check_id) {
++            final boolean reloadOnChange = !currentTab.isNativePage();
++            final boolean adblockEnabled = !PrefServiceBridge.getInstance().isCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_ADS);
++            PrefServiceBridge.getInstance().setCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_ADS, adblockEnabled);
++            if (reloadOnChange) {
++                currentTab.reload();
++            }
++            RecordUserAction.record("MobileMenuRequestEnableAdBlock");
+         } else {
+             return false;
+         }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -1676,6 +1676,14 @@ public class ChromeTabbedActivity
+                 reportNewTabShortcutUsed(true);
+                 getTabCreator(true).launchNTP();
+             }
++        } else if (id == R.id.enable_adblock_id || id == R.id.enable_adblock_check_id) {
++            final boolean reloadOnChange = !currentTab.isNativePage();
++            final boolean adblockEnabled = !PrefServiceBridge.getInstance().isCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_ADS);
++            PrefServiceBridge.getInstance().setCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_ADS, adblockEnabled);
++            if (reloadOnChange) {
++                currentTab.reload();
++            }
++            RecordUserAction.record("MobileMenuRequestEnableAdBlock");
+         } else if (id == R.id.all_bookmarks_menu_id) {
+             if (currentTab != null) {
+                 getCompositorViewHolder().hideKeyboard(() -> {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
+@@ -208,6 +208,8 @@ public class AppMenuPropertiesDelegate {
+                     && !TextUtils.isEmpty(url);
+             prepareAddToHomescreenMenuItem(menu, currentTab, canShowHomeScreenMenuItem);
+ 
++            updateEnableAdBlockMenuItem(menu, currentTab);
++
+             updateRequestDesktopSiteMenuItem(menu, currentTab, true /* can show */);
+ 
+             updateEnableJavascriptMenuItem(menu, currentTab);
+@@ -486,6 +488,42 @@ public class AppMenuPropertiesDelegate {
+     }
+ 
+     /**
++     * Updates the enable AdBlock item's state.
++     *
++     * @param menu {@link Menu} for enable adblock
++     * @param currentTab      Current tab being displayed.
++     */
++    protected void updateEnableAdBlockMenuItem(
++            Menu menu, Tab currentTab) {
++        MenuItem enableMenuRow = menu.findItem(R.id.enable_adblock_row_menu_id);
++        MenuItem enableMenuLabel = menu.findItem(R.id.enable_adblock_id);
++        MenuItem enableMenuCheck = menu.findItem(R.id.enable_adblock_check_id);
++
++
++        // Hide enable adblock on all chrome:// pages except for the NTP.
++        String url = currentTab.getUrl();
++        boolean isChromeScheme = url.startsWith(UrlConstants.CHROME_URL_PREFIX)
++                || url.startsWith(UrlConstants.CHROME_NATIVE_URL_PREFIX);
++        // Also hide enable javascsript on Reader Mode.
++        boolean isDistilledPage = DomDistillerUrlUtils.isDistilledPage(url);
++
++        boolean itemVisible = (!isChromeScheme || currentTab.isNativePage()) && !isDistilledPage;
++        enableMenuRow.setVisible(itemVisible);
++        if (!itemVisible) return;
++
++        boolean adBlockEnabled = !PrefServiceBridge.getInstance().isCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_ADS);
++
++        // Mark the checkbox if adblock is globally activate.
++        enableMenuCheck.setChecked(adBlockEnabled);
++
++        // This title doesn't seem to be displayed by Android, but it is used to set up
++        // accessibility text in {@link AppMenuAdapter#setupMenuButton}.
++        enableMenuLabel.setTitleCondensed(adBlockEnabled
++                        ? mActivity.getString(R.string.menu_enable_adblock_on)
++                        : mActivity.getString(R.string.menu_enable_adblock_off));
++    }
++
++    /**
+      * A notification that the header view has finished inflating.
+      * @param view The view that was inflated.
+      * @param appMenu The menu the view is inside of.
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
+@@ -181,6 +181,8 @@ public class CustomTabAppMenuPropertiesDelegate extends AppMenuPropertiesDelegat
+                 }
+             }
+ 
++            updateEnableAdBlockMenuItem(menu, currentTab);
++
+             updateRequestDesktopSiteMenuItem(menu, currentTab, requestDesktopSiteVisible);
+             updateEnableJavascriptMenuItem(menu, currentTab);
+             prepareAddToHomescreenMenuItem(menu, currentTab, addToHomeScreenVisible);
+diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/android/java/strings/android_chrome_strings.grd
+--- a/chrome/android/java/strings/android_chrome_strings.grd
++++ b/chrome/android/java/strings/android_chrome_strings.grd
+@@ -2997,6 +2997,17 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+       <message name="IDS_MENU_REQUEST_DESKTOP_SITE_OFF" desc="Accessibility description for when Request Desktop Site is disabled.">
+         Turn on Request desktop site
+       </message>
++
++      <message name="IDS_MENU_ENABLE_ADBLOCK" desc="Menu item in Chrome's overflow/options menu. If this menu item is unselected, Bromite will disable AdBlock engine for the page. [CHAR-LIMIT=27]">
++        Enable AdBlock
++      </message>
++      <message name="IDS_MENU_ENABLE_ADBLOCK_ON" desc="Accessibility description for when Enable AdBlock is selected.">
++        Turn off AdBlock
++      </message>
++      <message name="IDS_MENU_ENABLE_ADBLOCK_OFF" desc="Accessibility description for when Enable AdBlock is unselected.">
++        Turn on AdBlock
++      </message>
++
+       <message name="IDS_MENU_READER_MODE_PREFS" desc="Menu item to show reader mode preferences pane, which allows users to change the appearance (font size, theme, etc.) of the page. [CHAR-LIMIT=27]">
+         Appearance
+       </message>
+diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/chrome_network_delegate.cc
+--- a/chrome/browser/net/chrome_network_delegate.cc
++++ b/chrome/browser/net/chrome_network_delegate.cc
+@@ -25,6 +25,7 @@
+ #include "build/build_config.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/content_settings/cookie_settings_factory.h"
++#include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+ #include "chrome/browser/content_settings/tab_specific_content_settings.h"
+ #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
+ #include "chrome/browser/net/chrome_extensions_network_delegate.h"
+@@ -60,6 +61,7 @@
+ #if defined(OS_ANDROID)
+ #include "base/android/path_utils.h"
+ #include "chrome/browser/io_thread.h"
++#include "net/url_request/adblock_intercept.h"
+ #endif
+ 
+ #if defined(OS_CHROMEOS)
+@@ -207,34 +209,75 @@ void ChromeNetworkDelegate::set_cookie_settings(
+   cookie_settings_ = cookie_settings;
+ }
+ 
++#define TRANSPARENT1PXGIF "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
++
+ int ChromeNetworkDelegate::OnBeforeURLRequest(
+     net::URLRequest* request,
+     net::CompletionOnceCallback callback,
+     GURL* new_url) {
+-  extensions_delegate_->ForwardStartRequestStatus(request);
+-
+-  // The non-redirect case is handled in GoogleURLLoaderThrottle.
+-  bool force_safe_search =
+-      (force_google_safe_search_ && force_google_safe_search_->GetValue() &&
+-       request->is_redirecting());
+-
+-  net::CompletionOnceCallback wrapped_callback = std::move(callback);
+-
+-  if (force_safe_search) {
+-    wrapped_callback = base::BindOnce(
+-        &ForceGoogleSafeSearchCallbackWrapper, std::move(wrapped_callback),
+-        base::Unretained(request), base::Unretained(new_url));
+-  }
+ 
+-  int rv = extensions_delegate_->NotifyBeforeURLRequest(
+-      request, std::move(wrapped_callback), new_url);
+-
+-  if (force_safe_search && rv == net::OK && new_url->is_empty())
+-    safe_search_util::ForceGoogleSafeSearch(request->url(), new_url);
++#if defined(OS_ANDROID)
++  if (request) {
++    bool block = false, isValidUrl;
++
++    isValidUrl = request->url().is_valid();
++    std::string scheme = request->url().scheme();
++    if (isValidUrl && scheme.length()) {
++      std::transform(scheme.begin(), scheme.end(), scheme.begin(), ::tolower);
++        if ("http" != scheme && "https" != scheme) {
++          isValidUrl = false;
++        }
++    }
++    const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
++
++    bool adblock_enabled = false;
++    if (isValidUrl && info) {
++      const content::ResourceRequestInfo::WebContentsGetter& web_contents_getter = info->GetWebContentsGetterForRequest();
++      content::WebContents* web_contents = web_contents_getter.Run();
++      if (web_contents) {
++        Profile* profile = Profile::FromBrowserContext(web_contents->GetBrowserContext());
++        //FIXME: this should not be called from the IO thread
++        const HostContentSettingsMap* content_settings = HostContentSettingsMapFactory::GetForProfile(profile);
++
++        if (content_settings) {
++          // check global value first
++          adblock_enabled = CONTENT_SETTING_BLOCK == content_settings->GetDefaultContentSetting(ContentSettingsType::CONTENT_SETTINGS_TYPE_ADS, NULL);
++
++          if (!adblock_enabled) {
++            // check per-site value
++            adblock_enabled = CONTENT_SETTING_BLOCK == content_settings->GetContentSetting(request->url(), GURL(), ContentSettingsType::CONTENT_SETTINGS_TYPE_ADS,
++                                                               std::string());
++          }
++        }
++      }
++
++      if (adblock_enabled
++        && content::RESOURCE_TYPE_MAIN_FRAME != info->GetResourceType()
++        && net::adblock_intercept(request->url(),
++                                request->initiator()->host(),
++                                info->GetResourceType())) {
++        block = true;
++      }
++
++      if (block) {
++        if (content::RESOURCE_TYPE_IMAGE == info->GetResourceType()) {
++          *new_url = GURL(TRANSPARENT1PXGIF);
++        } else {
++          *new_url = GURL("");
++        }
++        return net::ERR_BLOCKED_BY_ADMINISTRATOR;
++      }
++    } // valid URL and info
++  } // request
++#endif // OS_ANDROID
+ 
+-  return rv;
++  extensions_delegate_->ForwardStartRequestStatus(request);
++  return extensions_delegate_->NotifyBeforeURLRequest(
++      request, std::move(callback), new_url);
+ }
+ 
++#undef TRANSPARENT1PXGIF
++
+ int ChromeNetworkDelegate::OnBeforeStartTransaction(
+     net::URLRequest* request,
+     net::CompletionOnceCallback callback,
+diff --git a/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc b/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc
+--- a/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc
++++ b/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc
+@@ -19,6 +19,7 @@
+ #include "components/history/core/browser/history_service.h"
+ #include "components/keyed_service/core/service_access_type.h"
+ #include "url/gurl.h"
++#include "net/url_request/adblock_intercept.h"
+ 
+ namespace {
+ 
+diff --git a/net/BUILD.gn b/net/BUILD.gn
+--- a/net/BUILD.gn
++++ b/net/BUILD.gn
+@@ -1731,6 +1731,13 @@ component("net") {
+       "url_request/websocket_handshake_userdata_key.h",
+     ]
+ 
++    if (is_android) {
++      sources += [
++        "url_request/adblock_intercept.cc",
++        "url_request/adblock_intercept.h"
++      ]
++    }
++
+     if (enable_reporting) {
+       sources += [
+         "network_error_logging/network_error_logging_delegate.cc",
+diff --git a/net/url_request/adblock_intercept.cc b/net/url_request/adblock_intercept.cc
+new file mode 100644
+--- /dev/null
++++ b/net/url_request/adblock_intercept.cc
+@@ -0,0 +1,341 @@
++/*
++    This file is part of Bromite.
++
++    Bromite is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    Bromite is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with Bromite. If not, see <https://www.gnu.org/licenses/>.
++*/
++#include "url/gurl.h"
++
++#ifdef ADB_TESTER
++#include <cstddef>
++#include <cstdlib>
++#include <string.h>
++
++#include "log.h"
++#include <tld.h>
++
++#else
++
++#include "content/public/common/resource_type.h"
++#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
++#include <android/log.h>
++
++#endif
++
++#include "net/url_request/adblock_entries.h"
++
++namespace net {
++
++const char *LOG_TAG = "Bromite";
++
++#ifdef ADB_TESTER
++int adblock_rules_count() { return ADBLOCK_ENTRY_COUNT; }
++#endif
++
++// True if the given canonical |host| is "[www.]<domain_in_lower_case>.<TLD>"
++// with a valid TLD. If |subdomain_permission| is ALLOW_SUBDOMAIN, we check
++// against host "*.<domain_in_lower_case>.<TLD>" instead. Will return the TLD
++// string in |tld|, if specified and the |host| can be parsed.
++static bool is_first_party(char *l_host, char *l_url_host) {
++  size_t tld_length;
++
++#ifdef ADB_TESTER
++  char *found_tld;
++
++  if (TLD_SUCCESS != tld_get_z(l_host, &found_tld))
++    return false;
++  tld_length = strlen(found_tld);
++  if (tld_length == 0)
++    return false;
++#else
++  tld_length = net::registry_controlled_domains::GetCanonicalHostRegistryLength(
++      l_host, net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
++      net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
++  if ((tld_length == 0) || (tld_length == std::string::npos))
++    return false;
++#endif
++
++  int len = strlen(l_host);
++  char *tld = l_host + len - tld_length;
++
++  // Removes any subdomain from origin host.
++  int i = len - tld_length - 2, top_i = i;
++  if (i < 0) {
++    return false;
++  }
++  char *domain = l_host;
++  for (; i >= 0; i--) {
++    if (l_host[i] == '.') {
++      int p_len = top_i - i;
++      // skip "co" in "co.uk", "org" in "org.uk"
++      if (p_len <= 3) {
++        tld -= p_len + 1;
++        continue;
++      }
++
++      // segment is long enough, accept it at as a domain
++      domain = l_host + i;
++      len -= i;
++      break;
++    }
++  }
++
++#ifdef ADBLOCK_LOG
++  __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
++                      "%s: extracted domain suffix: \"%s\" (TLD=\"%s\")",
++                      l_host, domain, tld);
++#endif
++
++  // Check if supplied URL host matches, including the dot.
++  int b_len = strlen(l_url_host);
++  if (b_len < len) {
++    return false;
++  }
++  for (int i = 0; i < len; i++) {
++    if (l_url_host[b_len - 1 - i] != domain[len - 1 - i])
++      return false;
++  }
++
++  // pass with flying colors
++  return true;
++}
++
++static char *strtolower(const char *str) {
++  int len = strlen(str);
++  char *ret = (char *)malloc(len + 1);
++  ret[len] = '\0';
++  for (int i = 0; i < len; i++) {
++    if ((65 <= str[i]) && (str[i] <= 90)) {
++      ret[i] = str[i] + 32;
++    } else {
++      ret[i] = str[i];
++    }
++  }
++  return ret;
++}
++
++static char *strtosep(const char *str) {
++  int len = strlen(str);
++  char *ret = (char *)malloc(len + 3);
++  ret[0] = '^';
++  ret[len + 1] = '^';
++  ret[len + 2] = '\0';
++  for (int i = 0; i < len; i++) {
++    if ((str[i] == ':') || (str[i] == '/') || (str[i] == '?') ||
++        (str[i] == '&') || (str[i] == '=')) {
++      ret[i + 1] = '^';
++    } else {
++      ret[i + 1] = str[i];
++    }
++  }
++  return ret;
++}
++
++static bool url_matches(const char *c_url, char *c_url_sep, char *c_url_lower,
++                        char *c_url_lower_sep, adblock_entry *entry) {
++  bool match = false;
++  // select comparison string based on case and separator presence (separator
++  // takes some shortcuts)
++  bool match_case = ((entry->flags & ADBLOCK_FLAG_MATCH_CASE) != 0);
++  bool match_separator = ((entry->flags & ADBLOCK_FLAG_HAS_SEPARATOR) != 0);
++  const char *match_url =
++      match_case ? (match_separator ? c_url_sep : c_url)
++                 : (match_separator ? c_url_lower_sep : c_url_lower);
++
++#ifdef ADBLOCK_LOG_MORE
++  __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "[case:%d][sep:%d][%s]",
++                      match_case, match_separator, match_url);
++#endif
++  // check for all match parts at >= position of last match
++  const char *last = match_url;
++  for (int m = 0; const char *url_match = entry->matches[m]; m++) {
++    bool is_last_match = entry->matches[m + 1] == NULL;
++    const char *pos = strstr(last, url_match);
++    match = (pos != NULL);
++
++#ifdef ADBLOCK_LOG_MORE
++    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "[%s][found:%d][match:%d]",
++                        entry->matches[m], pos == NULL ? 0 : 1, match ? 1 : 0);
++#endif
++    // check if the url starts with the first match part
++    if (match && (m == 0) && ((entry->flags & ADBLOCK_FLAG_MATCH_BEGIN) != 0) &&
++        (pos != match_url))
++      match = false;
++
++    // check if the url ends with the last match part
++    if (match && is_last_match &&
++        ((entry->flags & ADBLOCK_FLAG_MATCH_END) != 0) &&
++        (pos != &match_url[strlen(match_url) - strlen(entry->matches[m])]))
++      match = false;
++
++    // check domain match
++    if (match && (m == 0) &&
++        ((entry->flags & ADBLOCK_FLAG_MATCH_DOMAIN) != 0) &&
++        (pos != match_url) && (pos[-1] != '^') && (pos[-1] != '.') &&
++        (pos[-1] != '/'))
++      match = false;
++
++    // short circuit
++    if (!match)
++      break;
++  }
++  return match;
++}
++
++bool url_match_domain(adblock_entry *entry, const std::string &origin_host) {
++  bool match_domain = true;
++  // check for a negative domain match
++  if (entry->domains_skip) {
++    if (origin_host.empty()) {
++      // skip this rule, cannot match on domain
++      return false;
++    }
++    for (int d = 0; const char *domain = entry->domains_skip[d]; d++) {
++      if (domain == origin_host) {
++        match_domain = false;
++        break;
++      }
++    }
++  }
++
++  // check for a required positive domain match
++  if (entry->domains) {
++    if (origin_host.empty()) {
++      // skip this rule, cannot match on domain
++      return false;
++    }
++    for (int d = 0; const char *domain = entry->domains[d]; d++) {
++      if (domain != origin_host) {
++        match_domain = false;
++        break;
++      }
++    }
++  }
++  return match_domain;
++}
++
++static bool url_match_party(adblock_entry *entry, const GURL &url,
++                            const std::string &origin_host, bool &checked_fp,
++                            bool &fp) {
++  bool wanted_fp;
++  if ((entry->flags & ADBLOCK_FLAG_THIRD_PARTY) != 0) {
++    wanted_fp = false;
++  } else if ((entry->flags & ADBLOCK_FLAG_FIRST_PARTY) != 0) {
++    wanted_fp = true;
++  } else {
++    // no-op
++    return true;
++  }
++
++  if (origin_host.empty()) {
++    // cannot match this rule, no origin host to determine first/third party
++    return false;
++  }
++
++#ifdef ADB_TESTER
++//__android_log_print(ANDROID_LOG_INFO, LOG_TAG, "matchFirst=%d matchThird=%d",
++// matchFirstParty, matchThirdParty);
++#endif
++  if (!checked_fp) {
++    // lower-case version
++    char *l_host = strtolower(origin_host.c_str()),
++         *l_url_host = strtolower(url.host().c_str());
++
++    // is the URL a first-party to the current page's host?
++    fp = is_first_party(l_host, l_url_host);
++
++    checked_fp = true;
++#ifdef ADB_TESTER
++    __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
++                        "is_first_party(\"%s\", \"%s\") = %s", l_host,
++                        l_url_host, fp ? "true" : "false");
++#endif
++    free(l_host);
++    free(l_url_host);
++  }
++
++  return fp == wanted_fp;
++}
++
++int adblock_intercept(const GURL &url, const std::string &origin_host
++#ifndef ADB_TESTER
++, content::ResourceType resource_type
++#endif
++) {
++  if (url.is_valid() && url.SchemeIsHTTPOrHTTPS()) {
++    const char *c_url = url.spec().c_str();
++    char *c_url_lower = strtolower(c_url);
++    char *c_url_sep = strtosep(c_url);
++    char *c_url_lower_sep = strtosep(c_url_lower);
++
++#ifdef ADBLOCK_LOG
++    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "[%s with host '%s'] [%s]",
++                        c_url, url.host().c_str(), origin_host.c_str());
++#endif
++
++    bool checked_fp = false, fp = false;
++
++    bool intercept = false;
++    for (int i = 0; i < ADBLOCK_ENTRY_COUNT; i++) {
++      adblock_entry *entry = &ADBLOCK_ENTRIES[i];
++
++      // no use checking rules when we're intercepting, or exceptions when not
++      bool check =
++          (!intercept && ((entry->flags & ADBLOCK_FLAG_EXCEPTION) == 0)) ||
++          (intercept && ((entry->flags & ADBLOCK_FLAG_EXCEPTION) != 0));
++      if (!check)
++        continue;
++
++      // first check for domain matches, a quick branch out if matching
++      if (!url_match_domain(entry, origin_host))
++        continue;
++
++      // check on the URL matcher
++      if (!url_matches(c_url, c_url_sep, c_url_lower, c_url_lower_sep, entry))
++        continue;
++
++      // finally check first/third-party
++      if (!url_match_party(entry, url, origin_host, checked_fp, fp))
++        continue;
++
++#ifdef ADBLOCK_LOG
++      if (!intercept) {
++        __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
++                            "--> intercept (#%d: \"%s\") (%x)", i,
++                            entry->matches[0], entry->flags);
++      } else {
++        __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "--> pass (%d) (#%d)", i,
++                            entry->flags);
++      }
++#endif
++      intercept = !intercept;
++    } // for each entry
++
++    free(c_url_sep);
++    free(c_url_lower);
++    free(c_url_lower_sep);
++
++    if (intercept) {
++#ifdef ADBLOCK_LOG
++      __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "blocked");
++#endif
++      return 1;
++    }
++#ifdef ADBLOCK_LOG
++    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "pass");
++#endif
++  }
++  return 0;
++}
++
++} // namespace net
+diff --git a/net/url_request/adblock_intercept.h b/net/url_request/adblock_intercept.h
+new file mode 100644
+--- /dev/null
++++ b/net/url_request/adblock_intercept.h
+@@ -0,0 +1,41 @@
++/*
++    This file is part of Bromite.
++
++    Bromite is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    Bromite is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with Bromite. If not, see <https://www.gnu.org/licenses/>.
++*/
++
++#ifndef NET_URL_REQUEST_ADBLOCK_INTERCEPT_H_
++#define NET_URL_REQUEST_ADBLOCK_INTERCEPT_H_
++
++#include "url/gurl.h"
++
++#ifndef ADB_TESTER
++#include "content/public/common/resource_type.h"
++#endif
++
++namespace net {
++
++#ifdef ADB_TESTER
++int adblock_rules_count();
++#endif
++
++int adblock_intercept(const GURL &url, const std::string &origin_host
++#ifndef ADB_TESTER
++, content::ResourceType resource_type
++#endif
++);
++
++} // namespace net
++
++#endif // NET_URL_REQUEST_ADBLOCK_INTERCEPT_H_
+-- 
+2.11.0
+

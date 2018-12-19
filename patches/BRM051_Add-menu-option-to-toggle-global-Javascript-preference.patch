@@ -1,0 +1,207 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Wed, 18 Oct 2017 21:26:53 +0200
+Subject: Add menu option to toggle global Javascript preference
+
+---
+ chrome/android/java/res/menu/custom_tabs_menu.xml  | 13 ++++++++
+ chrome/android/java/res/menu/main_menu.xml         | 13 ++++++++
+ .../chromium/chrome/browser/ChromeActivity.java    |  8 +++++
+ .../chrome/browser/ChromeTabbedActivity.java       |  8 +++++
+ .../browser/appmenu/AppMenuPropertiesDelegate.java | 38 ++++++++++++++++++++++
+ .../CustomTabAppMenuPropertiesDelegate.java        |  1 +
+ .../java/strings/android_chrome_strings.grd        | 11 +++++++
+ 7 files changed, 92 insertions(+)
+
+diff --git a/chrome/android/java/res/menu/custom_tabs_menu.xml b/chrome/android/java/res/menu/custom_tabs_menu.xml
+--- a/chrome/android/java/res/menu/custom_tabs_menu.xml
++++ b/chrome/android/java/res/menu/custom_tabs_menu.xml
+@@ -49,6 +49,7 @@
+         <item android:id="@+id/open_webapk_id"
+             android:title="@string/menu_open_webapk"
+             android:orderInCategory="2" />
++
+         <item android:id="@+id/request_desktop_site_row_menu_id"
+             android:title="@null"
+             android:orderInCategory="2">
+@@ -61,6 +62,18 @@
+           </menu>
+         </item>
+ 
++        <item android:id="@+id/enable_javascript_row_menu_id"
++            android:title="@null"
++            android:orderInCategory="2">
++          <menu>
++              <item android:id="@+id/enable_javascript_id"
++                  android:title="@string/menu_enable_javascript" />
++              <item android:id="@+id/enable_javascript_check_id"
++                  android:title="@null"
++                  android:checkable="true" />
++          </menu>
++        </item>
++
+         <!-- Title is intentionally left blank in xml and will be set in java. -->
+         <item android:id="@+id/open_in_browser_id"
+             android:title=""
+diff --git a/chrome/android/java/res/menu/main_menu.xml b/chrome/android/java/res/menu/main_menu.xml
+--- a/chrome/android/java/res/menu/main_menu.xml
++++ b/chrome/android/java/res/menu/main_menu.xml
+@@ -61,6 +61,7 @@
+             android:title="@string/menu_add_to_homescreen" />
+         <item android:id="@+id/open_webapk_id"
+             android:title="@string/menu_open_webapk" />
++
+         <item android:id="@+id/request_desktop_site_row_menu_id"
+             android:title="@null">
+           <menu>
+@@ -71,6 +72,18 @@
+                 android:checkable="true" />
+           </menu>
+         </item>
++
++        <item android:id="@+id/enable_javascript_row_menu_id"
++            android:title="@null">
++          <menu>
++              <item android:id="@+id/enable_javascript_id"
++                  android:title="@string/menu_enable_javascript" />
++              <item android:id="@+id/enable_javascript_check_id"
++                  android:title="@null"
++                  android:checkable="true" />
++          </menu>
++        </item>
++
+         <item android:id="@+id/reader_mode_prefs_id"
+             android:title="@string/menu_reader_mode_prefs"
+             android:icon="@drawable/reader_mode_prefs_icon" />
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
+@@ -2195,6 +2195,14 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
+             final boolean usingDesktopUserAgent = currentTab.getUseDesktopUserAgent();
+             currentTab.setUseDesktopUserAgent(!usingDesktopUserAgent, reloadOnChange);
+             RecordUserAction.record("MobileMenuRequestDesktopSite");
++        } else if (id == R.id.enable_javascript_id || id == R.id.enable_javascript_check_id) {
++            final boolean reloadOnChange = !currentTab.isNativePage();
++            final boolean jsEnabled = PrefServiceBridge.getInstance().isCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_JAVASCRIPT);
++            PrefServiceBridge.getInstance().setCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_JAVASCRIPT, !jsEnabled);
++            if (reloadOnChange) {
++                currentTab.reload();
++            }
++            RecordUserAction.record("MobileMenuRequestEnableJavascript");
+         } else if (id == R.id.reader_mode_prefs_id) {
+             DomDistillerUIUtils.openSettings(currentTab.getWebContents());
+         } else {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -1718,6 +1718,14 @@ public class ChromeTabbedActivity
+                 NewTabPageUma.recordAction(NewTabPageUma.ACTION_OPENED_DOWNLOADS_MANAGER);
+             }
+             RecordUserAction.record("MobileMenuDownloadManager");
++        } else if (id == R.id.enable_javascript_id || id == R.id.enable_javascript_check_id) {
++            final boolean reloadOnChange = !currentTab.isNativePage();
++            final boolean jsEnabled = PrefServiceBridge.getInstance().isCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_JAVASCRIPT);
++            PrefServiceBridge.getInstance().setCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_JAVASCRIPT, !jsEnabled);
++            if (reloadOnChange) {
++                currentTab.reload();
++            }
++            RecordUserAction.record("MobileMenuRequestEnableJavascript");
+         } else if (id == R.id.open_recently_closed_tab) {
+             TabModel currentModel = mTabModelSelectorImpl.getCurrentModel();
+             if (!currentModel.isIncognito()) currentModel.openMostRecentlyClosedTab();
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
+@@ -25,6 +25,7 @@ import org.chromium.chrome.R;
+ import org.chromium.chrome.browser.ChromeActivity;
+ import org.chromium.chrome.browser.ChromeFeatureList;
+ import org.chromium.chrome.browser.ChromeSwitches;
++import org.chromium.chrome.browser.ContentSettingsType;
+ import org.chromium.chrome.browser.ShortcutHelper;
+ import org.chromium.chrome.browser.UrlConstants;
+ import org.chromium.chrome.browser.banners.AppBannerManager;
+@@ -209,6 +210,8 @@ public class AppMenuPropertiesDelegate {
+ 
+             updateRequestDesktopSiteMenuItem(menu, currentTab, true /* can show */);
+ 
++            updateEnableJavascriptMenuItem(menu, currentTab);
++
+             // Only display reader mode settings menu option if the current page is in reader mode.
+             menu.findItem(R.id.reader_mode_prefs_id)
+                     .setVisible(DomDistillerUrlUtils.isDistilledPage(currentTab.getUrl()));
+@@ -448,6 +451,41 @@ public class AppMenuPropertiesDelegate {
+     }
+ 
+     /**
++     * Updates the enable JavaScript item's state.
++     *
++     * @param menu {@link Menu} for enable javascript
++     * @param currentTab      Current tab being displayed.
++     */
++    protected void updateEnableJavascriptMenuItem(
++            Menu menu, Tab currentTab) {
++        MenuItem enableMenuRow = menu.findItem(R.id.enable_javascript_row_menu_id);
++        MenuItem enableMenuLabel = menu.findItem(R.id.enable_javascript_id);
++        MenuItem enableMenuCheck = menu.findItem(R.id.enable_javascript_check_id);
++
++        // Hide enable javascript on all chrome:// pages except for the NTP.
++        String url = currentTab.getUrl();
++        boolean isChromeScheme = url.startsWith(UrlConstants.CHROME_URL_PREFIX)
++                || url.startsWith(UrlConstants.CHROME_NATIVE_URL_PREFIX);
++        // Also hide enable javascsript on Reader Mode.
++        boolean isDistilledPage = DomDistillerUrlUtils.isDistilledPage(url);
++
++        boolean itemVisible = (!isChromeScheme || currentTab.isNativePage()) && !isDistilledPage;
++        enableMenuRow.setVisible(itemVisible);
++        if (!itemVisible) return;
++
++        boolean jsEnabled = PrefServiceBridge.getInstance().isCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_JAVASCRIPT);
++
++        // Mark the checkbox if Javascript is activated on this tab.
++        enableMenuCheck.setChecked(jsEnabled);
++
++        // This title doesn't seem to be displayed by Android, but it is used to set up
++        // accessibility text in {@link AppMenuAdapter#setupMenuButton}.
++        enableMenuLabel.setTitleCondensed(jsEnabled
++                        ? mActivity.getString(R.string.menu_enable_javascript_on)
++                        : mActivity.getString(R.string.menu_enable_javascript_off));
++    }
++
++    /**
+      * A notification that the header view has finished inflating.
+      * @param view The view that was inflated.
+      * @param appMenu The menu the view is inside of.
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
+@@ -182,6 +182,7 @@ public class CustomTabAppMenuPropertiesDelegate extends AppMenuPropertiesDelegat
+             }
+ 
+             updateRequestDesktopSiteMenuItem(menu, currentTab, requestDesktopSiteVisible);
++            updateEnableJavascriptMenuItem(menu, currentTab);
+             prepareAddToHomescreenMenuItem(menu, currentTab, addToHomeScreenVisible);
+         }
+     }
+diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/android/java/strings/android_chrome_strings.grd
+--- a/chrome/android/java/strings/android_chrome_strings.grd
++++ b/chrome/android/java/strings/android_chrome_strings.grd
+@@ -2977,6 +2977,17 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+       <message name="IDS_MENU_FIND_IN_PAGE" desc="Menu item allowing users to find text within the current page. [CHAR-LIMIT=27]">
+         Find in page
+       </message>
++
++      <message name="IDS_MENU_ENABLE_JAVASCRIPT" desc="Menu item in Chrome's overflow/options menu. If this menu item is unselected, Bromite will disable JavaScript support for the page. [CHAR-LIMIT=27]">
++        Enable JavaScript
++      </message>
++      <message name="IDS_MENU_ENABLE_JAVASCRIPT_ON" desc="Accessibility description for when Enable JavaScript is selected.">
++        Turn off JavaScript
++      </message>
++      <message name="IDS_MENU_ENABLE_JAVASCRIPT_OFF" desc="Accessibility description for when Enable JavaScript is unselected.">
++        Turn on JavaScript
++      </message>
++
+       <message name="IDS_MENU_REQUEST_DESKTOP_SITE" desc="Menu item in Chrome's overflow/options menu. By default, when a user navigates to a web page, Chrome shows the mobile site, that is, the version of the site designed for mobile phones. If this menu item is selected, however, Chrome will try to load the 'desktop' site instead, i.e. the site designed for desktop computers or laptop computers, which have larger screens. [CHAR-LIMIT=24]">
+         Desktop site
+       </message>
+-- 
+2.11.0
+

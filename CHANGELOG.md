@@ -1,3 +1,84 @@
+# 71.0.3578.101
+
+# 71.0.3578.98
+* do not ask permissions for camera when importing bookmarks (fixes https://github.com/bromite/bromite/issues/200)
+
+# 71.0.3578.88
+* add proxy configuration page (see https://github.com/bromite/bromite/wiki/ProxyConfiguration)
+* use more recent versions in User-Agent (fixes https://github.com/bromite/bromite/issues/156)
+
+# 71.0.3578.85
+* fix blurry adaptive icon (fixes https://github.com/bromite/bromite/issues/197)
+
+# 71.0.3578.76
+
+# 71.0.3578.72
+* add flag to disable IPv6 probes
+
+# 70.0.3538.107
+* added adaptive icon (fixes https://github.com/bromite/bromite/issues/181)
+* do not change randomisation at each call (fixes https://github.com/bromite/bromite/issues/177)
+* do not enable #enable-scroll-anchor-serialization by default
+
+# 70.0.3538.102
+* do not grant notifications to default search engine
+* remove all promos from bookmark manager page
+* re-introduced various patches to eradicate binary blob dependencies (only Cast left)
+* remove contacts picker permission
+
+# 70.0.3538.95
+* fix crash on bookmark edit activity (fixes https://github.com/bromite/bromite/issues/172)
+* fix slow chrome://flags (fixes https://github.com/bromite/bromite/issues/173)
+* enable TLS 1.3 final support by default (fixes https://github.com/bromite/bromite/issues/174)
+* dropped some patches related to GCM/GMS on suspicion of being related to random crashes
+
+# 70.0.3538.87
+* enable history requirement of user gesture (fixes https://github.com/bromite/bromite/issues/171)
+* enable serialization of scroll position changes while loading (fixes https://github.com/bromite/bromite/issues/171)
+* remove passwords keyboard accessory option (fixes https://github.com/bromite/bromite/issues/171)
+* some improvements to bookmark import/export interaction
+* add flag to disable orientation API, disabled by default
+* disable device motion API by default (fixes https://github.com/bromite/bromite/issues/171)
+
+# 70.0.3538.83
+* fix keep session cookies option showing on all site settings views
+* fix blank site settings entry showing (fixes https://github.com/bromite/bromite/issues/166)
+* offer builtin autocomplete for chrome://flags quick access
+
+# 70.0.3538.80
+* add flag to disable video resume functionality, allowing to not pause video playback on tab switch (fixes https://github.com/bromite/bromite/issues/108)
+* prevent "are you there" prompts from appearing when playing videos
+* completely disable update scheduler checks to fix a related crash
+
+# 70.0.3538.77
+* disable generic sensor APIs by default (fixes https://github.com/bromite/bromite/issues/160)
+* introduce flag to disable device motion API (fixes https://github.com/bromite/bromite/issues/160)
+* add Quad9 as a DNS-over-HTTPS (DoH) option (fixes https://github.com/bromite/bromite/issues/140)
+
+# 70.0.3538.71
+* fix bug with canvas fingerprinting (fixes https://github.com/bromite/bromite/issues/154)
+
+# 70.0.3538.67
+* re-enabled DNS-over-HTTPS (DoH) flag (fixes https://github.com/bromite/bromite/issues/139)
+* dropped GCM removal patch
+* disable kSigninAllowedOnNextStartup by default
+* permanently disable query-in-omnibox (fixes https://github.com/bromite/bromite/issues/143)
+
+# 69.0.3497.113
+* disabled DNS-over-HTTPS (DoH) flag, not working since 69.0.3497.73 (see https://github.com/bromite/bromite/issues/139)
+
+# 69.0.3497.109
+
+# 69.0.3497.102
+* ungoogled-chromium: disable network time tracker
+* ungoogled-chromium: remove third-party/analytics
+* ungoogled-chromium: always use local Devtools instead of remote files
+* build without safebrowsing
+* drop "Hide NTP tiles" flag
+
+# 69.0.3497.91
+* fixed crash when accessing site settings media preferences (fixes https://github.com/bromite/bromite/issues/122)
+
 # 69.0.3497.73
 * enabled WebRTC
 * drop clear HTTP cache patch
