@@ -1,3 +1,7 @@
+# 71.0.3578.104
+* fix AMP links sanitisation; have it working for news as well (fixes https://github.com/bromite/bromite/issues/202)
+* revert upstream patch responsible for the broken save dialog prompt (upstream: https://bugs.chromium.org/p/chromium/issues/detail?id=916606)
+
 # 71.0.3578.101
 
 # 71.0.3578.98
