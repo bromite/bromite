@@ -46,6 +46,8 @@ Projects which follow a strict approach on this are [Iridium](https://iridiumbro
 ## What is the SystemWebView?
 It is the core component of Android for all web page visualizations. For example when you access a new wifi network and need to activate it, that is using the SystemWebView. If you do not know what it is then you do not need to install it.
 
+See also [the wiki page](https://github.com/bromite/bromite/wiki/Installing-SystemWebView) for community-contributed installation instructions.
+
 ## How to enable DNS-over-HTTPS?
 
 See [this wiki page](https://github.com/bromite/bromite/wiki/Enabling-DNS-over-HTTPS).
