@@ -93,7 +93,7 @@ Yes, since version 69. While the desktop version of Chromium has an option to di
 * all codecs included (proprietary, open H.264 etc.)
 * built with official speed optimizations
 
-You can inspect all functionality/privacy changes by reading the patches: https://github.com/bromite/bromite/tree/master/patches
+You can inspect all functionality/privacy changes by reading the patches: https://github.com/bromite/bromite/tree/master/build/patches
 
 # Releases
 
@@ -137,6 +137,7 @@ The [Bromite main repository](https://github.com/bromite/bromite) contains tags 
 Please refer to [official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
 
 The GN args used to build Bromite are available here: [GN_ARGS](./GN_ARGS).
+The patches are to be applied second the order specified in the `patches_list.txt` file (you can use `git am`); the big file `adblock_entries.h` (containing all the AdBlock filters) needs to be copied under `src/net/url_request/`
 
 # Credits
 

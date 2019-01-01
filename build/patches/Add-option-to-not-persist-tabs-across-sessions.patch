@@ -1,0 +1,126 @@
+From: samartnik <artem@brave.com>
+Date: Tue, 17 Apr 2018 17:14:00 +0300
+Subject: Add option to not persist tabs across sessions
+
+---
+ chrome/android/java/res/values/values.xml                  |  3 +++
+ chrome/android/java/res/xml/privacy_preferences.xml        |  5 +++++
+ .../org/chromium/chrome/browser/ChromeTabbedActivity.java  |  4 +++-
+ .../browser/preferences/privacy/PrivacyPreferences.java    | 14 ++++++++++++++
+ chrome/android/java/strings/android_chrome_strings.grd     |  6 ++++++
+ 5 files changed, 31 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/android/java/res/values/values.xml b/chrome/android/java/res/values/values.xml
+--- a/chrome/android/java/res/values/values.xml
++++ b/chrome/android/java/res/values/values.xml
+@@ -66,6 +66,9 @@
+     <!-- TODO(peconn): Add help section. -->
+     <!-- <string name="help_context_suggestions">mobile_content_suggestions</string> -->
+ 
++    <string name="close_tabs_on_exit_title">Close tabs on exit</string>
++    <string name="close_tabs_on_exit_summary">Don\'t persist tabs between browsing sessions</string>
++
+     <!-- Our manage space activity. Default pre-KitKat to be nothing. -->
+     <string name="manage_space_activity"></string>
+ 
+diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
+--- a/chrome/android/java/res/xml/privacy_preferences.xml
++++ b/chrome/android/java/res/xml/privacy_preferences.xml
+@@ -13,6 +13,11 @@
+         android:summary="@string/navigation_error_summary"
+         android:defaultValue="true" />
+     <org.chromium.chrome.browser.preferences.ChromeBaseCheckBoxPreference
++        android:key="close_tabs_on_exit"
++        android:title="@string/close_tabs_on_exit_title"
++        android:summary="@string/close_tabs_on_exit_summary"
++        android:defaultValue="false" />
++    <org.chromium.chrome.browser.preferences.ChromeBaseCheckBoxPreference
+         android:key="search_suggestions"
+         android:title="@string/search_suggestions_title"
+         android:summary="@string/search_suggestions_summary"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -1030,8 +1030,10 @@ public class ChromeTabbedActivity
+             boolean hadCipherData =
+                     CipherFactory.getInstance().restoreFromBundle(getSavedInstanceState());
+ 
++            String PREF_CLOSE_TABS_ON_EXIT = "close_tabs_on_exit";
+             boolean noRestoreState =
+-                    CommandLine.getInstance().hasSwitch(ChromeSwitches.NO_RESTORE_STATE);
++                CommandLine.getInstance().hasSwitch(ChromeSwitches.NO_RESTORE_STATE) ||
++                ContextUtils.getAppSharedPreferences().getBoolean(PREF_CLOSE_TABS_ON_EXIT, false);
+             if (noRestoreState) {
+                 // Clear the state files because they are inconsistent and useless from now on.
+                 mTabModelSelectorImpl.clearState();
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/privacy/PrivacyPreferences.java b/chrome/android/java/src/org/chromium/chrome/browser/preferences/privacy/PrivacyPreferences.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/preferences/privacy/PrivacyPreferences.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/preferences/privacy/PrivacyPreferences.java
+@@ -4,6 +4,7 @@
+ 
+ package org.chromium.chrome.browser.preferences.privacy;
+ 
++import android.content.SharedPreferences;
+ import android.os.Bundle;
+ import android.preference.CheckBoxPreference;
+ import android.preference.Preference;
+@@ -15,6 +16,7 @@ import android.view.Menu;
+ import android.view.MenuInflater;
+ import android.view.MenuItem;
+ 
++import org.chromium.base.ContextUtils;
+ import org.chromium.base.metrics.RecordHistogram;
+ import org.chromium.chrome.R;
+ import org.chromium.chrome.browser.ChromeFeatureList;
+@@ -42,6 +44,7 @@ public class PrivacyPreferences extends PreferenceFragment
+     private static final String PREF_CAN_MAKE_PAYMENT = "can_make_payment";
+     private static final String PREF_CONTEXTUAL_SEARCH = "contextual_search";
+     private static final String PREF_NETWORK_PREDICTIONS = "network_predictions";
++    private static final String PREF_CLOSE_TABS_ON_EXIT = "close_tabs_on_exit";
+     private static final String PREF_DO_NOT_TRACK = "do_not_track";
+     private static final String PREF_USAGE_AND_CRASH_REPORTING = "usage_and_crash_reports";
+     private static final String PREF_CLEAR_BROWSING_DATA = "clear_browsing_data";
+@@ -91,6 +94,11 @@ public class PrivacyPreferences extends PreferenceFragment
+         preferenceScreen.removePreference(findPreference(PREF_SYNC_AND_SERVICES_LINK_DIVIDER));
+         preferenceScreen.removePreference(findPreference(PREF_SYNC_AND_SERVICES_LINK));
+ 
++        ChromeBaseCheckBoxPreference closeTabsOnExitPref =
++                (ChromeBaseCheckBoxPreference) findPreference(PREF_CLOSE_TABS_ON_EXIT);
++        closeTabsOnExitPref.setOnPreferenceChangeListener(this);
++        closeTabsOnExitPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
++
+         ChromeBaseCheckBoxPreference networkPredictionPref =
+                 (ChromeBaseCheckBoxPreference) findPreference(PREF_NETWORK_PREDICTIONS);
+         networkPredictionPref.setChecked(prefServiceBridge.getNetworkPredictionEnabled());
+@@ -136,6 +144,12 @@ public class PrivacyPreferences extends PreferenceFragment
+         } else if (PREF_CAN_MAKE_PAYMENT.equals(key)) {
+             PrefServiceBridge.getInstance().setBoolean(
+                     Pref.CAN_MAKE_PAYMENT_ENABLED, (boolean) newValue);
++        } else if (PREF_CLOSE_TABS_ON_EXIT.equals(key)) {
++//            PrefServiceBridge.getInstance().setBoolean(
++//                    Pref.CLOSE_TABS_ON_EXIT_ENABLED, (boolean) newValue);
++            SharedPreferences.Editor sharedPreferencesEditor = ContextUtils.getAppSharedPreferences().edit();
++            sharedPreferencesEditor.putBoolean(PREF_CLOSE_TABS_ON_EXIT, (boolean)newValue);
++            sharedPreferencesEditor.apply();
+         }
+ 
+         return true;
+diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/android/java/strings/android_chrome_strings.grd
+--- a/chrome/android/java/strings/android_chrome_strings.grd
++++ b/chrome/android/java/strings/android_chrome_strings.grd
+@@ -3765,6 +3765,12 @@ However, you aren’t invisible. Going private doesn’t hide your browsing from
+       <message name="IDS_CONTEXTMENU_IMAGE_TITLE" desc="The title of a context menu tab when the item pressed contains more than one type. This indicates that all the actions are related to the image.">
+         IMAGE
+       </message>
++      <message name="IDS_CLOSE_TABS_ON_EXIT_TITLE" desc="Text for 'Close tabs on exit' settings-privacy option.">
++        Close all open tabs on exit
++      </message>
++      <message name="IDS_CLOSE_TABS_ON_EXIT_SUMMARY" desc="Summary text for 'Close tabs on exit' settings-privacy option.">
++        Don't persist tabs between browsing sessions
++      </message>
+       <message name="IDS_CONTEXTMENU_LINK_TITLE" desc="The title of a context menu tab when the item pressed contains more than one type. This indicates that all the actions are related to the link.">
+         LINK
+       </message>
+-- 
+2.11.0
+

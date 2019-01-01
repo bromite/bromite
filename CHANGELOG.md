@@ -1,3 +1,7 @@
+# 71.0.3578.115
+* add AdGuard DNS-over-HTTPS option
+* use green icon for SystemWebView
+
 # 71.0.3578.110
 
 # 71.0.3578.104
