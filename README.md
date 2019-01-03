@@ -137,7 +137,7 @@ The [Bromite main repository](https://github.com/bromite/bromite) contains tags 
 Please refer to [official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
 
 The GN args used to build Bromite are available here: [GN_ARGS](./GN_ARGS).
-The patches are to be applied second the order specified in the `patches_list.txt` file (you can use `git am`); the big file `adblock_entries.h` (containing all the AdBlock filters) needs to be copied under `src/net/url_request/`.
+The patches are to be applied second the order specified in the `patches_list.txt` file (you can use `git am` or the provided `git-am.sh` script that has support for patch deletions); the big file `adblock_entries.h` (containing all the AdBlock filters) needs to be copied under `src/net/url_request/`.
 
 # Credits
 
