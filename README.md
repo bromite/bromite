@@ -138,7 +138,7 @@ Please refer to [official Chromium build documentation](https://www.chromium.org
 
 The GN args used to build Bromite are available here: [GN_ARGS](./GN_ARGS).
 The patches are to be applied second the order specified in the `patches_list.txt` file.
-Some patches are problematic because of binary files deletions; you can use the provided `git-am.sh` script that has support for patch deletions or create your own solution for them.
+Patches must be applied with either `git apply` or `git am` due to `patch` not supporting git binary diffs.
 The big file `adblock_entries.h` (containing all the AdBlock filters) needs to be copied under `src/net/url_request/`.
 
 # Credits
