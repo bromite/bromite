@@ -1,3 +1,6 @@
+# 71.0.3578.120
+* fix breakage of translate quick answers by anti-AMP (fixes https://github.com/bromite/bromite/issues/210)
+
 # 71.0.3578.115
 * add AdGuard DNS-over-HTTPS option
 * use green icon for SystemWebView
