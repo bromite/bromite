@@ -1,3 +1,8 @@
+# 71.0.3578.123
+* disable jumbo builds (fixes https://github.com/bromite/bromite/issues/216 and https://github.com/bromite/bromite/issues/219)
+* disable preview fetching
+* do not consider Android Jelly Bean unsupported
+
 # 71.0.3578.120
 * fix breakage of translate quick answers by anti-AMP (fixes https://github.com/bromite/bromite/issues/210)
 
