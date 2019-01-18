@@ -1,3 +1,6 @@
+# 71.0.3578.132
+* add patches from AndroidHardening project (fixes https://github.com/bromite/bromite/issues/226)
+
 # 71.0.3578.123
 * disable jumbo builds (fixes https://github.com/bromite/bromite/issues/216 and https://github.com/bromite/bromite/issues/219)
 * disable preview fetching
