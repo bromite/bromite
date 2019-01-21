@@ -4,37 +4,33 @@ Subject: Allow building without safebrowsing for Android
 
 Fix build from scratch (issue found by nikolowry)
 ---
- .../android/java/res/xml/privacy_preferences.xml   | 12 -----
- .../preferences/privacy/PrivacyPreferences.java    | 58 ----------------------
- .../chrome_browsing_data_remover_delegate.cc       | 10 ----
- chrome/browser/chrome_content_browser_client.cc    | 14 +-----
- .../file_type_policies_component_installer.cc      |  2 +
- .../download/chrome_download_manager_delegate.cc   | 14 +++++-
- .../download/chrome_download_manager_delegate.h    |  6 +++
- chrome/browser/download/download_item_model.cc     | 10 ++++
- chrome/browser/download/download_item_model.h      |  4 ++
- chrome/browser/download/download_prefs.cc          |  4 ++
- .../browser/download/download_target_determiner.cc | 18 +++++++
- .../browser/download/download_target_determiner.h  |  6 +++
- chrome/browser/download/download_target_info.cc    |  4 ++
- chrome/browser/download/download_target_info.h     |  4 ++
- chrome/browser/download/download_ui_model.cc       |  4 ++
- chrome/browser/download/download_ui_model.h        |  4 ++
- .../chrome_resource_dispatcher_host_delegate.cc    |  4 ++
- chrome/browser/net/chrome_network_delegate.cc      | 35 +------------
- 18 files changed, 85 insertions(+), 128 deletions(-)
+ .../android/java/res/xml/privacy_preferences.xml   |  8 -----
+ .../preferences/privacy/PrivacyPreferences.java    | 40 ----------------------
+ .../chrome_browsing_data_remover_delegate.cc       | 10 ------
+ chrome/browser/chrome_content_browser_client.cc    | 14 +-------
+ .../file_type_policies_component_installer.cc      |  2 ++
+ .../download/chrome_download_manager_delegate.cc   | 14 ++++++--
+ .../download/chrome_download_manager_delegate.h    |  6 ++++
+ chrome/browser/download/download_item_model.cc     | 10 ++++++
+ chrome/browser/download/download_item_model.h      |  4 +++
+ chrome/browser/download/download_prefs.cc          |  4 +++
+ .../browser/download/download_target_determiner.cc | 18 ++++++++++
+ .../browser/download/download_target_determiner.h  |  6 ++++
+ chrome/browser/download/download_target_info.cc    |  4 +++
+ chrome/browser/download/download_target_info.h     |  4 +++
+ chrome/browser/download/download_ui_model.cc       |  4 +++
+ chrome/browser/download/download_ui_model.h        |  4 +++
+ .../chrome_resource_dispatcher_host_delegate.cc    |  4 +++
+ chrome/browser/net/chrome_network_delegate.cc      | 35 ++-----------------
+ 18 files changed, 85 insertions(+), 106 deletions(-)
 
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
 --- a/chrome/android/java/res/xml/privacy_preferences.xml
 +++ b/chrome/android/java/res/xml/privacy_preferences.xml
-@@ -18,18 +18,6 @@
+@@ -18,14 +18,6 @@
          android:summary="@string/search_suggestions_summary"
          android:defaultValue="true" />
      <org.chromium.chrome.browser.preferences.ChromeBaseCheckBoxPreference
--        android:key="safe_browsing_extended_reporting"
--        android:title="@string/safe_browsing_extended_reporting_title"
--        android:summary="@string/safe_browsing_extended_reporting_summary" />
--    <org.chromium.chrome.browser.preferences.ChromeBaseCheckBoxPreference
 -        android:key="safe_browsing_scout_reporting"
 -        android:title="@string/safe_browsing_scout_reporting_title"
 -        android:summary="@string/safe_browsing_scout_reporting_summary" />
@@ -49,48 +45,34 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/privacy/PrivacyPreferences.java b/chrome/android/java/src/org/chromium/chrome/browser/preferences/privacy/PrivacyPreferences.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/preferences/privacy/PrivacyPreferences.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/preferences/privacy/PrivacyPreferences.java
-@@ -38,11 +38,6 @@ public class PrivacyPreferences extends PreferenceFragment
+@@ -38,9 +38,6 @@ public class PrivacyPreferences extends PreferenceFragment
          implements OnPreferenceChangeListener {
      private static final String PREF_NAVIGATION_ERROR = "navigation_error";
      private static final String PREF_SEARCH_SUGGESTIONS = "search_suggestions";
--    private static final String PREF_SAFE_BROWSING_EXTENDED_REPORTING =
--            "safe_browsing_extended_reporting";
 -    private static final String PREF_SAFE_BROWSING_SCOUT_REPORTING =
 -            "safe_browsing_scout_reporting";
 -    private static final String PREF_SAFE_BROWSING = "safe_browsing";
      private static final String PREF_CAN_MAKE_PAYMENT = "can_make_payment";
      private static final String PREF_CONTEXTUAL_SEARCH = "contextual_search";
      private static final String PREF_NETWORK_PREDICTIONS = "network_predictions";
-@@ -76,10 +71,6 @@ public class PrivacyPreferences extends PreferenceFragment
+@@ -74,8 +71,6 @@ public class PrivacyPreferences extends PreferenceFragment
              // Remove preferences that were migrated to SyncAndServicesPreferences.
              preferenceScreen.removePreference(findPreference(PREF_NAVIGATION_ERROR));
              preferenceScreen.removePreference(findPreference(PREF_SEARCH_SUGGESTIONS));
--            preferenceScreen.removePreference(
--                    findPreference(PREF_SAFE_BROWSING_EXTENDED_REPORTING));
 -            preferenceScreen.removePreference(findPreference(PREF_SAFE_BROWSING_SCOUT_REPORTING));
 -            preferenceScreen.removePreference(findPreference(PREF_SAFE_BROWSING));
              preferenceScreen.removePreference(findPreference(PREF_NETWORK_PREDICTIONS));
              preferenceScreen.removePreference(findPreference(PREF_CONTEXTUAL_SEARCH));
              preferenceScreen.removePreference(findPreference(PREF_USAGE_AND_CRASH_REPORTING));
-@@ -119,27 +110,6 @@ public class PrivacyPreferences extends PreferenceFragment
+@@ -115,17 +110,6 @@ public class PrivacyPreferences extends PreferenceFragment
              preferenceScreen.removePreference(findPreference(PREF_CONTEXTUAL_SEARCH));
          }
  
--        // Listen to changes to both Extended Reporting prefs.
--        ChromeBaseCheckBoxPreference legacyExtendedReportingPref =
--                (ChromeBaseCheckBoxPreference) findPreference(
--                    PREF_SAFE_BROWSING_EXTENDED_REPORTING);
--        legacyExtendedReportingPref.setOnPreferenceChangeListener(this);
--        legacyExtendedReportingPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
+-        // Listen to changes to the Extended Reporting pref.
 -        ChromeBaseCheckBoxPreference scoutReportingPref =
 -                (ChromeBaseCheckBoxPreference) findPreference(PREF_SAFE_BROWSING_SCOUT_REPORTING);
 -        scoutReportingPref.setOnPreferenceChangeListener(this);
 -        scoutReportingPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
--        // Remove the extended reporting preference that is NOT active.
--        String extended_reporting_pref_to_remove =
--                prefServiceBridge.isSafeBrowsingScoutReportingActive()
--                    ? PREF_SAFE_BROWSING_EXTENDED_REPORTING : PREF_SAFE_BROWSING_SCOUT_REPORTING;
--        preferenceScreen.removePreference(findPreference(extended_reporting_pref_to_remove));
 -
 -        ChromeBaseCheckBoxPreference safeBrowsingPref =
 -                (ChromeBaseCheckBoxPreference) findPreference(PREF_SAFE_BROWSING);
@@ -100,27 +82,24 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
          updateSummaries();
      }
  
-@@ -148,12 +118,6 @@ public class PrivacyPreferences extends PreferenceFragment
+@@ -134,11 +118,6 @@ public class PrivacyPreferences extends PreferenceFragment
          String key = preference.getKey();
          if (PREF_SEARCH_SUGGESTIONS.equals(key)) {
              PrefServiceBridge.getInstance().setSearchSuggestEnabled((boolean) newValue);
 -        } else if (PREF_SAFE_BROWSING.equals(key)) {
 -            PrefServiceBridge.getInstance().setSafeBrowsingEnabled((boolean) newValue);
--        } else if (PREF_SAFE_BROWSING_EXTENDED_REPORTING.equals(key)
--                   || PREF_SAFE_BROWSING_SCOUT_REPORTING.equals(key)) {
+-        } else if (PREF_SAFE_BROWSING_SCOUT_REPORTING.equals(key)) {
 -            PrefServiceBridge.getInstance().setSafeBrowsingExtendedReportingEnabled(
 -                    (boolean) newValue);
          } else if (PREF_NETWORK_PREDICTIONS.equals(key)) {
              PrefServiceBridge.getInstance().setNetworkPredictionEnabled((boolean) newValue);
              recordNetworkPredictionEnablingUMA((boolean) newValue);
-@@ -202,21 +166,6 @@ public class PrivacyPreferences extends PreferenceFragment
+@@ -187,19 +166,6 @@ public class PrivacyPreferences extends PreferenceFragment
              searchSuggestionsPref.setChecked(prefServiceBridge.isSearchSuggestEnabled());
          }
  
--        String extended_reporting_pref = prefServiceBridge.isSafeBrowsingScoutReportingActive()
--                ? PREF_SAFE_BROWSING_SCOUT_REPORTING : PREF_SAFE_BROWSING_EXTENDED_REPORTING;
 -        CheckBoxPreference extendedReportingPref =
--                (CheckBoxPreference) findPreference(extended_reporting_pref);
+-                (CheckBoxPreference) findPreference(PREF_SAFE_BROWSING_SCOUT_REPORTING);
 -        if (extendedReportingPref != null) {
 -            extendedReportingPref.setChecked(
 -                    prefServiceBridge.isSafeBrowsingExtendedReportingEnabled());
@@ -135,12 +114,11 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
          CheckBoxPreference canMakePaymentPref =
                  (CheckBoxPreference) findPreference(PREF_CAN_MAKE_PAYMENT);
          if (canMakePaymentPref != null) {
-@@ -253,13 +202,6 @@ public class PrivacyPreferences extends PreferenceFragment
+@@ -236,12 +202,6 @@ public class PrivacyPreferences extends PreferenceFragment
              if (PREF_SEARCH_SUGGESTIONS.equals(key)) {
                  return prefs.isSearchSuggestManaged();
              }
--            if (PREF_SAFE_BROWSING_EXTENDED_REPORTING.equals(key)
--                    || PREF_SAFE_BROWSING_SCOUT_REPORTING.equals(key)) {
+-            if (PREF_SAFE_BROWSING_SCOUT_REPORTING.equals(key)) {
 -                return prefs.isSafeBrowsingExtendedReportingManaged();
 -            }
 -            if (PREF_SAFE_BROWSING.equals(key)) {
@@ -152,7 +130,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
 diff --git a/chrome/browser/browsing_data/chrome_browsing_data_remover_delegate.cc b/chrome/browser/browsing_data/chrome_browsing_data_remover_delegate.cc
 --- a/chrome/browser/browsing_data/chrome_browsing_data_remover_delegate.cc
 +++ b/chrome/browser/browsing_data/chrome_browsing_data_remover_delegate.cc
-@@ -254,16 +254,6 @@ bool DoesOriginMatchEmbedderMask(int origin_type_mask,
+@@ -242,16 +242,6 @@ bool DoesOriginMatchEmbedderMask(int origin_type_mask,
    return false;
  }
  
@@ -172,7 +150,7 @@ diff --git a/chrome/browser/browsing_data/chrome_browsing_data_remover_delegate.
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -4853,19 +4853,7 @@ ChromeContentBrowserClient::GetSafeBrowsingUrlCheckerDelegate(
+@@ -4990,19 +4990,7 @@ ChromeContentBrowserClient::GetSafeBrowsingUrlCheckerDelegate(
      content::ResourceContext* resource_context) {
    DCHECK_CURRENTLY_ON(BrowserThread::IO);
  
@@ -228,9 +206,9 @@ diff --git a/chrome/browser/download/chrome_download_manager_delegate.cc b/chrom
  #include "chrome/common/safe_browsing/file_type_policies.h"
 +#endif
  #include "chrome/grit/generated_resources.h"
- #include "components/download/database/in_progress/in_progress_cache_impl.h"
  #include "components/download/public/common/download_interrupt_reasons.h"
-@@ -95,8 +99,10 @@
+ #include "components/download/public/common/download_item.h"
+@@ -94,8 +98,10 @@
  using content::BrowserThread;
  using download::DownloadItem;
  using content::DownloadManager;
@@ -241,7 +219,7 @@ diff --git a/chrome/browser/download/chrome_download_manager_delegate.cc b/chrom
  
  namespace {
  
-@@ -746,19 +752,19 @@ ChromeDownloadManagerDelegate::ApplicationClientIdForFileScanning() const {
+@@ -744,19 +750,19 @@ ChromeDownloadManagerDelegate::ApplicationClientIdForFileScanning() const {
    return std::string(chrome::kApplicationClientIDStringForAVScanning);
  }
  
@@ -263,7 +241,7 @@ diff --git a/chrome/browser/download/chrome_download_manager_delegate.cc b/chrom
  
  void ChromeDownloadManagerDelegate::NotifyExtensions(
      DownloadItem* download,
-@@ -1201,13 +1207,17 @@ void ChromeDownloadManagerDelegate::OnDownloadTargetDetermined(
+@@ -1199,13 +1205,17 @@ void ChromeDownloadManagerDelegate::OnDownloadTargetDetermined(
        DownloadItemModel(item).SetShouldPreferOpeningInBrowser(true);
  #endif
  
@@ -365,7 +343,7 @@ diff --git a/chrome/browser/download/download_item_model.cc b/chrome/browser/dow
        is_being_revived_(false) {}
  
  } // namespace
-@@ -376,6 +384,7 @@ void DownloadItemModel::SetShouldPreferOpeningInBrowser(bool preference) {
+@@ -368,6 +376,7 @@ void DownloadItemModel::SetShouldPreferOpeningInBrowser(bool preference) {
    data->should_prefer_opening_in_browser_ = preference;
  }
  
@@ -373,7 +351,7 @@ diff --git a/chrome/browser/download/download_item_model.cc b/chrome/browser/dow
  DownloadFileType::DangerLevel DownloadItemModel::GetDangerLevel() const {
    const DownloadItemModelData* data = DownloadItemModelData::Get(download_);
    return data ? data->danger_level_ : DownloadFileType::NOT_DANGEROUS;
-@@ -386,6 +395,7 @@ void DownloadItemModel::SetDangerLevel(
+@@ -378,6 +387,7 @@ void DownloadItemModel::SetDangerLevel(
    DownloadItemModelData* data = DownloadItemModelData::GetOrCreate(download_);
    data->danger_level_ = danger_level;
  }
@@ -691,7 +669,7 @@ diff --git a/chrome/browser/download/download_ui_model.h b/chrome/browser/downlo
 diff --git a/chrome/browser/loader/chrome_resource_dispatcher_host_delegate.cc b/chrome/browser/loader/chrome_resource_dispatcher_host_delegate.cc
 --- a/chrome/browser/loader/chrome_resource_dispatcher_host_delegate.cc
 +++ b/chrome/browser/loader/chrome_resource_dispatcher_host_delegate.cc
-@@ -451,14 +451,18 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
+@@ -421,14 +421,18 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
      content::ResourceContext* resource_context,
      ResourceType resource_type,
      std::vector<std::unique_ptr<content::ResourceThrottle>>* throttles) {
@@ -713,7 +691,7 @@ diff --git a/chrome/browser/loader/chrome_resource_dispatcher_host_delegate.cc b
 diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/chrome_network_delegate.cc
 --- a/chrome/browser/net/chrome_network_delegate.cc
 +++ b/chrome/browser/net/chrome_network_delegate.cc
-@@ -79,19 +79,6 @@ namespace {
+@@ -78,19 +78,6 @@ namespace {
  
  bool g_access_to_all_files_enabled = false;
  
@@ -733,7 +711,7 @@ diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/
  bool IsAccessAllowedInternal(const base::FilePath& path,
                               const base::FilePath& profile_path) {
    if (g_access_to_all_files_enabled)
-@@ -213,26 +200,8 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
+@@ -212,26 +199,8 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
      GURL* new_url) {
    extensions_delegate_->ForwardStartRequestStatus(request);
  

@@ -5,10 +5,25 @@ Subject: User Agent: anonymize
 Use a fixed device name and Chrome product version with the goal of not
 disclosing the specific build of Bromite.
 ---
- components/version_info/version_info.cc | 13 +++++-
- content/common/user_agent.cc            | 72 ++++++++++++++++++++-------------
- 2 files changed, 57 insertions(+), 28 deletions(-)
+ .../browser/ui/android/android_about_app_info.cc   |  4 ++-
+ components/version_info/version_info.cc            | 13 +++++++-
+ content/common/user_agent.cc                       | 37 +++++++++++++++++-----
+ content/public/common/user_agent.h                 |  2 +-
+ 4 files changed, 45 insertions(+), 11 deletions(-)
 
+diff --git a/chrome/browser/ui/android/android_about_app_info.cc b/chrome/browser/ui/android/android_about_app_info.cc
+--- a/chrome/browser/ui/android/android_about_app_info.cc
++++ b/chrome/browser/ui/android/android_about_app_info.cc
+@@ -20,6 +20,8 @@ std::string AndroidAboutAppInfo::GetGmsInfo() {
+ }
+ 
+ std::string AndroidAboutAppInfo::GetOsInfo() {
++  int32_t major_version = 4, minor_version, bugfix_version;
++  base::SysInfo::OperatingSystemVersionNumbers(&major_version, &minor_version, &bugfix_version);
+   return base::SysInfo::OperatingSystemVersion() +
+-         content::GetAndroidOSInfo(/*include_android_build_number=*/true);
++         content::GetAndroidOSInfo(/*include_android_build_number=*/true, major_version);
+ }
 diff --git a/components/version_info/version_info.cc b/components/version_info/version_info.cc
 --- a/components/version_info/version_info.cc
 +++ b/components/version_info/version_info.cc
@@ -16,7 +31,7 @@ diff --git a/components/version_info/version_info.cc b/components/version_info/v
  #include "base/logging.h"
  #include "base/no_destructor.h"
  #include "base/version.h"
-+#include "base/sys_info.h"
++#include "base/system/sys_info.h"
  #include "build/build_config.h"
  #include "components/version_info/version_info_values.h"
  
@@ -34,124 +49,81 @@ diff --git a/components/version_info/version_info.cc b/components/version_info/v
 +  }
 +
 +  // version 5 and above
-+  return "Chrome/70.0.3538.80";
++  return "Chrome/71.0.3578.99";
  }
  
  std::string GetProductName() {
 diff --git a/content/common/user_agent.cc b/content/common/user_agent.cc
 --- a/content/common/user_agent.cc
 +++ b/content/common/user_agent.cc
-@@ -22,11 +22,6 @@
- 
- namespace content {
- 
--#if defined(OS_ANDROID)
--const base::Feature kAndroidUserAgentStringContainsBuildId{
--    "AndroidUserAgentStringContainsBuildId", base::FEATURE_DISABLED_BY_DEFAULT};
--#endif  // defined(OS_ANDROID)
--
- std::string GetWebKitVersion() {
-   return base::StringPrintf("%d.%d (%s)",
-                             WEBKIT_VERSION_MAJOR,
-@@ -66,7 +61,32 @@ std::string BuildOSCpuInfo(bool include_android_build_number) {
+@@ -85,7 +85,7 @@ std::string BuildOSCpuInfo(bool include_android_build_number) {
    }
  #elif defined(OS_ANDROID)
    std::string android_version_str = base::SysInfo::OperatingSystemVersion();
 -  std::string android_info_str = GetAndroidOSInfo(include_android_build_number);
-+  std::string android_info_str;
++  std::string android_info_str = GetAndroidOSInfo(include_android_build_number, os_major_version);
+ #elif (defined(OS_POSIX) && !defined(OS_MACOSX)) || defined(OS_FUCHSIA)
+   // Should work on any Posix system.
+   struct utsname unixinfo;
+@@ -153,18 +153,39 @@ std::string BuildUserAgentFromProductAndExtraOSInfo(
+   return BuildUserAgentFromOSAndProduct(os_info, product);
+ }
+ 
+-std::string GetAndroidOSInfo(bool include_android_build_number) {
++std::string GetAndroidOSInfo(bool include_android_build_number, int32_t os_major_version) {
+   std::string android_info_str;
+ 
+-  // Send information about the device.
++  // Send spoofed information about the device.
+   bool semicolon_inserted = false;
+-  std::string android_build_codename = base::SysInfo::GetAndroidBuildCodename();
+-  std::string android_device_name = base::SysInfo::HardwareModelName();
+-  if (!android_device_name.empty() && "REL" == android_build_codename) {
+-    android_info_str += "; " + android_device_name;
+-    semicolon_inserted = true;
++  std::string android_device_name;
 +
 +  // Send information about the device and build ID.
 +  // Use a common device/build ID based on Android major version.
 +  switch (os_major_version) {
 +    default: // version 9 and above
-+      android_info_str = "ONEPLUS A6000";
++      android_device_name = "ONEPLUS A6000";
 +      break;
 +    case 8:
-+      android_info_str = "FIG-LX3";
++      android_device_name = "FIG-LX3";
 +      break;
 +    case 7:
-+      android_info_str = "SM-G610M";
++      android_device_name = "SM-G610M";
 +      break;
 +    case 6:
-+      android_info_str = "SM-J700M";
++      android_device_name = "SM-J700M";
 +      break;
 +    case 5:
-+      android_info_str = "XT1033";
++      android_device_name = "XT1033";
 +      break;
 +    case 4:
-+      android_info_str = "ZTE Blade C370 Build/KOT49H";
++      android_device_name = "ZTE Blade C370";
 +      break;
-+  }
-+
-+  android_info_str = " " + android_info_str;
- #elif (defined(OS_POSIX) && !defined(OS_MACOSX)) || defined(OS_FUCHSIA)
-   // Should work on any Posix system.
-   struct utsname unixinfo;
-@@ -102,7 +122,7 @@ std::string BuildOSCpuInfo(bool include_android_build_number) {
-       os_minor_version,
-       os_bugfix_version
- #elif defined(OS_ANDROID)
--      "Android %s%s",
-+      "Android %s;%s",
-       android_version_str.c_str(),
-       android_info_str.c_str()
- #elif defined(OS_POSIX) || defined(OS_FUCHSIA)
-@@ -137,18 +157,6 @@ std::string BuildUserAgentFromProduct(const std::string& product) {
-   return BuildUserAgentFromOSAndProduct(os_info, product);
- }
- 
--#if defined(OS_ANDROID)
--std::string BuildUserAgentFromProductAndExtraOSInfo(
--    const std::string& product,
--    const std::string& extra_os_info,
--    bool include_android_build_number) {
--  std::string os_info;
--  base::StringAppendF(&os_info, "%s%s%s", getUserAgentPlatform().c_str(),
--                      BuildOSCpuInfo(include_android_build_number).c_str(),
--                      extra_os_info.c_str());
--  return BuildUserAgentFromOSAndProduct(os_info, product);
--}
--
- std::string GetAndroidOSInfo(bool include_android_build_number) {
-   std::string android_info_str;
- 
-@@ -162,18 +170,28 @@ std::string GetAndroidOSInfo(bool include_android_build_number) {
    }
  
++  android_info_str += "; " + android_device_name;
++  semicolon_inserted = true;
++
    // Append the build ID.
--  if (base::FeatureList::IsEnabled(kAndroidUserAgentStringContainsBuildId) ||
--      include_android_build_number) {
--    std::string android_build_id = base::SysInfo::GetAndroidBuildID();
--    if (!android_build_id.empty()) {
--      if (!semicolon_inserted)
--        android_info_str += ";";
--      android_info_str += " Build/" + android_build_id;
--    }
-+  std::string android_build_id = base::SysInfo::GetAndroidBuildID();
-+  if (!android_build_id.empty()) {
-+    if (!semicolon_inserted)
-+      android_info_str += ";";
-+    android_info_str += " Build/" + android_build_id;
-   }
+   if (base::FeatureList::IsEnabled(kAndroidUserAgentStringContainsBuildId) ||
+       include_android_build_number) {
+diff --git a/content/public/common/user_agent.h b/content/public/common/user_agent.h
+--- a/content/public/common/user_agent.h
++++ b/content/public/common/user_agent.h
+@@ -37,7 +37,7 @@ CONTENT_EXPORT std::string BuildUserAgentFromProductAndExtraOSInfo(
+     bool include_android_build_number);
  
-   return android_info_str;
- }
-+
-+#if defined(OS_ANDROID)
-+std::string BuildUserAgentFromProductAndExtraOSInfo(
-+    const std::string& product,
-+    const std::string& extra_os_info,
-+    bool include_android_build_number) {
-+  std::string os_info;
-+  base::StringAppendF(&os_info, "%s%s%s", getUserAgentPlatform().c_str(),
-+                      BuildOSCpuInfo(include_android_build_number).c_str(),
-+                      extra_os_info.c_str());
-+  return BuildUserAgentFromOSAndProduct(os_info, product);
-+}
-+
- #endif  // defined(OS_ANDROID)
+ // Helper function to generate just the OS info.
+-CONTENT_EXPORT std::string GetAndroidOSInfo(bool include_android_build_number);
++CONTENT_EXPORT std::string GetAndroidOSInfo(bool include_android_build_number, int32_t os_major_version);
+ #endif
  
- std::string BuildUserAgentFromOSAndProduct(const std::string& os_info,
+ // Builds a full user agent string given a string describing the OS and a
 -- 
 2.11.0
 

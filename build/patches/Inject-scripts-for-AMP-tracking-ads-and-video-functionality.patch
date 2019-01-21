@@ -11,14 +11,16 @@ Send a random key press to circumvent idle status detection
  third_party/blink/renderer/core/dom/document.cc    | 32 +++++++++++++++++++++-
  .../renderer/core/dom/extensions/anti_amp_cure.h   |  6 ++++
  .../renderer/core/dom/extensions/video_bg_play.h   |  6 ++++
- 4 files changed, 45 insertions(+), 1 deletion(-)
+ .../renderer/core/html/html_script_element.cc      |  5 ++++
+ .../blink/renderer/core/html/html_script_element.h |  1 +
+ 6 files changed, 51 insertions(+), 1 deletion(-)
  create mode 100644 third_party/blink/renderer/core/dom/extensions/anti_amp_cure.h
  create mode 100644 third_party/blink/renderer/core/dom/extensions/video_bg_play.h
 
 diff --git a/third_party/blink/renderer/core/dom/BUILD.gn b/third_party/blink/renderer/core/dom/BUILD.gn
 --- a/third_party/blink/renderer/core/dom/BUILD.gn
 +++ b/third_party/blink/renderer/core/dom/BUILD.gn
-@@ -146,6 +146,8 @@ blink_core_sources("dom") {
+@@ -148,6 +148,8 @@ blink_core_sources("dom") {
      "global_event_handlers.h",
      "icon_url.cc",
      "icon_url.h",
@@ -30,7 +32,7 @@ diff --git a/third_party/blink/renderer/core/dom/BUILD.gn b/third_party/blink/re
 diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
 --- a/third_party/blink/renderer/core/dom/document.cc
 +++ b/third_party/blink/renderer/core/dom/document.cc
-@@ -233,6 +233,7 @@
+@@ -234,6 +234,7 @@
  #include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator.h"
  #include "third_party/blink/renderer/core/page/scrolling/snap_coordinator.h"
  #include "third_party/blink/renderer/core/page/scrolling/top_document_root_scroller_controller.h"
@@ -38,7 +40,7 @@ diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink
  #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
  #include "third_party/blink/renderer/core/paint/first_meaningful_paint_detector.h"
  #include "third_party/blink/renderer/core/paint/paint_layer.h"
-@@ -291,6 +292,8 @@
+@@ -293,6 +294,8 @@
  #include "third_party/blink/renderer/platform/wtf/text/text_encoding_registry.h"
  #include "third_party/blink/renderer/platform/wtf/time.h"
  
@@ -47,7 +49,7 @@ diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink
  #ifndef NDEBUG
  using WeakDocumentSet = blink::HeapHashSet<blink::WeakMember<blink::Document>>;
  static WeakDocumentSet& liveDocumentSet();
-@@ -6088,8 +6091,35 @@ void Document::FinishedParsing() {
+@@ -6131,8 +6134,35 @@ void Document::FinishedParsing() {
      fetcher_->ClearResourcesFromPreviousFetcher();
    }
  
@@ -69,7 +71,7 @@ diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink
 +    if ((pos1 == 0) || (pos2 == 0)) {
 +      LOG(INFO) << "injecting anti-AMP-cure Javascript payload, URL: " << url_.GetString();
 +      HTMLScriptElement* e = HTMLScriptElement::Create(*this, CreateElementFlags());
-+      e->setText(ANTI_AMP_CURE_JS);
++      e->setTextDirect(ANTI_AMP_CURE_JS);
 +      bodyElement->AppendChild(e);
 +    }
 +
@@ -77,7 +79,7 @@ diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink
 +    if ((WTF::kNotFound != host.Find("youtube.com")) || (WTF::kNotFound != host.Find("vimeo.com"))) {
 +      LOG(INFO) << "injecting video-bg-play Javascript payload, URL: " << url_.GetString();
 +      HTMLScriptElement* e = HTMLScriptElement::Create(*this, CreateElementFlags());
-+      e->setText(VIDEO_BG_PLAY_JS);
++      e->setTextDirect(VIDEO_BG_PLAY_JS);
 +      bodyElement->AppendChild(e);
 +    }
 +  } // has origin and body element
@@ -106,6 +108,32 @@ new file mode 100644
 +#define VIDEO_BG_PLAY_JS "'use strict';\n\n/* generate a synthetic keypress to circumvent the extremely useful pause-and-prompt beaviour */\nsetInterval(function() {\n  document.dispatchEvent(new KeyboardEvent(\"keydown\", {key : \"a\", char : \"a\", shiftKey: false}));\n}, 3 * 60 * 1000);\n\n/* video background play fix - original version by timdream */\ndocument.videoBGFix = {};\n\n// Page Visibility API\nObject.defineProperties(document.videoBGFix,\n  { 'hidden': {value: false}, 'visibilityState': {value: 'visible'} });\n\nwindow.addEventListener(\n  'visibilitychange', evt => evt.stopImmediatePropagation(), true);\nwindow.addEventListener(\n  'blur', evt => evt.stopImmediatePropagation(), true);\n\n// Fullscreen API\nwindow.addEventListener('fullscreenchange', evt => {\n  Object.defineProperties(document.videoBGFix,\n    { 'fullscreenEnabled': {value: true},\n      'fullscreen': {value: true},\n      'fullscreenElement': {value: document.fullscreenElement.videoBGFix}});\n  window.addEventListener(\n    'fullscreenchange', evt => evt.stopImmediatePropagation(), true);\n}, { capture: true, once: true });\n"
 +
 +#endif  // video_bg_play_h
+diff --git a/third_party/blink/renderer/core/html/html_script_element.cc b/third_party/blink/renderer/core/html/html_script_element.cc
+--- a/third_party/blink/renderer/core/html/html_script_element.cc
++++ b/third_party/blink/renderer/core/html/html_script_element.cc
+@@ -147,6 +147,11 @@ void HTMLScriptElement::setTextContent(
+   }
+ }
+ 
++void HTMLScriptElement::setTextDirect(
++    const char *s) {
++  Node::setTextContent(s);
++}
++
+ void HTMLScriptElement::setAsync(bool async) {
+   SetBooleanAttribute(kAsyncAttr, async);
+   loader_->HandleAsyncAttribute();
+diff --git a/third_party/blink/renderer/core/html/html_script_element.h b/third_party/blink/renderer/core/html/html_script_element.h
+--- a/third_party/blink/renderer/core/html/html_script_element.h
++++ b/third_party/blink/renderer/core/html/html_script_element.h
+@@ -53,6 +53,7 @@ class CORE_EXPORT HTMLScriptElement final : public HTMLElement,
+   void setText(const StringOrTrustedScript&, ExceptionState&);
+   void setInnerText(const StringOrTrustedScript&, ExceptionState&) override;
+   void setTextContent(const StringOrTrustedScript&, ExceptionState&) override;
++  void setTextDirect(const char*);
+ 
+   KURL Src() const;
+ 
 -- 
 2.11.0
 
