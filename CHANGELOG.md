@@ -1,3 +1,5 @@
+# 72.0.3626.73
+
 # 72.0.3626.68
 * do not ignore save prompt for users without SD card (workaround for upstream wontfix https://bugs.chromium.org/p/chromium/issues/detail?id=916606)
 * remove third_party/analytics patch (now fixed upstream in https://chromium.googlesource.com/chromium/src.git/+/64d6a56f094efbab83802c07ad3ddffa014f9903)
