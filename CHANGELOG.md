@@ -1,3 +1,7 @@
+# 72.0.3626.81
+* serve empty content for blocked scripts/images (fixes https://github.com/bromite/bromite/issues/238)
+* keep support of Jelly Bean (workaround for upstream https://bugs.chromium.org/p/chromium/issues/detail?id=923477)
+
 # 72.0.3626.73
 
 # 72.0.3626.68
