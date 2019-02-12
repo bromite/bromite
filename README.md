@@ -88,10 +88,10 @@ Yes, since version 69. While the desktop version of Chromium has an option to di
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
 
 ## Features not related to privacy
-* AV1 codec support
 * import/export bookmarks
 * allow playing videos in background tabs and disable pause on switching tabs
 * all codecs included (proprietary, open H.264 etc.)
+* [AV1 codec support](https://github.com/bromite/bromite/wiki/AV1-support)
 * built with official speed optimizations
 
 You can inspect all functionality/privacy changes by reading the patches: https://github.com/bromite/bromite/tree/master/build/patches
