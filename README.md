@@ -75,7 +75,7 @@ Yes, since version 69. While the desktop version of Chromium has an option to di
 
 # Features
 
-* baked-in adblock engine with filters from EasyList, EasyPrivacy and others
+* baked-in adblock engine
 * remove click-tracking and AMP from search results
 * DNS-over-HTTPS support via Google, Cloudflare, Quad9 and AdGuard servers
 * [proxy configuration page](https://github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
@@ -148,8 +148,12 @@ The patches are to be applied second the order specified in the `patches_list.tx
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (via ungoogled-chromium)
 * [Brave Browser](https://github.com/brave/browser-android-tabs) for some patches
 * nochromo for the original adblock patch
-* [AdBlock Plus](https://adblockplus.org/), [uBlock Origin](https://github.com/uBlockOrigin), [Peter Lowe's adservers list](https://pgl.yoyo.org/adservers/), [EasyList and EasyPrivacy](https://easylist.to/) for the filters included
 * [Vadim Pleshkov](http://vadimpleshkov.me/) for Bromite's logo
+
+# Filters credits
+* [AdGuard](https://kb.adguard.com/en/general/adguard-ad-filters) for the English, Malware, Social media and Mobile filters
+* [uBlock Origin](https://github.com/uBlockOrigin) for the privacy filter
+* [Peter Lowe's adservers list](https://pgl.yoyo.org/adservers/)
 
 # License
 

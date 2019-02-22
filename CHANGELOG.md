@@ -1,3 +1,9 @@
+# 72.0.3626.119
+* use AdGuard filters
+* fixes for new tile rows usage
+* re-introduce patch to hide NTP tiles
+* disable NTP tile metrics collection
+
 # 72.0.3626.114
 * use 4 tile rows instead of 2 in the new tab page
 * do not grant geolocation permission to default search engine (fixes https://github.com/bromite/bromite/issues/250)
