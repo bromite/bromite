@@ -1,3 +1,10 @@
+# 72.0.3626.120
+* add support for resource type in adblock engine (fixes https://github.com/bromite/bromite/issues/115)
+* adblock engine speed optimizations
+* use adblock engine also in SystemWebView
+* add back uBlock Origin and EasyList filters
+* added Fanboy's Annoyance List
+
 # 72.0.3626.119
 * use AdGuard filters
 * fixes for new tile rows usage

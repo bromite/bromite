@@ -151,8 +151,10 @@ The patches are to be applied second the order specified in the `patches_list.tx
 * [Vadim Pleshkov](http://vadimpleshkov.me/) for Bromite's logo
 
 # Filters credits
-* [AdGuard](https://kb.adguard.com/en/general/adguard-ad-filters) for the English, Malware, Social media and Mobile filters
-* [uBlock Origin](https://github.com/uBlockOrigin) for the privacy filter
+* [EasyList](https://easylist.to/#easylist)
+* [EasyPrivacy](https://easylist.to/#easyprivacy)
+* [Fanboy's Annoyance List](https://easylist.to/#fanboy-s-annoyance-list)
+* [uBlock Origin](https://github.com/uBlockOrigin)
 * [Peter Lowe's adservers list](https://pgl.yoyo.org/adservers/)
 
 # License
