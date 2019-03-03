@@ -1,3 +1,10 @@
+# 73.0.3683.61
+* drop patches with functionality now available from upstream (DuckDuckGo and Qwant search engines, TLS 1.3 final)
+* add only DuckDuckGo Lite search engine
+* provide image URL for Qwant
+* disable safe browsing subresource filter by default
+* fix PAC URL support in proxy configuration
+
 # 72.0.3626.120
 * add support for resource type in adblock engine (fixes https://github.com/bromite/bromite/issues/115)
 * adblock engine speed optimizations

@@ -6,25 +6,26 @@ Allow selection between Google and Cloudflare endpoints.
 Serve DoH requests with maximum priority, remove traffic annotation.
 Reduce HTTP headers in DoH requests to bare minimum.
 Add AdGuard (default) endpoint
+Do not fallback to UDP when using DoH
 
 See also: https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-14.txt
 ---
  chrome/browser/about_flags.cc                      | 14 +++++++++++
  chrome/browser/flag_descriptions.cc                |  3 +++
  chrome/browser/flag_descriptions.h                 |  3 +++
- .../browser/net/system_network_context_manager.cc  | 16 ++++++-------
+ .../browser/net/system_network_context_manager.cc  | 17 +++++++------
  .../common/network_features.cc                     |  7 ++++--
  .../common/network_features.h                      |  5 +++-
  .../common/network_switch_list.h                   |  4 ++++
  net/base/load_flags_list.h                         |  6 +++++
  net/dns/dns_transaction.cc                         | 28 +++-------------------
- net/url_request/url_request_http_job.cc            | 26 ++++++++++++--------
- 10 files changed, 65 insertions(+), 47 deletions(-)
+ net/url_request/url_request_http_job.cc            | 28 +++++++++++++---------
+ 10 files changed, 67 insertions(+), 48 deletions(-)
 
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
-@@ -427,6 +427,14 @@ const FeatureEntry::FeatureVariation kCCTModuleCacheVariations[] = {
+@@ -423,6 +423,14 @@ const FeatureEntry::FeatureVariation kCCTModuleCacheVariations[] = {
       base::size(kCCTModuleCache_ThirtyMinutes), nullptr},
  };
  
@@ -38,8 +39,8 @@ diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 +
  #endif  // OS_ANDROID
  
- const FeatureEntry::Choice kNumRasterThreadsChoices[] = {
-@@ -3561,6 +3569,12 @@ const FeatureEntry kFeatureEntries[] = {
+ const FeatureEntry::Choice kMHTMLGeneratorOptionChoices[] = {
+@@ -3436,6 +3444,12 @@ const FeatureEntry kFeatureEntries[] = {
       FEATURE_VALUE_TYPE(features::kAsyncDns)},
  #endif  // defined(OS_ANDROID)
  
@@ -55,7 +56,7 @@ diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
 --- a/chrome/browser/flag_descriptions.cc
 +++ b/chrome/browser/flag_descriptions.cc
-@@ -2260,6 +2260,9 @@ const char kAutoFetchOnNetErrorPageDescription[] =
+@@ -2292,6 +2292,9 @@ const char kAutoFetchOnNetErrorPageDescription[] =
      "When enabled, and navigation fails with an offline error, schedule a "
      "fetch of the page when online again.";
  
@@ -68,7 +69,7 @@ diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descripti
 diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptions.h
 --- a/chrome/browser/flag_descriptions.h
 +++ b/chrome/browser/flag_descriptions.h
-@@ -1355,6 +1355,9 @@ extern const char kAsyncDnsDescription[];
+@@ -1362,6 +1362,9 @@ extern const char kAsyncDnsDescription[];
  extern const char kAutoFetchOnNetErrorPageName[];
  extern const char kAutoFetchOnNetErrorPageDescription[];
  
@@ -81,7 +82,7 @@ diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptio
 diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/browser/net/system_network_context_manager.cc
 --- a/chrome/browser/net/system_network_context_manager.cc
 +++ b/chrome/browser/net/system_network_context_manager.cc
-@@ -23,6 +23,7 @@
+@@ -24,6 +24,7 @@
  #include "chrome/browser/component_updater/sth_set_component_installer.h"
  #include "chrome/browser/io_thread.h"
  #include "chrome/browser/net/chrome_mojo_proxy_resolver_factory.h"
@@ -89,7 +90,15 @@ diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/brows
  #include "chrome/browser/safe_browsing/safe_browsing_service.h"
  #include "chrome/browser/ssl/ssl_config_service_manager.h"
  #include "chrome/common/channel_info.h"
-@@ -395,15 +396,12 @@ SystemNetworkContextManager::SystemNetworkContextManager(
+@@ -121,6 +122,7 @@ void GetStubResolverConfig(
+       if (!net::dns_util::IsValidDoHTemplate(
+               doh_server_list[i].GetString(),
+               doh_server_method_list[i].GetString())) {
++        LOG(ERROR) << "Invalid DoH template: " << doh_server_list[i].GetString() << " with method " << doh_server_method_list[i].GetString();
+         continue;
+       }
+ 
+@@ -395,15 +397,12 @@ SystemNetworkContextManager::SystemNetworkContextManager(
                                      base::Value(ShouldEnableAsyncDns()));
    base::ListValue default_doh_servers;
    base::ListValue default_doh_server_methods;
@@ -147,7 +156,7 @@ diff --git a/components/network_session_configurator/common/network_features.h b
 diff --git a/components/network_session_configurator/common/network_switch_list.h b/components/network_session_configurator/common/network_switch_list.h
 --- a/components/network_session_configurator/common/network_switch_list.h
 +++ b/components/network_session_configurator/common/network_switch_list.h
-@@ -35,6 +35,10 @@ NETWORK_SWITCH(kOriginToForceQuicOn, "origin-to-force-quic-on")
+@@ -32,6 +32,10 @@ NETWORK_SWITCH(kOriginToForceQuicOn, "origin-to-force-quic-on")
  // the server.
  NETWORK_SWITCH(kQuicConnectionOptions, "quic-connection-options")
  
@@ -161,23 +170,20 @@ diff --git a/components/network_session_configurator/common/network_switch_list.
 diff --git a/net/base/load_flags_list.h b/net/base/load_flags_list.h
 --- a/net/base/load_flags_list.h
 +++ b/net/base/load_flags_list.h
-@@ -89,6 +89,12 @@ LOAD_FLAG(MAYBE_USER_GESTURE, 1 << 13)
- LOAD_FLAG(DO_NOT_USE_EMBEDDED_IDENTITY, 1 << 14)
- 
- // Indicates that this request is not to be migrated to a cellular network when
+@@ -105,3 +105,9 @@ LOAD_FLAG(SKIP_VARY_CHECK, 1 << 16)
+ // does not complete in 60 seconds, the cache treat the stale resource as
+ // invalid, as it did not specify stale-while-revalidate.
+ LOAD_FLAG(SUPPORT_ASYNC_REVALIDATION, 1 << 17)
 +
 +// This load will not send Accept-Language or User-Agent headers, and not
 +// advertise brotli encoding.
 +// Used to comply with IETF (draft) DNS-over-HTTPS:
 +// "Implementors SHOULD NOT set non-essential HTTP headers in DoH client requests."
 +LOAD_FLAG(MINIMAL_HEADERS, 1 << 18)
- // QUIC connection migration is enabled.
- LOAD_FLAG(DISABLE_CONNECTION_MIGRATION_TO_CELLULAR, 1 << 15)
- 
 diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
 --- a/net/dns/dns_transaction.cc
 +++ b/net/dns/dns_transaction.cc
-@@ -358,30 +358,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
+@@ -352,30 +352,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
  
      HttpRequestHeaders extra_request_headers;
      extra_request_headers.SetHeader("Accept", kDnsOverHttpResponseContentType);
@@ -209,7 +215,7 @@ diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
      net_log_ = request_->net_log();
  
      if (use_post) {
-@@ -397,6 +374,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
+@@ -391,6 +368,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
  
      request_->SetExtraRequestHeaders(extra_request_headers);
      request_->SetLoadFlags(request_->load_flags() | LOAD_DISABLE_CACHE |
@@ -217,7 +223,7 @@ diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
                             LOAD_BYPASS_PROXY);
      request_->set_allow_credentials(false);
    }
-@@ -819,7 +797,7 @@ class DnsTransactionImpl : public DnsTransaction,
+@@ -807,7 +785,7 @@ class DnsTransactionImpl : public DnsTransaction,
          had_tcp_attempt_(false),
          doh_attempt_(false),
          first_server_index_(0),
@@ -229,7 +235,7 @@ diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
 diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_request_http_job.cc
 --- a/net/url_request/url_request_http_job.cc
 +++ b/net/url_request/url_request_http_job.cc
-@@ -422,19 +422,23 @@ void URLRequestHttpJob::Start() {
+@@ -423,17 +423,21 @@ void URLRequestHttpJob::Start() {
    // plugin could set a referrer although sending the referrer is inhibited.
    request_info_.extra_headers.RemoveHeader(HttpRequestHeaders::kReferer);
  
@@ -237,17 +243,16 @@ diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_reque
 -  // instance WebCore::FrameLoader::HideReferrer.
 -  if (referrer.is_valid()) {
 -    request_info_.extra_headers.SetHeader(HttpRequestHeaders::kReferer,
+-                                          referrer.spec());
 +  if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
 +    // Our consumer should have made sure that this is a safe referrer. See for
 +    // instance WebCore::FrameLoader::HideReferrer.
 +    if (referrer.is_valid()) {
 +      request_info_.extra_headers.SetHeader(HttpRequestHeaders::kReferer,
-                                           referrer.spec());
++                                           referrer.spec());
 +    }
    }
  
-   // This should be kept in sync with the corresponding code in
-   // URLRequest::GetUserAgent.
 -  request_info_.extra_headers.SetHeaderIfMissing(
 +  if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
 +    request_info_.extra_headers.SetHeaderIfMissing(
@@ -258,25 +263,25 @@ diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_reque
  
    AddExtraHeaders();
    AddCookieHeaderAndStart();
-@@ -647,10 +651,12 @@ void URLRequestHttpJob::AddExtraHeaders() {
-           HttpRequestHeaders::kAcceptEncoding)) {
-     // Advertise "br" encoding only if transferred data is opaque to proxy.
-     bool advertise_brotli = false;
--    if (request()->context()->enable_brotli()) {
--      if (request()->url().SchemeIsCryptographic() ||
--          IsLocalhost(request()->url())) {
--        advertise_brotli = true;
-+    if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
-+      if (request()->context()->enable_brotli()) {
-+        if (request()->url().SchemeIsCryptographic() ||
-+            IsLocalhost(request()->url())) {
-+          advertise_brotli = true;
-+        }
+@@ -652,10 +656,12 @@ void URLRequestHttpJob::AddExtraHeaders() {
+     } else {
+       // Advertise "br" encoding only if transferred data is opaque to proxy.
+       bool advertise_brotli = false;
+-      if (request()->context()->enable_brotli()) {
+-        if (request()->url().SchemeIsCryptographic() ||
+-            IsLocalhost(request()->url())) {
+-          advertise_brotli = true;
++      if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
++        if (request()->context()->enable_brotli()) {
++          if (request()->url().SchemeIsCryptographic() ||
++              IsLocalhost(request()->url())) {
++            advertise_brotli = true;
++          }
+         }
        }
-     }
  
-@@ -667,7 +673,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
-                                           advertised_encodings);
+@@ -673,7 +679,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
+     }
    }
  
 -  if (http_user_agent_settings_) {
