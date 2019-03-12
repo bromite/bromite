@@ -1,3 +1,5 @@
+# 73.0.3683.70
+
 # 73.0.3683.61
 * drop patches with functionality now available from upstream (DuckDuckGo and Qwant search engines, TLS 1.3 final)
 * add only DuckDuckGo Lite search engine
