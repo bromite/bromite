@@ -1,3 +1,8 @@
+# 73.0.3683.79
+* add missing Qwant engine from default engines list (fixes https://github.com/bromite/bromite/issues/262)
+* DoH: include upstream patch for DNS secure mode
+* DoH: enable DNS secure mode by default
+
 # 73.0.3683.70
 
 # 73.0.3683.61
