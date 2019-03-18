@@ -1,0 +1,236 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sun, 17 Mar 2019 20:51:11 +0100
+Subject: Always show home page settings
+
+Remove the "Force Enable Home Page Button" flag, which was bugged, and always
+display home page settings.
+This allows removing the home page button and restoring it from settings.
+---
+ .../browser/init/ProcessInitializationHandler.java | 12 --------
+ .../partnercustomizations/HomepageManager.java     | 17 ++--------
+ .../preferences/ChromePreferenceManager.java       |  7 -----
+ .../browser/preferences/MainPreferences.java       | 12 +++-----
+ .../chrome/browser/util/FeatureUtilities.java      | 36 ----------------------
+ chrome/browser/about_flags.cc                      |  3 --
+ chrome/browser/android/chrome_feature_list.cc      |  4 ---
+ chrome/browser/android/chrome_feature_list.h       |  1 -
+ 8 files changed, 7 insertions(+), 85 deletions(-)
+
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java b/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java
+@@ -328,18 +328,6 @@ public class ProcessInitializationHandler {
+         deferredStartupHandler.addDeferredTask(new Runnable() {
+             @Override
+             public void run() {
+-                if (HomepageManager.shouldShowHomepageSetting()) {
+-                    RecordHistogram.recordBooleanHistogram("Settings.ShowHomeButtonPreferenceState",
+-                            HomepageManager.isHomepageEnabled());
+-                    RecordHistogram.recordBooleanHistogram("Settings.HomePageIsCustomized",
+-                            !HomepageManager.getInstance().getPrefHomepageUseDefaultUri());
+-                }
+-            }
+-        });
+-
+-        deferredStartupHandler.addDeferredTask(new Runnable() {
+-            @Override
+-            public void run() {
+                 // Starts syncing with GSA.
+                 AppHooks.get().createGsaHelper().startSync();
+             }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/partnercustomizations/HomepageManager.java b/chrome/android/java/src/org/chromium/chrome/browser/partnercustomizations/HomepageManager.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/partnercustomizations/HomepageManager.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/partnercustomizations/HomepageManager.java
+@@ -83,10 +83,7 @@ public class HomepageManager {
+      * @return Whether or not homepage is enabled.
+      */
+     public static boolean isHomepageEnabled() {
+-        if (FeatureUtilities.isHomePageButtonForceEnabled()) {
+-            return getInstance().getPrefHomepageEnabled();
+-        }
+-        return false;
++        return getInstance().getPrefHomepageEnabled();
+     }
+ 
+     /**
+@@ -98,13 +95,6 @@ public class HomepageManager {
+     }
+ 
+     /**
+-     * @return Whether or not homepage setting should be shown.
+-     */
+-    public static boolean shouldShowHomepageSetting() {
+-        return FeatureUtilities.isHomePageButtonForceEnabled();
+-    }
+-
+-    /**
+      * @return Homepage URI string, if it's enabled. Null otherwise or uninitialized.
+      */
+     public static String getHomepageUri() {
+@@ -118,8 +108,7 @@ public class HomepageManager {
+     }
+ 
+     /**
+-     * @return The default homepage URI if the homepage is partner provided or the new tab page
+-     *         if the homepage button is force enabled via flag.
++     * @return The default homepage URI.
+      */
+     public static String getDefaultHomepageUri() {
+         return UrlConstants.NTP_NON_NATIVE_URL;
+@@ -132,7 +121,7 @@ public class HomepageManager {
+      * @see #isHomepageEnabled
+      */
+     public boolean getPrefHomepageEnabled() {
+-        return mSharedPreferences.getBoolean(PREF_HOMEPAGE_ENABLED, true);
++        return mSharedPreferences.getBoolean(PREF_HOMEPAGE_ENABLED, false);
+     }
+ 
+     /**
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceManager.java b/chrome/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceManager.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceManager.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceManager.java
+@@ -144,13 +144,6 @@ public class ChromePreferenceManager {
+     private static final String CHROME_MODERN_DESIGN_ENABLED_KEY = "chrome_modern_design_enabled";
+ 
+     /**
+-     * Whether or not the home page button is force enabled.
+-     * Default value is false.
+-     */
+-    public static final String HOME_PAGE_BUTTON_FORCE_ENABLED_KEY =
+-            "home_page_button_force_enabled";
+-
+-    /**
+      * Whether or not the homepage tile will be shown.
+      * Default value is false.
+      */
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/MainPreferences.java b/chrome/android/java/src/org/chromium/chrome/browser/preferences/MainPreferences.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/preferences/MainPreferences.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/preferences/MainPreferences.java
+@@ -195,15 +195,11 @@ public class MainPreferences extends PreferenceFragment
+ 
+         updateSearchEnginePreference();
+ 
+-        if (HomepageManager.shouldShowHomepageSetting()) {
+-            Preference homepagePref = addPreferenceIfAbsent(PREF_HOMEPAGE);
+-            if (FeatureUtilities.isNewTabPageButtonEnabled()) {
+-                homepagePref.setTitle(R.string.options_startup_page_title);
+-            }
+-            setOnOffSummary(homepagePref, HomepageManager.getInstance().getPrefHomepageEnabled());
+-        } else {
+-            removePreferenceIfPresent(PREF_HOMEPAGE);
++        Preference homepagePref = addPreferenceIfAbsent(PREF_HOMEPAGE);
++        if (FeatureUtilities.isNewTabPageButtonEnabled()) {
++            homepagePref.setTitle(R.string.options_startup_page_title);
+         }
++        setOnOffSummary(homepagePref, HomepageManager.getInstance().getPrefHomepageEnabled());
+ 
+         if (!ChromeFeatureList.isEnabled(ChromeFeatureList.UNIFIED_CONSENT)
+                 && FeatureUtilities.areContextualSuggestionsEnabled(getActivity())
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/util/FeatureUtilities.java b/chrome/android/java/src/org/chromium/chrome/browser/util/FeatureUtilities.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/util/FeatureUtilities.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/util/FeatureUtilities.java
+@@ -71,7 +71,6 @@ public class FeatureUtilities {
+     private static Boolean sHasRecognitionIntentHandler;
+ 
+     private static Boolean sIsSoleEnabled;
+-    private static Boolean sIsHomePageButtonForceEnabled;
+     private static Boolean sIsHomepageTileEnabled;
+     private static Boolean sIsNewTabPageButtonEnabled;
+     private static Boolean sIsBottomToolbarEnabled;
+@@ -186,7 +185,6 @@ public class FeatureUtilities {
+         cacheSoleEnabled();
+         cacheCommandLineOnNonRootedEnabled();
+         FirstRunUtils.cacheFirstRunPrefs();
+-        cacheHomePageButtonForceEnabled();
+         cacheHomepageTileEnabled();
+         cacheNewTabPageButtonEnabled();
+         cacheBottomToolbarEnabled();
+@@ -212,40 +210,6 @@ public class FeatureUtilities {
+     }
+ 
+     /**
+-     * Cache whether or not the home page button is force enabled so on next startup, the value can
+-     * be made available immediately.
+-     */
+-    public static void cacheHomePageButtonForceEnabled() {
+-        if (PartnerBrowserCustomizations.isHomepageProviderAvailableAndEnabled()) return;
+-        ChromePreferenceManager.getInstance().writeBoolean(
+-                ChromePreferenceManager.HOME_PAGE_BUTTON_FORCE_ENABLED_KEY,
+-                ChromeFeatureList.isEnabled(ChromeFeatureList.HOME_PAGE_BUTTON_FORCE_ENABLED));
+-    }
+-
+-    /**
+-     * @return Whether or not the home page button is force enabled.
+-     */
+-    public static boolean isHomePageButtonForceEnabled() {
+-        if (sIsHomePageButtonForceEnabled == null) {
+-            ChromePreferenceManager prefManager = ChromePreferenceManager.getInstance();
+-
+-            try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
+-                sIsHomePageButtonForceEnabled = prefManager.readBoolean(
+-                        ChromePreferenceManager.HOME_PAGE_BUTTON_FORCE_ENABLED_KEY, false);
+-            }
+-        }
+-        return sIsHomePageButtonForceEnabled;
+-    }
+-
+-    /**
+-     * Resets whether the home page button is enabled for tests. After this is called, the next
+-     * call to #isHomePageButtonForceEnabled() will retrieve the value from shared preferences.
+-     */
+-    public static void resetHomePageButtonForceEnabledForTests() {
+-        sIsHomePageButtonForceEnabled = null;
+-    }
+-
+-    /**
+      * Cache whether or not the toolbar should be inflated on a background thread so on next
+      * startup, the value can be made available immediately.
+      */
+diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
+--- a/chrome/browser/about_flags.cc
++++ b/chrome/browser/about_flags.cc
+@@ -1891,9 +1891,6 @@ const FeatureEntry kFeatureEntries[] = {
+     {"enable-chrome-duet", flag_descriptions::kChromeDuetName,
+      flag_descriptions::kChromeDuetDescription, kOsAndroid,
+      FEATURE_VALUE_TYPE(chrome::android::kChromeDuetFeature)},
+-    {"force-enable-home-page-button", flag_descriptions::kHomePageButtonName,
+-     flag_descriptions::kHomePageButtonDescription, kOsAndroid,
+-     FEATURE_VALUE_TYPE(chrome::android::kHomePageButtonForceEnabled)},
+     {"enable-ntp-button", flag_descriptions::kNtpButtonName,
+      flag_descriptions::kNtpButtonDescription, kOsAndroid,
+      FEATURE_VALUE_TYPE(chrome::android::kNTPButton)},
+diff --git a/chrome/browser/android/chrome_feature_list.cc b/chrome/browser/android/chrome_feature_list.cc
+--- a/chrome/browser/android/chrome_feature_list.cc
++++ b/chrome/browser/android/chrome_feature_list.cc
+@@ -124,7 +124,6 @@ const base::Feature* kFeaturesExposedToJava[] = {
+     &kGestureNavigation,
+     &kHandleMediaIntents,
+     &kHideUserDataFromIncognitoNotifications,
+-    &kHomePageButtonForceEnabled,
+     &kHomepageTile,
+     &kHorizontalTabSwitcherAndroid,
+     &kImprovedA2HS,
+@@ -337,9 +336,6 @@ const base::Feature kHandleMediaIntents{"HandleMediaIntents",
+ const base::Feature kHideUserDataFromIncognitoNotifications{
+     "HideUserDataFromIncognitoNotifications", base::FEATURE_ENABLED_BY_DEFAULT};
+ 
+-const base::Feature kHomePageButtonForceEnabled{
+-    "HomePageButtonForceEnabled", base::FEATURE_DISABLED_BY_DEFAULT};
+-
+ const base::Feature kHomepageTile{"HomepageTile",
+                                   base::FEATURE_ENABLED_BY_DEFAULT};
+ 
+diff --git a/chrome/browser/android/chrome_feature_list.h b/chrome/browser/android/chrome_feature_list.h
+--- a/chrome/browser/android/chrome_feature_list.h
++++ b/chrome/browser/android/chrome_feature_list.h
+@@ -56,7 +56,6 @@ extern const base::Feature kForegroundNotificationManager;
+ extern const base::Feature kGestureNavigation;
+ extern const base::Feature kHandleMediaIntents;
+ extern const base::Feature kHideUserDataFromIncognitoNotifications;
+-extern const base::Feature kHomePageButtonForceEnabled;
+ extern const base::Feature kHomepageTile;
+ extern const base::Feature kHorizontalTabSwitcherAndroid;
+ extern const base::Feature kImprovedA2HS;
+-- 
+2.11.0
+

@@ -1,3 +1,10 @@
+# 73.0.3683.82
+* remove force home page button flag
+* enable site per process isolation for devices with memory > 1GB
+* use 64-bit processes for SystemWebView
+* disable local field trials seed (redundant)
+* fix patch for classic new tab page (redundant)
+
 # 73.0.3683.79
 * add missing Qwant engine from default engines list (fixes https://github.com/bromite/bromite/issues/262)
 * DoH: include upstream patch for DNS secure mode
