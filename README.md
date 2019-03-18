@@ -146,6 +146,7 @@ The patches are to be applied second the order specified in the `patches_list.tx
 * [Chromium project](https://www.chromium.org/Home) and developers
 * [Iridium project](https://github.com/iridium-browser) for some patches
 * [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) for some patches
+* [AndroidHardening](https://github.com/AndroidHardening) for some patches
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (via ungoogled-chromium)
 * [Brave Browser](https://github.com/brave/browser-android-tabs) for some patches
 * nochromo for the original adblock patch
