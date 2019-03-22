@@ -1,3 +1,6 @@
+# 73.0.3683.88
+* add option to use home page as NTP
+
 # 73.0.3683.82
 * remove force home page button flag
 * enable site per process isolation for devices with memory > 1GB
