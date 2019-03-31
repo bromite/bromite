@@ -1,3 +1,6 @@
+# 73.0.3683.97 
+* remove patch to hide NTP tiles
+
 # 73.0.3683.88
 * add option to use home page as NTP
 
