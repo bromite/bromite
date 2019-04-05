@@ -97,6 +97,10 @@ Yes, since version 69. While the desktop version of Chromium has an option to di
 
 You can inspect all functionality/privacy changes by reading the patches: https://github.com/bromite/bromite/tree/master/build/patches
 
+# Privacy limitations
+
+Bromite's privacy features, including anti-fingerprinting mitigations (which can be easily circumvented), **are not to be considered useful for journalists and people living in countries with freedom limitations**, please look at [Tor Browser](https://2019.www.torproject.org/projects/torbrowser.html.en) in such cases.
+
 # Releases
 
 All built versions are available as [releases](https://github.com/bromite/bromite/releases); the [official website](https://www.bromite.org/) points to those releases and - when browsing via Android - it will automatically select the one apt for your device (or none otherwise).
