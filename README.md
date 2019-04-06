@@ -159,9 +159,7 @@ The patches are to be applied second the order specified in the `patches_list.tx
 # Filters credits
 * [EasyList](https://easylist.to/#easylist)
 * [EasyPrivacy](https://easylist.to/#easyprivacy)
-* [Fanboy's Annoyance List](https://easylist.to/#fanboy-s-annoyance-list)
 * [uBlock Origin](https://github.com/uBlockOrigin)
-* [Peter Lowe's adservers list](https://pgl.yoyo.org/adservers/)
 
 # License
 

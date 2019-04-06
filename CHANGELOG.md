@@ -1,3 +1,6 @@
+# 73.0.3683.105
+* removed Fanboy's Annoyance List and Peter Lowe's adservers list from filters
+
 # 73.0.3683.97 
 * remove patch to hide NTP tiles
 
