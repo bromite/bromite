@@ -1,3 +1,7 @@
+# 73.0.3683.107
+* removed patch to disable smooth scrolling
+* fixed custom tab intents issue (fixes https://github.com/bromite/bromite/issues/279)
+
 # 73.0.3683.105
 * removed Fanboy's Annoyance List and Peter Lowe's adservers list from filters
 
