@@ -10,7 +10,7 @@ Do not fallback to UDP when using DoH
 
 See also: https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-14.txt
 ---
- chrome/browser/about_flags.cc                      | 14 +++++++++++
+ chrome/browser/about_flags.cc                      | 11 +++++++++
  chrome/browser/flag_descriptions.cc                |  3 +++
  chrome/browser/flag_descriptions.h                 |  3 +++
  .../browser/net/system_network_context_manager.cc  | 17 +++++++------
@@ -18,14 +18,14 @@ See also: https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-14.txt
  .../common/network_features.h                      |  5 +++-
  .../common/network_switch_list.h                   |  4 ++++
  net/base/load_flags_list.h                         |  6 +++++
- net/dns/dns_transaction.cc                         | 28 +++-------------------
+ net/dns/dns_transaction.cc                         | 27 +++------------------
  net/url_request/url_request_http_job.cc            | 28 +++++++++++++---------
- 10 files changed, 67 insertions(+), 48 deletions(-)
+ 10 files changed, 64 insertions(+), 47 deletions(-)
 
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
-@@ -423,6 +423,14 @@ const FeatureEntry::FeatureVariation kCCTModuleCacheVariations[] = {
+@@ -398,6 +398,14 @@ const FeatureEntry::FeatureVariation kCCTModuleCacheVariations[] = {
       base::size(kCCTModuleCache_ThirtyMinutes), nullptr},
  };
  
@@ -39,24 +39,21 @@ diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 +
  #endif  // OS_ANDROID
  
- const FeatureEntry::Choice kMHTMLGeneratorOptionChoices[] = {
-@@ -3433,6 +3441,12 @@ const FeatureEntry kFeatureEntries[] = {
-      FEATURE_VALUE_TYPE(features::kAsyncDns)},
- #endif  // defined(OS_ANDROID)
- 
-+#if defined(OS_ANDROID)
+ const FeatureEntry::Choice kEnableGpuRasterizationChoices[] = {
+@@ -3400,6 +3408,9 @@ const FeatureEntry kFeatureEntries[] = {
+      FEATURE_WITH_PARAMS_VALUE_TYPE(chrome::android::kTabSwitcherOnReturn,
+                                     kTabSwitcherOnReturnVariations,
+                                     "TabSwitcherOnReturn")},
 +    {"enable-dns-over-https", flag_descriptions::kDnsOverHttpsName,
 +     flag_descriptions::kDnsOverHttpsDescription, kOsAndroid,
 +     MULTI_VALUE_TYPE(kDnsOverHttpsChoices)},
-+#endif  // defined(OS_ANDROID)
-+
-     {"enable-overflow-icons-for-media-controls",
-      flag_descriptions::kOverflowIconsForMediaControlsName,
-      flag_descriptions::kOverflowIconsForMediaControlsDescription, kOsAll,
+ #endif
+ 
+     {"enable-built-in-module-all", flag_descriptions::kBuiltInModuleAllName,
 diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
 --- a/chrome/browser/flag_descriptions.cc
 +++ b/chrome/browser/flag_descriptions.cc
-@@ -2292,6 +2292,9 @@ const char kAutoFetchOnNetErrorPageDescription[] =
+@@ -2209,6 +2209,9 @@ const char kAutoFetchOnNetErrorPageDescription[] =
      "When enabled, and navigation fails with an offline error, schedule a "
      "fetch of the page when online again.";
  
@@ -69,7 +66,7 @@ diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descripti
 diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptions.h
 --- a/chrome/browser/flag_descriptions.h
 +++ b/chrome/browser/flag_descriptions.h
-@@ -1362,6 +1362,9 @@ extern const char kAsyncDnsDescription[];
+@@ -1306,6 +1306,9 @@ extern const char kAsyncDnsDescription[];
  extern const char kAutoFetchOnNetErrorPageName[];
  extern const char kAutoFetchOnNetErrorPageDescription[];
  
@@ -82,7 +79,7 @@ diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptio
 diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/browser/net/system_network_context_manager.cc
 --- a/chrome/browser/net/system_network_context_manager.cc
 +++ b/chrome/browser/net/system_network_context_manager.cc
-@@ -24,6 +24,7 @@
+@@ -25,6 +25,7 @@
  #include "chrome/browser/component_updater/sth_set_component_installer.h"
  #include "chrome/browser/io_thread.h"
  #include "chrome/browser/net/chrome_mojo_proxy_resolver_factory.h"
@@ -90,7 +87,7 @@ diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/brows
  #include "chrome/browser/safe_browsing/safe_browsing_service.h"
  #include "chrome/browser/ssl/ssl_config_service_manager.h"
  #include "chrome/common/channel_info.h"
-@@ -121,6 +122,7 @@ void GetStubResolverConfig(
+@@ -122,6 +123,7 @@ void GetStubResolverConfig(
        if (!net::dns_util::IsValidDoHTemplate(
                doh_server_list[i].GetString(),
                doh_server_method_list[i].GetString())) {
@@ -98,7 +95,7 @@ diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/brows
          continue;
        }
  
-@@ -395,15 +397,12 @@ SystemNetworkContextManager::SystemNetworkContextManager(
+@@ -401,15 +403,12 @@ SystemNetworkContextManager::SystemNetworkContextManager(
                                      base::Value(ShouldEnableAsyncDns()));
    base::ListValue default_doh_servers;
    base::ListValue default_doh_server_methods;
@@ -183,11 +180,10 @@ diff --git a/net/base/load_flags_list.h b/net/base/load_flags_list.h
 diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
 --- a/net/dns/dns_transaction.cc
 +++ b/net/dns/dns_transaction.cc
-@@ -352,30 +352,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
- 
-     HttpRequestHeaders extra_request_headers;
+@@ -358,29 +358,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
      extra_request_headers.SetHeader("Accept", kDnsOverHttpResponseContentType);
--
+ 
+     DCHECK(url_request_context);
 -    request_ = url_request_context->CreateRequest(
 -        url, request_priority_, this,
 -        net::DefineNetworkTrafficAnnotation("dns_over_https", R"(
@@ -215,7 +211,7 @@ diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
      net_log_ = request_->net_log();
  
      if (use_post) {
-@@ -391,6 +368,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
+@@ -396,6 +374,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
  
      request_->SetExtraRequestHeaders(extra_request_headers);
      request_->SetLoadFlags(request_->load_flags() | LOAD_DISABLE_CACHE |
@@ -223,7 +219,7 @@ diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
                             LOAD_BYPASS_PROXY);
      request_->set_allow_credentials(false);
    }
-@@ -807,7 +785,7 @@ class DnsTransactionImpl : public DnsTransaction,
+@@ -815,7 +794,7 @@ class DnsTransactionImpl : public DnsTransaction,
          had_tcp_attempt_(false),
          doh_attempt_(false),
          first_server_index_(0),
@@ -235,7 +231,7 @@ diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
 diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_request_http_job.cc
 --- a/net/url_request/url_request_http_job.cc
 +++ b/net/url_request/url_request_http_job.cc
-@@ -423,17 +423,21 @@ void URLRequestHttpJob::Start() {
+@@ -425,17 +425,21 @@ void URLRequestHttpJob::Start() {
    // plugin could set a referrer although sending the referrer is inhibited.
    request_info_.extra_headers.RemoveHeader(HttpRequestHeaders::kReferer);
  
@@ -263,7 +259,7 @@ diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_reque
  
    AddExtraHeaders();
    AddCookieHeaderAndStart();
-@@ -652,10 +656,12 @@ void URLRequestHttpJob::AddExtraHeaders() {
+@@ -659,10 +663,12 @@ void URLRequestHttpJob::AddExtraHeaders() {
      } else {
        // Advertise "br" encoding only if transferred data is opaque to proxy.
        bool advertise_brotli = false;
@@ -280,7 +276,7 @@ diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_reque
          }
        }
  
-@@ -673,7 +679,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
+@@ -680,7 +686,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
      }
    }
  

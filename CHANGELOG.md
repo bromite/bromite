@@ -1,12 +1,16 @@
+# 74.0.3729.80
+* increase minimum SDK version to 17 (Jelly Bean 4.2)
+* dropped obsolete patch for hyperlink auditing disable
+
 # 73.0.3683.107
-* removed patch to disable smooth scrolling
+* dropped patch to disable smooth scrolling
 * fixed custom tab intents issue (fixes https://github.com/bromite/bromite/issues/279)
 
 # 73.0.3683.105
 * removed Fanboy's Annoyance List and Peter Lowe's adservers list from filters
 
 # 73.0.3683.97 
-* remove patch to hide NTP tiles
+* dropped redundant patch to hide NTP tiles (use home page + about:blank)
 
 # 73.0.3683.88
 * add option to use home page as NTP
