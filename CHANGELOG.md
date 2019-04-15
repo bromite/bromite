@@ -1,3 +1,7 @@
+# 74.0.3729.86
+* enable dark mode settings entry by default
+* fix permission request for Play services on reboot (fixes https://github.com/bromite/bromite/issues/281)
+
 # 74.0.3729.80
 * increase minimum SDK version to 17 (Jelly Bean 4.2)
 * dropped obsolete patch for hyperlink auditing disable
