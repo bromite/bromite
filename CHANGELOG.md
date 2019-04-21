@@ -1,3 +1,7 @@
+# 74.0.3729.106
+* remove account/sync menu entries (fixes https://github.com/bromite/bromite/issues/285)
+* fix failed debug builds
+
 # 74.0.3729.86
 * enable dark mode settings entry by default
 * fix permission request for Play services on reboot (fixes https://github.com/bromite/bromite/issues/281)
