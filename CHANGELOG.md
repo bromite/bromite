@@ -1,3 +1,6 @@
+# 74.0.3729.122
+* remove more unnecessary permissions
+
 # 74.0.3729.106
 * remove account/sync menu entries (fixes https://github.com/bromite/bromite/issues/285)
 * fix failed debug builds
