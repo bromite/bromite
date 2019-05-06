@@ -1,3 +1,5 @@
+# 74.0.3729.141
+
 # 74.0.3729.122
 * remove more unnecessary permissions
 
