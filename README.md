@@ -86,7 +86,7 @@ Yes, since version 69. While the desktop version of Chromium has an option to di
 * anti-fingerprinting mitigations for canvas, audio, client rects, webGL and sensor APIs
 * use fixed User-Agent to conceal real model and browser version
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
-* security enhancement patches from [AndroidHardening](https://github.com/AndroidHardening) project
+* security enhancement patches from [GrapheneOS](https://github.com/GrapheneOS) project
 
 ## Features not related to privacy
 * import/export bookmarks
@@ -150,7 +150,7 @@ The patches are to be applied second the order specified in the `patches_list.tx
 * [Chromium project](https://www.chromium.org/Home) and developers
 * [Iridium project](https://github.com/iridium-browser) for some patches
 * [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) for some patches
-* [AndroidHardening](https://github.com/AndroidHardening) for some patches
+* [GrapheneOS](https://github.com/GrapheneOS) for some security patches
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (via ungoogled-chromium)
 * [Brave Browser](https://github.com/brave/browser-android-tabs) for some patches
 * nochromo for the original adblock patch
