@@ -1,0 +1,210 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Mon, 20 May 2019 23:14:36 +0200
+Subject: Disable dynamic module loading
+
+---
+ chrome/android/chrome_java_sources.gni             | 13 ----------
+ .../browser/customtabs/CustomTabActivity.java      | 18 -------------
+ .../customtabs/CustomTabIntentDataProvider.java    | 17 ++----------
+ .../browser/customtabs/CustomTabsConnection.java   | 30 ----------------------
+ .../CustomTabActivityComponent.java                |  4 ---
+ 5 files changed, 2 insertions(+), 80 deletions(-)
+
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -479,19 +479,6 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/customtabs/content/TabCreationMode.java",
+   "java/src/org/chromium/chrome/browser/customtabs/dependency_injection/CustomTabActivityComponent.java",
+   "java/src/org/chromium/chrome/browser/customtabs/dependency_injection/CustomTabActivityModule.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/ActivityDelegate.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/ActivityDelegatePostMessageBackend.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/ActivityHostImpl.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/DynamicModuleConstants.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/DynamicModuleCoordinator.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/DynamicModuleNavigationEventObserver.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/DynamicModulePageLoadObserver.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/DynamicModuleToolbarController.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/ModuleEntryPoint.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/ModuleHostImpl.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/ModuleLoader.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/ModuleMetrics.java",
+-  "java/src/org/chromium/chrome/browser/customtabs/dynamicmodule/ObjectWrapper.java",
+   "java/src/org/chromium/chrome/browser/database/SQLiteCursor.java",
+   "java/src/org/chromium/chrome/browser/datareduction/DataReductionBrandingResourceProvider.java",
+   "java/src/org/chromium/chrome/browser/datareduction/DataReductionMainMenuItem.java",
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabActivity.java
+@@ -62,7 +62,6 @@ import org.chromium.chrome.browser.customtabs.content.CustomTabActivityTabProvid
+ import org.chromium.chrome.browser.customtabs.content.TabCreationMode;
+ import org.chromium.chrome.browser.customtabs.dependency_injection.CustomTabActivityComponent;
+ import org.chromium.chrome.browser.customtabs.dependency_injection.CustomTabActivityModule;
+-import org.chromium.chrome.browser.customtabs.dynamicmodule.DynamicModuleCoordinator;
+ import org.chromium.chrome.browser.dependency_injection.ChromeActivityCommonsModule;
+ import org.chromium.chrome.browser.firstrun.FirstRunSignInProcessor;
+ import org.chromium.chrome.browser.gsa.GSAState;
+@@ -133,9 +132,6 @@ public class CustomTabActivity extends ChromeActivity<CustomTabActivityComponent
+ 
+     private final CustomTabsConnection mConnection = CustomTabsConnection.getInstance();
+ 
+-    @Nullable
+-    private DynamicModuleCoordinator mDynamicModuleCoordinator;
+-
+     private ActivityTabTaskDescriptionHelper mTaskDescriptionHelper;
+ 
+     private CustomTabNightModeStateController mNightModeStateController;
+@@ -315,12 +311,6 @@ public class CustomTabActivity extends ChromeActivity<CustomTabActivityComponent
+     public void finishNativeInitialization() {
+         if (!mIntentDataProvider.isInfoPage()) FirstRunSignInProcessor.start(this);
+ 
+-        // Try to initialize dynamic module early to enqueue navigation events
+-        // @see DynamicModuleNavigationEventObserver
+-        if (mIntentDataProvider.isDynamicModuleEnabled()) {
+-            mDynamicModuleCoordinator = getComponent().resolveDynamicModuleCoordinator();
+-        }
+-
+         LayoutManager layoutDriver = new LayoutManager(getCompositorViewHolder());
+         initializeCompositorContent(layoutDriver, findViewById(R.id.url_bar),
+                 (ViewGroup) findViewById(android.R.id.content),
+@@ -461,10 +451,6 @@ public class CustomTabActivity extends ChromeActivity<CustomTabActivityComponent
+         WebContents webContents = tab == null ? null : tab.getWebContents();
+         mConnection.resetPostMessageHandlerForSession(
+                 mIntentDataProvider.getSession(), webContents);
+-
+-        if (mDynamicModuleCoordinator != null) {
+-            mDynamicModuleCoordinator.resetPostMessageHandlersForCurrentSession(null);
+-        }
+     }
+ 
+     private void initalizePreviewsObserver() {
+@@ -926,10 +912,6 @@ public class CustomTabActivity extends ChromeActivity<CustomTabActivityComponent
+         if (mIntentDataProvider.isTrustedWebActivity()) {
+             component.resolveTrustedWebActivityCoordinator();
+         }
+-        if (mConnection.shouldHideTopBarOnModuleManagedUrlsForSession(
+-                    mIntentDataProvider.getSession())) {
+-            component.resolveDynamicModuleToolbarController();
+-        }
+ 
+         return component;
+     }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabIntentDataProvider.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabIntentDataProvider.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabIntentDataProvider.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabIntentDataProvider.java
+@@ -38,7 +38,6 @@ import org.chromium.chrome.browser.ChromeVersionInfo;
+ import org.chromium.chrome.browser.IntentHandler;
+ import org.chromium.chrome.browser.UrlConstants;
+ import org.chromium.chrome.browser.browserservices.BrowserSessionDataProvider;
+-import org.chromium.chrome.browser.customtabs.dynamicmodule.ModuleMetrics;
+ import org.chromium.chrome.browser.externalauth.ExternalAuthUtils;
+ import org.chromium.chrome.browser.net.spdyproxy.DataReductionProxySettings;
+ import org.chromium.chrome.browser.util.ColorUtils;
+@@ -826,20 +825,8 @@ public class CustomTabIntentDataProvider extends BrowserSessionDataProvider {
+         // even receive the extras for using the feature.
+         if (componentName == null) return false;
+ 
+-        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.CCT_MODULE)) {
+-            Log.w(TAG, "The %s feature is disabled.", ChromeFeatureList.CCT_MODULE);
+-            ModuleMetrics.recordLoadResult(ModuleMetrics.LoadResult.FEATURE_DISABLED);
+-            return false;
+-        }
+-
+-        ExternalAuthUtils authUtils = ChromeApplication.getComponent().resolveExternalAuthUtils();
+-        if (!authUtils.isGoogleSigned(componentName.getPackageName())) {
+-            Log.w(TAG, "The %s package is not Google-signed.", componentName.getPackageName());
+-            ModuleMetrics.recordLoadResult(ModuleMetrics.LoadResult.NOT_GOOGLE_SIGNED);
+-            return false;
+-        }
+-
+-        return true;
++        Log.w(TAG, "The %s feature is disabled.", ChromeFeatureList.CCT_MODULE);
++        return false;
+     }
+ 
+     /**
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabsConnection.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabsConnection.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabsConnection.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabsConnection.java
+@@ -57,8 +57,6 @@ import org.chromium.chrome.browser.WarmupManager;
+ import org.chromium.chrome.browser.browserservices.BrowserSessionContentUtils;
+ import org.chromium.chrome.browser.browserservices.Origin;
+ import org.chromium.chrome.browser.browserservices.PostMessageHandler;
+-import org.chromium.chrome.browser.customtabs.dynamicmodule.ModuleLoader;
+-import org.chromium.chrome.browser.customtabs.dynamicmodule.ModuleMetrics;
+ import org.chromium.chrome.browser.device.DeviceClassManager;
+ import org.chromium.chrome.browser.init.ChainedTasks;
+ import org.chromium.chrome.browser.init.ChromeBrowserInitializer;
+@@ -214,7 +212,6 @@ public class CustomTabsConnection {
+ 
+     private volatile ChainedTasks mWarmupTasks;
+ 
+-    private @Nullable ModuleLoader mModuleLoader;
+     /**
+      * <strong>DO NOT CALL</strong>
+      * Public to be instanciable from {@link ChromeApplication}. This is however
+@@ -1323,7 +1320,6 @@ public class CustomTabsConnection {
+         if (ChromeApplication.isSevereMemorySignal(level)) {
+             getInstance().mClientManager.cleanupUnusedSessions();
+         }
+-        if (getInstance().mModuleLoader != null) getInstance().mModuleLoader.onTrimMemory(level);
+     }
+ 
+     @VisibleForTesting
+@@ -1464,32 +1460,6 @@ public class CustomTabsConnection {
+             CustomTabsSessionToken session, String url, String origin, int referrerPolicy,
+             @DetachedResourceRequestMotivation int motivation);
+ 
+-    public ModuleLoader getModuleLoader(ComponentName componentName, @Nullable String assetName) {
+-        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.CCT_MODULE_DEX_LOADING)) {
+-            assetName = null;
+-        }
+-
+-        if (mModuleLoader != null) {
+-            boolean isComponentNameChanged =
+-                    !componentName.equals(mModuleLoader.getComponentName());
+-            boolean isAssetNameChanged =
+-                    !TextUtils.equals(assetName, mModuleLoader.getDexAssetName());
+-            ModuleLoader.ModuleApkVersion newModuleApkVersion =
+-                    ModuleLoader.ModuleApkVersion.getModuleVersion(componentName.getPackageName());
+-            boolean isModuleVersionChanged =
+-                    !mModuleLoader.getModuleApkVersion().equals(newModuleApkVersion);
+-
+-            if (isComponentNameChanged || isAssetNameChanged || isModuleVersionChanged) {
+-                mModuleLoader.destroyModule(ModuleMetrics.DestructionReason.MODULE_LOADER_CHANGED);
+-                mModuleLoader = null;
+-            }
+-        }
+-
+-        if (mModuleLoader == null) mModuleLoader = new ModuleLoader(componentName, assetName);
+-
+-        return mModuleLoader;
+-    }
+-
+     @CalledByNative
+     public static void notifyClientOfDetachedRequestCompletion(
+             CustomTabsSessionToken session, String url, int status) {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/dependency_injection/CustomTabActivityComponent.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/dependency_injection/CustomTabActivityComponent.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/dependency_injection/CustomTabActivityComponent.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/dependency_injection/CustomTabActivityComponent.java
+@@ -16,8 +16,6 @@ import org.chromium.chrome.browser.customtabs.content.CustomTabActivityNavigatio
+ import org.chromium.chrome.browser.customtabs.content.CustomTabActivityTabController;
+ import org.chromium.chrome.browser.customtabs.content.CustomTabActivityTabFactory;
+ import org.chromium.chrome.browser.customtabs.content.CustomTabActivityTabProvider;
+-import org.chromium.chrome.browser.customtabs.dynamicmodule.DynamicModuleCoordinator;
+-import org.chromium.chrome.browser.customtabs.dynamicmodule.DynamicModuleToolbarController;
+ import org.chromium.chrome.browser.dependency_injection.ActivityScope;
+ import org.chromium.chrome.browser.dependency_injection.ChromeActivityCommonsModule;
+ import org.chromium.chrome.browser.dependency_injection.ChromeActivityComponent;
+@@ -33,8 +31,6 @@ import dagger.Subcomponent;
+ @ActivityScope
+ public interface CustomTabActivityComponent extends ChromeActivityComponent {
+     TrustedWebActivityCoordinator resolveTrustedWebActivityCoordinator();
+-    DynamicModuleToolbarController resolveDynamicModuleToolbarController();
+-    DynamicModuleCoordinator resolveDynamicModuleCoordinator();
+ 
+     TabObserverRegistrar resolveTabObserverRegistrar();
+     CustomTabTopBarDelegate resolveTobBarDelegate();
+-- 
+2.11.0
+

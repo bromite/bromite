@@ -3,14 +3,29 @@ Date: Thu, 2 Nov 2017 18:21:16 +0200
 Subject: Allow playing audio in background
 
 ---
- media/blink/webmediaplayer_impl.cc | 11 ++++++++++-
+ chrome/browser/about_flags.cc      |  4 ++++
+ media/blink/webmediaplayer_impl.cc | 12 +++++++++++-
  media/blink/webmediaplayer_impl.h  |  2 ++
- 2 files changed, 12 insertions(+), 1 deletion(-)
+ 3 files changed, 17 insertions(+), 1 deletion(-)
 
+diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
+--- a/chrome/browser/about_flags.cc
++++ b/chrome/browser/about_flags.cc
+@@ -1400,6 +1400,10 @@ const FeatureEntry kFeatureEntries[] = {
+     {"debug-packed-apps", flag_descriptions::kDebugPackedAppName,
+      flag_descriptions::kDebugPackedAppDescription, kOsDesktop,
+      SINGLE_VALUE_TYPE(switches::kDebugPackedApps)},
++    {"resume-background-video",
++     flag_descriptions::kResumeBackgroundVideoName,
++     flag_descriptions::kResumeBackgroundVideoDescription, kOsAll,
++     FEATURE_VALUE_TYPE(media::kResumeBackgroundVideo)},
+     {"automatic-password-generation",
+      flag_descriptions::kAutomaticPasswordGenerationName,
+      flag_descriptions::kAutomaticPasswordGenerationDescription, kOsAll,
 diff --git a/media/blink/webmediaplayer_impl.cc b/media/blink/webmediaplayer_impl.cc
 --- a/media/blink/webmediaplayer_impl.cc
 +++ b/media/blink/webmediaplayer_impl.cc
-@@ -948,6 +948,12 @@ bool WebMediaPlayerImpl::HasAudio() const {
+@@ -961,6 +961,12 @@ bool WebMediaPlayerImpl::HasAudio() const {
    return pipeline_metadata_.has_audio;
  }
  
@@ -23,22 +38,23 @@ diff --git a/media/blink/webmediaplayer_impl.cc b/media/blink/webmediaplayer_imp
  void WebMediaPlayerImpl::EnabledAudioTracksChanged(
      const blink::WebVector<blink::WebMediaPlayer::TrackId>& enabledTrackIds) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-@@ -3113,7 +3119,10 @@ bool WebMediaPlayerImpl::ShouldPauseVideoWhenHidden() const {
-   // If suspending background video, pause any video that's not remoted or
-   // not unlocked to play in the background.
-   if (IsBackgroundSuspendEnabled(this)) {
--    if (!HasVideo())
-+    //pipeline_metadata_.has_video is true for MediaPlayerRenderer,
-+    //see media/base/pipeline_metadata.h. This is a workaround to allow audio
-+    //streams be played in background.
-+    if (!HasVideoNonEmptySize())
-       return false;
+@@ -3205,7 +3211,11 @@ bool WebMediaPlayerImpl::ShouldPausePlaybackWhenHidden() const {
+   // Audio only stream is allowed to play when in background.
+   // TODO: We should check IsBackgroundOptimizationCandidate here. But we need
+   // to move the logic of checking video frames out of that function.
+-  if (!HasVideo())
++
++  //pipeline_metadata_.has_video is true for MediaPlayerRenderer,
++  //see media/base/pipeline_metadata.h. This is a workaround to allow audio
++  //streams be played in background.
++  if (!HasVideoNonEmptySize())
+     return false;
  
- #if defined(OS_ANDROID)
+   if (!is_background_video_playback_enabled_)
 diff --git a/media/blink/webmediaplayer_impl.h b/media/blink/webmediaplayer_impl.h
 --- a/media/blink/webmediaplayer_impl.h
 +++ b/media/blink/webmediaplayer_impl.h
-@@ -141,6 +141,8 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
+@@ -142,6 +142,8 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
    // True if the loaded media has a playable video/audio track.
    bool HasVideo() const override;
    bool HasAudio() const override;

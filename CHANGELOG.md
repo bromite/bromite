@@ -1,3 +1,6 @@
+# 75.0.3770.50
+* disable dynamic module loading
+
 # 74.0.3729.162
 * remove recent tabs signin
 
