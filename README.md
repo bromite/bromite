@@ -107,7 +107,7 @@ All built versions are available as [releases](https://github.com/bromite/bromit
 
 Each tag corresponds to a Chromium Stable release tag.
 
-Bromite is currently built for ARM, ARM64 and x86 and for the Android SDK versions 17 and 21; [Bromite SystemWebView](https://www.bromite.org/system_web_view) is provided as well (SDK21+).
+Bromite is currently built for ARM, ARM64 and x86 and for the Android SDK versions 19 and 21; [Bromite SystemWebView](https://www.bromite.org/system_web_view) is provided as well (SDK21+).
 For every Bromite build you can always find a matching [vanilla Chromium](https://www.bromite.org/chromium) build which is used for example to verify which issues are specific to Bromite or not.
 
 All official releases are also available through the [official third-party F-Droid repository](https://www.bromite.org/fdroid).
