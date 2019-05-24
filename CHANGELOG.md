@@ -1,5 +1,9 @@
+# 75.0.3770.53
+* fix crash when downloading or from browser-initiated requests (fixes https://github.com/bromite/bromite/issues/309)
+
 # 75.0.3770.50
 * disable dynamic module loading
+* more fixes to allow building for SDK 17
 
 # 74.0.3729.162
 * remove recent tabs signin

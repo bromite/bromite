@@ -12,7 +12,7 @@ Perform adblock interception in StartJob to address lagging issues
 New mechanism for adblocking based on Brave's adblocking hook
 Add support for Webview content blocking
 ---
- android_webview/browser/net/aw_network_delegate.cc |  68 ++++
+ android_webview/browser/net/aw_network_delegate.cc |  71 ++++
  android_webview/browser/net/aw_network_delegate.h  |   3 +
  chrome/android/java/res/menu/custom_tabs_menu.xml  |  12 +
  chrome/android/java/res/menu/main_menu.xml         |  11 +
@@ -21,12 +21,12 @@ Add support for Webview content blocking
  .../browser/appmenu/AppMenuPropertiesDelegate.java |  38 ++
  .../CustomTabAppMenuPropertiesDelegate.java        |   2 +
  .../java/strings/android_chrome_strings.grd        |  11 +
- chrome/browser/net/chrome_network_delegate.cc      |  83 +++++
+ chrome/browser/net/chrome_network_delegate.cc      |  86 +++++
  .../subresource_filter_content_settings_manager.cc |   1 +
  net/BUILD.gn                                       |   7 +
  net/url_request/adblock_intercept.cc               | 389 +++++++++++++++++++++
  net/url_request/adblock_intercept.h                |  35 ++
- 14 files changed, 676 insertions(+)
+ 14 files changed, 682 insertions(+)
  create mode 100644 net/url_request/adblock_intercept.cc
  create mode 100644 net/url_request/adblock_intercept.h
 
@@ -45,7 +45,7 @@ diff --git a/android_webview/browser/net/aw_network_delegate.cc b/android_webvie
  
  namespace android_webview {
  
-@@ -49,6 +51,72 @@ AwNetworkDelegate::AwNetworkDelegate() {}
+@@ -49,6 +51,75 @@ AwNetworkDelegate::AwNetworkDelegate() {}
  AwNetworkDelegate::~AwNetworkDelegate() {
  }
  
@@ -56,7 +56,9 @@ diff --git a/android_webview/browser/net/aw_network_delegate.cc b/android_webvie
 +static bool requestIntercepted(net::URLRequest* request, GURL* new_url) {
 +    bool block = false, isValidUrl;
 +
-+    isValidUrl = request->url().is_valid();
++    // skip invalid URLs and browser-initiated requests (which have no initiator)
++    auto initiator = request->initiator();
++    isValidUrl = request->url().is_valid() && initiator.has_value();
 +    std::string scheme = request->url().scheme();
 +    if (isValidUrl && scheme.length()) {
 +      std::transform(scheme.begin(), scheme.end(), scheme.begin(), ::tolower);
@@ -64,7 +66,10 @@ diff --git a/android_webview/browser/net/aw_network_delegate.cc b/android_webvie
 +          isValidUrl = false;
 +        }
 +    }
-+    ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
++    ResourceRequestInfo* info;
++    if (isValidUrl) {
++      info = ResourceRequestInfo::ForRequest(request);
++    }
 +
 +    // there are no per-site nor global ad/content settings when using the SystemWebView
 +    bool adblock_enabled = true;
@@ -73,9 +78,7 @@ diff --git a/android_webview/browser/net/aw_network_delegate.cc b/android_webvie
 +
 +      if (adblock_enabled
 +        && content::ResourceType::kMainFrame != resource_type
-+        && net::adblock_intercept(request->url(),
-+                                request->initiator()->host(),
-+                                resource_type)) {
++        && net::adblock_intercept(request->url(), initiator->host(), resource_type)) {
 +        block = true;
 +      }
 +
@@ -280,7 +283,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/Cust
 diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/android/java/strings/android_chrome_strings.grd
 --- a/chrome/android/java/strings/android_chrome_strings.grd
 +++ b/chrome/android/java/strings/android_chrome_strings.grd
-@@ -3147,6 +3147,17 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+@@ -3150,6 +3150,17 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
        <message name="IDS_MENU_REQUEST_DESKTOP_SITE_OFF" desc="Accessibility description for when Request Desktop Site is disabled.">
          Turn on Request desktop site
        </message>
@@ -317,7 +320,7 @@ diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/
  #endif
  
  #if defined(OS_CHROMEOS)
-@@ -193,10 +195,91 @@ void ChromeNetworkDelegate::set_cookie_settings(
+@@ -193,10 +195,94 @@ void ChromeNetworkDelegate::set_cookie_settings(
    cookie_settings_ = cookie_settings;
  }
  
@@ -328,7 +331,9 @@ diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/
 +static bool requestIntercepted(net::URLRequest* request, GURL* new_url) {
 +    bool block = false, isValidUrl;
 +
-+    isValidUrl = request->url().is_valid();
++    // skip invalid URLs and browser-initiated requests (which have no initiator)
++    auto initiator = request->initiator();
++    isValidUrl = request->url().is_valid() && initiator.has_value();
 +    std::string scheme = request->url().scheme();
 +    if (isValidUrl && scheme.length()) {
 +      std::transform(scheme.begin(), scheme.end(), scheme.begin(), ::tolower);
@@ -336,7 +341,10 @@ diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/
 +          isValidUrl = false;
 +        }
 +    }
-+    ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
++    ResourceRequestInfo* info;
++    if (isValidUrl) {
++      info = ResourceRequestInfo::ForRequest(request);
++    }
 +
 +    bool adblock_enabled = false;
 +    if (isValidUrl && info) {
@@ -363,9 +371,7 @@ diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/
 +
 +      if (adblock_enabled
 +        && content::ResourceType::kMainFrame != resource_type
-+        && net::adblock_intercept(request->url(),
-+                                request->initiator()->host(),
-+                                resource_type)) {
++        && net::adblock_intercept(request->url(), initiator->host(), resource_type)) {
 +        block = true;
 +      }
 +
