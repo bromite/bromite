@@ -6,7 +6,7 @@
 
 Bromite is [Chromium](https://www.chromium.org/Home) plus some patches for ad blocking and enhanced privacy.
 
-Bromite is only available for Android v4.1 and above.
+Bromite is only available for Android v4.4 and above.
 
 <img src="https://www.bromite.org/bromite_bromite_gh_downloads.svg" alt="downloads on Github" title="downloads on Github" />
 
