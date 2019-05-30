@@ -1,3 +1,12 @@
+# 75.0.3770.70
+* enable changing default downloads storage location by default
+* enable download rename option by default
+* disable offline pages in the downloads home to be opened in CCT by default
+* increase minimum SDK from 17 to 19 (fixes https://github.com/bromite/bromite/issues/310)
+* prefs: disable SigninAllowed by default
+* prefs: always prompt for download directory by default
+* build: remove calling untrusted hooks
+
 # 75.0.3770.53
 * fix crash when downloading or from browser-initiated requests (fixes https://github.com/bromite/bromite/issues/309)
 
