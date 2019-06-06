@@ -1,3 +1,5 @@
+# 75.0.3770.82
+
 # 75.0.3770.70
 * enable changing default downloads storage location by default
 * enable download rename option by default
