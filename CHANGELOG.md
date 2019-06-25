@@ -1,3 +1,10 @@
+# 75.0.3770.109
+* disable payment support by default
+* disable background sync by default
+* better patch from GrapheneOS/Vanadium for disabling sensors access (fixes https://github.com/bromite/bromite/issues/319)
+* use new patch for content settings sensors allow/block (fixes https://github.com/bromite/bromite/issues/319)
+* fix impossible values in Battery Status API (fixes https://github.com/bromite/bromite/issues/322)
+
 # 75.0.3770.86
 
 # 75.0.3770.82
