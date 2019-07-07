@@ -1,14 +1,33 @@
-# Bromite - Take back your browser
+&nbsp;
+<p align="center">
+  <img src="https://www.bromite.org/android-icon-192x192.png" width="96px" alt="Bromite - take back your browser!" />
+</p>
+<h1 align="center">Bromite - Take back your browser</h1>
+<p align="center">
+  Bromite is <a href="https://www.chromium.org/Home"> Chromium</a> plus some patches for ad blocking and enhanced privacy.
+</p>
+<p align="center">
+  Bromite is only available for Android v4.4 and above.
+</p>
 
-<img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> <img src="https://www.bromite.org/license.svg" alt="GNU GPL v3" title="GNU VPL v3" />
+<p align="center">
+  <a href="https://www.bromite.org//">Bromite.com</a> |
+  <a href="https://github.com/bromite/bromite/wiki">Wiki</a> |
+  <a href="https://www.bromite.org/screenshots">Screenshots</a> |
+  <a href="https://www.bromite.org/fdroid">F-Droid Repository</a>
+  <br /><br />
+  <a href="https://github.com/bromite/bromite/releases">
+      <img src="https://www.bromite.org/release.svg" alt="Latest release" />
+  </a>
+  <a href="https://github.com/bromite/bromite/blob/master/LICENSE">
+      <img src="https://www.bromite.org/license.svg" alt="GNU VPL v3" />
+  </a>
+  <a href="https://github.com/bromite/bromite/blob/master/LICENSE">
+      <img src="https://www.bromite.org/bromite_bromite_gh_downloads.svg" alt="Downloads on Github" />
+  </a>
+</p>
 
-<img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
-
-Bromite is [Chromium](https://www.chromium.org/Home) plus some patches for ad blocking and enhanced privacy.
-
-Bromite is only available for Android v4.4 and above.
-
-<img src="https://www.bromite.org/bromite_bromite_gh_downloads.svg" alt="downloads on Github" title="downloads on Github" />
+<hr />
 
 # Goals
 
