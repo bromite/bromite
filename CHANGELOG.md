@@ -1,3 +1,5 @@
+# 75.0.3770.132
+
 # 75.0.3770.109
 * disable payment support by default
 * disable background sync by default
