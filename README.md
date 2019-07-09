@@ -22,7 +22,7 @@
   <a href="https://github.com/bromite/bromite/blob/master/LICENSE">
       <img src="https://www.bromite.org/license.svg" alt="GNU VPL v3" />
   </a>
-  <a href="https://github.com/bromite/bromite/blob/master/LICENSE">
+  <a href="https://github.com/bromite/bromite/releases">
       <img src="https://www.bromite.org/bromite_bromite_gh_downloads.svg" alt="Downloads on Github" />
   </a>
 </p>
