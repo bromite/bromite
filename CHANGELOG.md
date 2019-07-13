@@ -1,3 +1,7 @@
+# 75.0.3770.139
+* disable media router and remoting by default (fixes https://github.com/bromite/bromite/issues/281)
+* enable CFI in builds
+
 # 75.0.3770.132
 
 # 75.0.3770.109
