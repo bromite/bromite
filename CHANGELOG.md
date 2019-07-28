@@ -1,3 +1,10 @@
+# 76.0.3809.85
+* add flag to toggle Network Service
+* disable Network Service by default
+* do not record UMA for network errors
+* use fixed User Agent and Android OS version
+* dropped patch for history requirement of user gesture
+
 # 75.0.3770.139
 * disable media router and remoting by default (fixes https://github.com/bromite/bromite/issues/281)
 * enable CFI in builds

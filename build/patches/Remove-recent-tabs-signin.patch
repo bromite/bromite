@@ -3,16 +3,16 @@ Date: Wed, 15 May 2019 17:08:35 +0200
 Subject: Remove recent tabs signin
 
 ---
- .../chrome/browser/signin/SigninManager.java       | 75 ++--------------------
- 1 file changed, 7 insertions(+), 68 deletions(-)
+ .../chrome/browser/signin/SigninManager.java       | 72 +++-------------------
+ 1 file changed, 7 insertions(+), 65 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninManager.java b/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninManager.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninManager.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninManager.java
-@@ -30,11 +30,7 @@ import org.chromium.base.task.PostTask;
+@@ -28,11 +28,7 @@ import org.chromium.base.metrics.RecordHistogram;
+ import org.chromium.base.metrics.RecordUserAction;
+ import org.chromium.base.task.PostTask;
  import org.chromium.chrome.browser.ChromeFeatureList;
- import org.chromium.chrome.browser.externalauth.ExternalAuthUtils;
- import org.chromium.chrome.browser.externalauth.UserRecoverableErrorHandler;
 -import org.chromium.components.signin.AccountIdProvider;
  import org.chromium.components.signin.AccountManagerFacade;
 -import org.chromium.components.signin.AccountTrackerService;
@@ -21,7 +21,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninMa
  import org.chromium.content_public.browser.UiThreadTaskTraits;
  
  import java.util.ArrayList;
-@@ -50,7 +46,7 @@ import java.util.List;
+@@ -48,7 +44,7 @@ import java.util.List;
   * <p/>
   * See chrome/browser/signin/signin_manager_android.h for more details.
   */
@@ -30,32 +30,34 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninMa
      private static final String TAG = "SigninManager";
  
      /**
-@@ -183,8 +179,6 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
- 
+@@ -182,8 +178,6 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
      private final long mNativeSigninManagerAndroid;
      private final Context mContext;
+     private final SigninManagerDelegate mDelegate;
 -    private final AccountTrackerService mAccountTrackerService;
 -    private final AndroidSyncSettings mAndroidSyncSettings;
      private final ObserverList<SignInStateObserver> mSignInStateObservers = new ObserverList<>();
      private final ObserverList<SignInAllowedObserver> mSignInAllowedObservers =
              new ObserverList<>();
-@@ -228,26 +222,18 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
+@@ -228,28 +222,20 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
      }
  
-     private SigninManager() {
--        this(ContextUtils.getApplicationContext(),
+     private SigninManager(SigninManagerDelegate delegate) {
+-        this(ContextUtils.getApplicationContext(), delegate,
 -                IdentityServicesProvider.getAccountTrackerService(), AndroidSyncSettings.get());
-+        this(ContextUtils.getApplicationContext());
++        this(ContextUtils.getApplicationContext(), delegate);
      }
  
      @VisibleForTesting
--    SigninManager(Context context, AccountTrackerService accountTrackerService,
--            AndroidSyncSettings androidSyncSettings) {
-+    SigninManager(Context context) {
+-    SigninManager(Context context, SigninManagerDelegate delegate,
+-            AccountTrackerService accountTrackerService, AndroidSyncSettings androidSyncSettings) {
++    SigninManager(Context context, SigninManagerDelegate delegate) {
          ThreadUtils.assertOnUiThread();
          assert context != null;
+         assert delegate != null;
 -        assert accountTrackerService != null;
 -        assert androidSyncSettings != null;
+         mDelegate = delegate;
          mContext = context;
 -        mAccountTrackerService = accountTrackerService;
 -        mAndroidSyncSettings = androidSyncSettings;
@@ -68,7 +70,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninMa
      }
  
      /**
-@@ -283,8 +269,7 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
+@@ -285,8 +271,7 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
       * Returns true if signin can be started now.
       */
      public boolean isSignInAllowed() {
@@ -78,12 +80,12 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninMa
      }
  
      /**
-@@ -299,16 +284,14 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
+@@ -301,16 +286,14 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
       *         Google Play Services installed.
       */
      public boolean isSigninSupported() {
 -        return !ApiCompatibilityUtils.isDemoUser(mContext)
--                && !ExternalAuthUtils.getInstance().isGooglePlayServicesMissing(mContext)
+-                && mDelegate.isGooglePlayServicesPresent(mContext)
 -                && !ChromeFeatureList.isEnabled(ChromeFeatureList.MOBILE_IDENTITY_CONSISTENCY);
 +        return false;
      }
@@ -97,7 +99,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninMa
      }
  
      /**
-@@ -342,27 +325,6 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
+@@ -344,27 +327,6 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
      }
  
      /**
@@ -125,7 +127,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninMa
       * Starts the sign-in flow, and executes the callback when finished.
       *
       * If an activity is provided, it is considered an "interactive" sign-in and the user can be
-@@ -417,19 +379,7 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
+@@ -419,16 +381,7 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
      }
  
      private void progressSignInFlowSeedSystemAccounts() {
@@ -135,10 +137,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninMa
 -            mSignInState.mBlockedOnAccountSeeding = true;
 -        } else {
 -            Activity activity = mSignInState.mActivity;
--            UserRecoverableErrorHandler errorHandler = activity != null
--                    ? new UserRecoverableErrorHandler.ModalDialog(activity, !isForceSigninEnabled())
--                    : new UserRecoverableErrorHandler.SystemNotification();
--            ExternalAuthUtils.getInstance().canUseGooglePlayServices(errorHandler);
+-            mDelegate.handleGooglePlayServicesUnavailability(activity, !isForceSigninEnabled());
 -            Log.w(TAG, "Cancelling the sign-in process as Google Play services is unavailable");
 -            abortSignIn();
 -        }
@@ -146,7 +145,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninMa
      }
  
      /**
-@@ -495,12 +445,6 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
+@@ -494,12 +447,6 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
          SigninManagerJni.get().onSignInCompleted(
                  this, mNativeSigninManagerAndroid, mSignInState.mAccount.name);
  
@@ -159,7 +158,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninMa
          if (mSignInState.mCallback != null) {
              mSignInState.mCallback.onSignInComplete();
          }
-@@ -676,16 +620,11 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
+@@ -675,16 +622,11 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
          // Should be set at beginning of sign-out flow.
          assert mSignOutState != null;
  

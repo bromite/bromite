@@ -18,15 +18,14 @@ Add support for Webview content blocking
  chrome/android/java/res/menu/main_menu.xml         |  11 +
  .../chromium/chrome/browser/ChromeActivity.java    |   8 +
  .../chrome/browser/ChromeTabbedActivity.java       |   8 +
- .../browser/appmenu/AppMenuPropertiesDelegate.java |  38 ++
+ .../appmenu/AppMenuPropertiesDelegateImpl.java     |  42 ++-
  .../CustomTabAppMenuPropertiesDelegate.java        |   2 +
  .../java/strings/android_chrome_strings.grd        |  11 +
  chrome/browser/net/chrome_network_delegate.cc      |  86 +++++
- .../subresource_filter_content_settings_manager.cc |   1 +
  net/BUILD.gn                                       |   7 +
  net/url_request/adblock_intercept.cc               | 389 +++++++++++++++++++++
  net/url_request/adblock_intercept.h                |  35 ++
- 14 files changed, 682 insertions(+)
+ 13 files changed, 683 insertions(+), 2 deletions(-)
  create mode 100644 net/url_request/adblock_intercept.cc
  create mode 100644 net/url_request/adblock_intercept.h
 
@@ -137,10 +136,10 @@ diff --git a/android_webview/browser/net/aw_network_delegate.h b/android_webview
 diff --git a/chrome/android/java/res/menu/custom_tabs_menu.xml b/chrome/android/java/res/menu/custom_tabs_menu.xml
 --- a/chrome/android/java/res/menu/custom_tabs_menu.xml
 +++ b/chrome/android/java/res/menu/custom_tabs_menu.xml
-@@ -74,6 +74,18 @@
+@@ -75,6 +75,18 @@
+                   android:checkable="true" />
            </menu>
          </item>
- 
 +        <item android:id="@+id/enable_adblock_row_menu_id"
 +            android:title="@null"
 +            android:orderInCategory="2">
@@ -180,7 +179,7 @@ diff --git a/chrome/android/java/res/menu/main_menu.xml b/chrome/android/java/re
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
-@@ -2262,6 +2262,14 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
+@@ -2173,6 +2173,14 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
              RecordUserAction.record("MobileMenuRequestEnableJavascript");
          } else if (id == R.id.reader_mode_prefs_id) {
              DomDistillerUIUtils.openSettings(currentTab.getWebContents());
@@ -198,7 +197,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-@@ -1779,6 +1779,14 @@ public class ChromeTabbedActivity
+@@ -1762,6 +1762,14 @@ public class ChromeTabbedActivity
                  reportNewTabShortcutUsed(true);
                  getTabCreator(true).launchNTP();
              }
@@ -213,22 +212,31 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedAct
          } else if (id == R.id.all_bookmarks_menu_id) {
              if (currentTab != null) {
                  getCompositorViewHolder().hideKeyboard(() -> {
-diff --git a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
---- a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
-+++ b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegate.java
-@@ -195,6 +195,8 @@ public class AppMenuPropertiesDelegate {
-                     && !TextUtils.isEmpty(url);
-             prepareAddToHomescreenMenuItem(menu, currentTab, canShowHomeScreenMenuItem);
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegateImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegateImpl.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegateImpl.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegateImpl.java
+@@ -27,6 +27,7 @@ import org.chromium.chrome.R;
+ import org.chromium.chrome.browser.ActivityTabProvider;
+ import org.chromium.chrome.browser.ChromeFeatureList;
+ import org.chromium.chrome.browser.ChromeSwitches;
++import org.chromium.chrome.browser.ContentSettingsType;
+ import org.chromium.chrome.browser.ShortcutHelper;
+ import org.chromium.chrome.browser.UrlConstants;
+ import org.chromium.chrome.browser.banners.AppBannerManager;
+@@ -224,6 +225,8 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+             // Prepare translate menu button.
+             prepareTranslateMenuItem(menu, currentTab);
  
 +            updateEnableAdBlockMenuItem(menu, currentTab);
 +
-             updateRequestDesktopSiteMenuItem(menu, currentTab, true /* can show */);
- 
-             updateEnableJavascriptMenuItem(menu, currentTab);
-@@ -488,6 +490,42 @@ public class AppMenuPropertiesDelegate {
+             // Hide 'Add to homescreen' for the following:
+             // * chrome:// pages - Android doesn't know how to direct those URLs.
+             // * incognito pages - To avoid problems where users create shortcuts in incognito
+@@ -296,6 +299,43 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+                 PrefServiceBridge.getInstance().isIncognitoModeManaged());
      }
  
-     /**
++     /**
 +     * Updates the enable AdBlock item's state.
 +     *
 +     * @param menu {@link Menu} for enable adblock
@@ -260,18 +268,27 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenu
 +        // This title doesn't seem to be displayed by Android, but it is used to set up
 +        // accessibility text in {@link AppMenuAdapter#setupMenuButton}.
 +        enableMenuLabel.setTitleCondensed(adBlockEnabled
-+                        ? mActivity.getString(R.string.menu_enable_adblock_on)
-+                        : mActivity.getString(R.string.menu_enable_adblock_off));
++                        ? mContext.getString(R.string.menu_enable_adblock_on)
++                        : mContext.getString(R.string.menu_enable_adblock_off));
 +    }
 +
-+    /**
-      * A notification that the header view has finished inflating.
-      * @param view The view that was inflated.
-      * @param appMenu The menu the view is inside of.
++
+     /**
+      * Sets the visibility and labels of the "Add to Home screen" and "Open WebAPK" menu items.
+      */
+@@ -475,8 +515,6 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+                         : mContext.getString(R.string.menu_enable_javascript_off));
+     }
+ 
+-
+-
+     /**
+      * Updates the request desktop site item's state.
+      *
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
-@@ -181,6 +181,8 @@ public class CustomTabAppMenuPropertiesDelegate extends AppMenuPropertiesDelegat
+@@ -201,6 +201,8 @@ public class CustomTabAppMenuPropertiesDelegate extends AppMenuPropertiesDelegat
                  }
              }
  
@@ -283,7 +300,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/Cust
 diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/android/java/strings/android_chrome_strings.grd
 --- a/chrome/android/java/strings/android_chrome_strings.grd
 +++ b/chrome/android/java/strings/android_chrome_strings.grd
-@@ -3153,6 +3153,17 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+@@ -3078,6 +3078,17 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
        <message name="IDS_MENU_REQUEST_DESKTOP_SITE_OFF" desc="Accessibility description for when Request Desktop Site is disabled.">
          Turn on Request desktop site
        </message>
@@ -415,21 +432,10 @@ diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/
    extensions_delegate_->ForwardStartRequestStatus(request);
  
    return extensions_delegate_->NotifyBeforeURLRequest(
-diff --git a/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc b/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc
---- a/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc
-+++ b/chrome/browser/subresource_filter/subresource_filter_content_settings_manager.cc
-@@ -19,6 +19,7 @@
- #include "components/history/core/browser/history_service.h"
- #include "components/keyed_service/core/service_access_type.h"
- #include "url/gurl.h"
-+#include "net/url_request/adblock_intercept.h"
- 
- namespace {
- 
 diff --git a/net/BUILD.gn b/net/BUILD.gn
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -1797,6 +1797,13 @@ component("net") {
+@@ -1815,6 +1815,13 @@ component("net") {
        "url_request/websocket_handshake_userdata_key.h",
      ]
  
