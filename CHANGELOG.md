@@ -1,3 +1,6 @@
+# 76.0.3809.100
+* use default feature flags for autofill (fixes https://github.com/bromite/bromite/issues/348)
+
 # 76.0.3809.91
 
 # 76.0.3809.85
