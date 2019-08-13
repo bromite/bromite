@@ -1,3 +1,7 @@
+# 76.0.3809.115
+* disable search-ready omnibox by default
+* disable unified consent
+
 # 76.0.3809.100
 * use default feature flags for autofill (fixes https://github.com/bromite/bromite/issues/348)
 
