@@ -6,24 +6,29 @@ about: Create a Bromite bug report
 
 **Bromite version**
 
-Version: `69.0...`
+Version: `76.0...`
 Arch: `arm` or `arm64` or `x86`
-Android version: ... (example: `lollipop`)
+Android version: (example: `9.0`)
+Device model: (example: `SM-G960UZKABST`)
 
 **Is the bug reproducible with latest version?**
-`Bug must be reproducible with latest version`
+
+Do not report bugs which are not reproducible with latest version
 
 **Can the bug be reproduced with corresponding [Chromium](https://github.com/bromite/chromium/releases) version?**
-`Bug must NOT be reproducible with Chromium to be qualified as a Bromite bug`
-If yes then report it upstream on [Chromium issue tracker](https://bugs.chromium.org/p/chromium/issues/list) and do not forget to read [Chromium project bug reporting guidelines](https://www.chromium.org/for-testers/bug-reporting-guidelines) first; all Chromium issues reported here will be closed as `invalid`.
+
+If yes then report it upstream on [Chromium issue tracker](https://bugs.chromium.org/p/chromium/issues/list) and do not forget to read [Chromium project bug reporting guidelines](https://www.chromium.org/for-testers/bug-reporting-guidelines) first.
 
 **Is the bug a crash?**
+
 If yes then individuate and post the logcat dump (remove privacy sensitive information, if any), otherwise remove this section.
 
 **Describe the bug**
-A clear and concise description of what the bug is.
+
+Write here a clear and concise description of the bug.
 
 **To Reproduce**
+
 Steps to reproduce the behavior:
 1. Go to '...'
 2. Click on '....'
@@ -31,7 +36,9 @@ Steps to reproduce the behavior:
 4. See error
 
 **Expected behavior**
+
 A clear and concise description of what you expected to happen.
 
 **Screenshots**
+
 If applicable, add screenshots to help explain your problem.
