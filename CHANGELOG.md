@@ -1,3 +1,6 @@
+# 76.0.3809.129
+* disable CFI to fix x86 crashes (fixes https://github.com/bromite/bromite/issues/357)
+
 # 76.0.3809.115
 * disable search-ready omnibox by default
 * disable unified consent
@@ -16,7 +19,7 @@
 
 # 75.0.3770.139
 * disable media router and remoting by default (fixes https://github.com/bromite/bromite/issues/281)
-* enable CFI in builds
+* enable CFI in GN build flags
 
 # 75.0.3770.132
 
