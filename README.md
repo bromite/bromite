@@ -75,7 +75,7 @@ Yes, since version 69. While the desktop version of Chromium has an option to di
 
 # Features
 
-* baked-in adblock engine
+* native adblock engine
 * remove click-tracking and AMP from search results
 * DNS-over-HTTPS support via Google, Cloudflare, Quad9 and AdGuard servers
 * [proxy configuration page](https://github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
@@ -143,7 +143,13 @@ The [Bromite main repository](https://github.com/bromite/bromite) contains tags 
 Please refer to [official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
 
 The GN args used to build Bromite are available here: [GN_ARGS](./build/GN_ARGS).
-The patches are to be applied second the order specified in the `patches_list.txt` file (you can use `git am`); the big file `adblock_entries.h` (containing all the AdBlock filters) needs to be copied under `src/net/url_request/`.
+The patches are to be applied second the order specified in the `patches_list.txt` file (you can use `git am`); the big file `adblock_entries.h` (containing all the AdBlock filters) needs to be copied under `src/net/url_request/`. This file is only used for the SystemWebView.
+
+## How to build the filters
+
+See upstream documentation: https://github.com/chromium/chromium/blob/master/components/subresource_filter/FILTER_LIST_GENERATION.md
+
+Bromite uses an unindexed filter file, which is periodically published at https://github.com/bromite/filters
 
 # Credits
 
@@ -153,7 +159,7 @@ The patches are to be applied second the order specified in the `patches_list.tx
 * [GrapheneOS](https://github.com/GrapheneOS) for some security patches
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (via ungoogled-chromium)
 * [Brave Browser](https://github.com/brave/browser-android-tabs) for some patches
-* nochromo for the original adblock patch
+* nochromo for the original adblock patch, currently used only in the SystemWebView
 * [Vadim Pleshkov](http://vadimpleshkov.me/) for Bromite's logo
 
 # Filters credits
