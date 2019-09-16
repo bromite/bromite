@@ -1,0 +1,193 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sat, 14 Sep 2019 10:19:07 +0200
+Subject: Add global menu entry to toggle AdBlocker
+
+---
+ chrome/android/java/res/menu/custom_tabs_menu.xml  | 12 +++++++
+ chrome/android/java/res/menu/main_menu.xml         | 11 ++++++
+ .../chromium/chrome/browser/ChromeActivity.java    |  8 +++++
+ .../chrome/browser/ChromeTabbedActivity.java       |  8 +++++
+ .../appmenu/AppMenuPropertiesDelegateImpl.java     | 40 ++++++++++++++++++++++
+ .../CustomTabAppMenuPropertiesDelegate.java        |  2 ++
+ .../java/strings/android_chrome_strings.grd        | 11 ++++++
+ 7 files changed, 92 insertions(+)
+
+diff --git a/chrome/android/java/res/menu/custom_tabs_menu.xml b/chrome/android/java/res/menu/custom_tabs_menu.xml
+--- a/chrome/android/java/res/menu/custom_tabs_menu.xml
++++ b/chrome/android/java/res/menu/custom_tabs_menu.xml
+@@ -75,6 +75,18 @@
+                   android:checkable="true" />
+           </menu>
+         </item>
++        <item android:id="@+id/enable_adblock_row_menu_id"
++            android:title="@null"
++            android:orderInCategory="2">
++          <menu>
++              <item android:id="@+id/enable_adblock_id"
++                  android:title="@string/menu_enable_adblock" />
++              <item android:id="@+id/enable_adblock_check_id"
++                  android:title="@null"
++                  android:checkable="true" />
++          </menu>
++        </item>
++
+         <!-- Title is intentionally left blank in xml and will be set in java. -->
+         <item android:id="@+id/open_in_browser_id"
+             android:title=""
+diff --git a/chrome/android/java/res/menu/main_menu.xml b/chrome/android/java/res/menu/main_menu.xml
+--- a/chrome/android/java/res/menu/main_menu.xml
++++ b/chrome/android/java/res/menu/main_menu.xml
+@@ -84,6 +84,17 @@
+           </menu>
+         </item>
+ 
++        <item android:id="@+id/enable_adblock_row_menu_id"
++            android:title="@null">
++          <menu>
++              <item android:id="@+id/enable_adblock_id"
++                  android:title="@string/menu_enable_adblock" />
++              <item android:id="@+id/enable_adblock_check_id"
++                  android:title="@null"
++                  android:checkable="true" />
++          </menu>
++        </item>
++
+         <item android:id="@+id/reader_mode_prefs_id"
+             android:title="@string/menu_reader_mode_prefs"
+             android:icon="@drawable/reader_mode_prefs_icon" />
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeActivity.java
+@@ -2170,6 +2170,14 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
+             RecordUserAction.record("MobileMenuRequestEnableJavascript");
+         } else if (id == R.id.reader_mode_prefs_id) {
+             DomDistillerUIUtils.openSettings(currentTab.getWebContents());
++        } else if (id == R.id.enable_adblock_id || id == R.id.enable_adblock_check_id) {
++            final boolean reloadOnChange = !currentTab.isNativePage();
++            final boolean adblockEnabled = !PrefServiceBridge.getInstance().isCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_ADS);
++            PrefServiceBridge.getInstance().setCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_ADS, adblockEnabled);
++            if (reloadOnChange) {
++                currentTab.reload();
++            }
++            RecordUserAction.record("MobileMenuRequestEnableAdBlock");
+         } else {
+             return false;
+         }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -1709,6 +1709,14 @@ public class ChromeTabbedActivity
+                 reportNewTabShortcutUsed(true);
+                 getTabCreator(true).launchNTP();
+             }
++        } else if (id == R.id.enable_adblock_id || id == R.id.enable_adblock_check_id) {
++            final boolean reloadOnChange = !currentTab.isNativePage();
++            final boolean adblockEnabled = !PrefServiceBridge.getInstance().isCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_ADS);
++            PrefServiceBridge.getInstance().setCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_ADS, adblockEnabled);
++            if (reloadOnChange) {
++                currentTab.reload();
++            }
++            RecordUserAction.record("MobileMenuRequestEnableAdBlock");
+         } else if (id == R.id.all_bookmarks_menu_id) {
+             if (currentTab != null) {
+                 getCompositorViewHolder().hideKeyboard(() -> {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegateImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegateImpl.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegateImpl.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/appmenu/AppMenuPropertiesDelegateImpl.java
+@@ -27,6 +27,7 @@ import org.chromium.chrome.R;
+ import org.chromium.chrome.browser.ActivityTabProvider;
+ import org.chromium.chrome.browser.ChromeFeatureList;
+ import org.chromium.chrome.browser.ChromeSwitches;
++import org.chromium.chrome.browser.ContentSettingsType;
+ import org.chromium.chrome.browser.ShortcutHelper;
+ import org.chromium.chrome.browser.banners.AppBannerManager;
+ import org.chromium.chrome.browser.bookmarks.BookmarkBridge;
+@@ -225,6 +226,8 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+             // Prepare translate menu button.
+             prepareTranslateMenuItem(menu, currentTab);
+ 
++            updateEnableAdBlockMenuItem(menu, currentTab);
++
+             // Hide 'Add to homescreen' for the following:
+             // * chrome:// pages - Android doesn't know how to direct those URLs.
+             // * incognito pages - To avoid problems where users create shortcuts in incognito
+@@ -300,6 +303,43 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+                 PrefServiceBridge.getInstance().isIncognitoModeManaged());
+     }
+ 
++     /**
++     * Updates the enable AdBlock item's state.
++     *
++     * @param menu {@link Menu} for enable adblock
++     * @param currentTab      Current tab being displayed.
++     */
++    protected void updateEnableAdBlockMenuItem(
++            Menu menu, Tab currentTab) {
++        MenuItem enableMenuRow = menu.findItem(R.id.enable_adblock_row_menu_id);
++        MenuItem enableMenuLabel = menu.findItem(R.id.enable_adblock_id);
++        MenuItem enableMenuCheck = menu.findItem(R.id.enable_adblock_check_id);
++
++
++        // Hide enable adblock on all chrome:// pages except for the NTP.
++        String url = currentTab.getUrl();
++        boolean isChromeScheme = url.startsWith(UrlConstants.CHROME_URL_PREFIX)
++                || url.startsWith(UrlConstants.CHROME_NATIVE_URL_PREFIX);
++        // Also hide enable javascsript on Reader Mode.
++        boolean isDistilledPage = DomDistillerUrlUtils.isDistilledPage(url);
++
++        boolean itemVisible = (!isChromeScheme || currentTab.isNativePage()) && !isDistilledPage;
++        enableMenuRow.setVisible(itemVisible);
++        if (!itemVisible) return;
++
++        boolean adBlockEnabled = !PrefServiceBridge.getInstance().isCategoryEnabled(ContentSettingsType.CONTENT_SETTINGS_TYPE_ADS);
++
++        // Mark the checkbox if adblock is globally activate.
++        enableMenuCheck.setChecked(adBlockEnabled);
++
++        // This title doesn't seem to be displayed by Android, but it is used to set up
++        // accessibility text in {@link AppMenuAdapter#setupMenuButton}.
++        enableMenuLabel.setTitleCondensed(adBlockEnabled
++                        ? mContext.getString(R.string.menu_enable_adblock_on)
++                        : mContext.getString(R.string.menu_enable_adblock_off));
++    }
++
++
+     /**
+      * Sets the visibility and labels of the "Add to Home screen" and "Open WebAPK" menu items.
+      */
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
+@@ -201,6 +201,8 @@ public class CustomTabAppMenuPropertiesDelegate extends AppMenuPropertiesDelegat
+                 }
+             }
+ 
++            updateEnableAdBlockMenuItem(menu, currentTab);
++
+             updateRequestDesktopSiteMenuItem(menu, currentTab, requestDesktopSiteVisible);
+             updateEnableJavascriptMenuItem(menu, currentTab);
+             prepareAddToHomescreenMenuItem(menu, currentTab, addToHomeScreenVisible);
+diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/android/java/strings/android_chrome_strings.grd
+--- a/chrome/android/java/strings/android_chrome_strings.grd
++++ b/chrome/android/java/strings/android_chrome_strings.grd
+@@ -2964,6 +2964,17 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+       <message name="IDS_MENU_REQUEST_DESKTOP_SITE_OFF" desc="Accessibility description for when Request Desktop Site is disabled.">
+         Turn on Request desktop site
+       </message>
++
++      <message name="IDS_MENU_ENABLE_ADBLOCK" desc="Menu item in Chrome's overflow/options menu. If this menu item is unselected, Bromite will disable AdBlock engine for the page. [CHAR-LIMIT=27]">
++        Enable AdBlock
++      </message>
++      <message name="IDS_MENU_ENABLE_ADBLOCK_ON" desc="Accessibility description for when Enable AdBlock is selected.">
++        Turn off AdBlock
++      </message>
++      <message name="IDS_MENU_ENABLE_ADBLOCK_OFF" desc="Accessibility description for when Enable AdBlock is unselected.">
++        Turn on AdBlock
++      </message>
++
+       <message name="IDS_MENU_READER_MODE_PREFS" desc="Menu item to show reader mode preferences pane, which allows users to change the appearance (font size, theme, etc.) of the page. [CHAR-LIMIT=27]">
+         Appearance
+       </message>
+-- 
+2.11.0
+

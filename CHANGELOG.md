@@ -1,3 +1,15 @@
+# 77.0.3865.81
+* use native subresource filtering instead of Bromite engine
+* introduce Bromite AdBlockUpdate service
+* keep using Bromite engine for SystemWebView
+* enable subresource filter for all sites
+* disable subresource filter popup
+* enable IPv6 probing by default
+* drop DnsTransaction default security level patch
+* drop patch to visualize all type of extensions
+* drop patches for Network Service
+* enable CFI for all architectures except x86
+
 # 76.0.3809.129
 * disable CFI to fix x86 crashes (fixes https://github.com/bromite/bromite/issues/357)
 

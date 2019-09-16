@@ -10,22 +10,22 @@ Do not fallback to UDP when using DoH
 
 See also: https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-14.txt
 ---
- chrome/browser/about_flags.cc                      | 11 +++++++++
- chrome/browser/flag_descriptions.cc                |  3 +++
- chrome/browser/flag_descriptions.h                 |  3 +++
- .../browser/net/system_network_context_manager.cc  | 17 +++++++-------
- .../common/network_features.cc                     |  7 ++++--
- .../common/network_features.h                      |  5 +++-
- .../common/network_switch_list.h                   |  4 ++++
- net/base/load_flags_list.h                         |  6 +++++
- net/dns/dns_transaction.cc                         | 27 +++-------------------
- net/url_request/url_request_http_job.cc            | 16 +++++++++----
- 10 files changed, 58 insertions(+), 41 deletions(-)
+ chrome/browser/about_flags.cc                           | 11 +++++++++++
+ chrome/browser/flag_descriptions.cc                     |  3 +++
+ chrome/browser/flag_descriptions.h                      |  3 +++
+ chrome/browser/net/system_network_context_manager.cc    | 17 ++++++++---------
+ .../common/network_features.cc                          |  7 +++++--
+ .../common/network_features.h                           |  5 ++++-
+ .../common/network_switch_list.h                        |  4 ++++
+ net/base/load_flags_list.h                              |  6 ++++++
+ net/dns/dns_transaction.cc                              |  3 ++-
+ net/url_request/url_request_http_job.cc                 | 16 +++++++++++-----
+ 10 files changed, 57 insertions(+), 18 deletions(-)
 
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
-@@ -391,6 +391,14 @@ const FeatureEntry::FeatureVariation kCCTModuleCacheVariations[] = {
+@@ -403,6 +403,14 @@ const FeatureEntry::FeatureVariation kCCTModuleCacheVariations[] = {
       base::size(kCCTModuleCache_ThirtyMinutes), nullptr},
  };
  
@@ -40,7 +40,7 @@ diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
  #endif  // OS_ANDROID
  
  const FeatureEntry::Choice kEnableGpuRasterizationChoices[] = {
-@@ -3273,6 +3281,9 @@ const FeatureEntry kFeatureEntries[] = {
+@@ -3438,6 +3446,9 @@ const FeatureEntry kFeatureEntries[] = {
       flag_descriptions::kEnableSyncUSSBookmarksName,
       flag_descriptions::kEnableSyncUSSBookmarksDescription, kOsAll,
       FEATURE_VALUE_TYPE(switches::kSyncUSSBookmarks)},
@@ -53,7 +53,7 @@ diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
 --- a/chrome/browser/flag_descriptions.cc
 +++ b/chrome/browser/flag_descriptions.cc
-@@ -2063,6 +2063,9 @@ const char kAutoFetchOnNetErrorPageDescription[] =
+@@ -2182,6 +2182,9 @@ const char kAutoFetchOnNetErrorPageDescription[] =
      "When enabled, and navigation fails with an offline error, schedule a "
      "fetch of the page when online again.";
  
@@ -66,7 +66,7 @@ diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descripti
 diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptions.h
 --- a/chrome/browser/flag_descriptions.h
 +++ b/chrome/browser/flag_descriptions.h
-@@ -1229,6 +1229,9 @@ extern const char kAsyncDnsDescription[];
+@@ -1294,6 +1294,9 @@ extern const char kAsyncDnsDescription[];
  extern const char kAutoFetchOnNetErrorPageName[];
  extern const char kAutoFetchOnNetErrorPageDescription[];
  
@@ -79,15 +79,15 @@ diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptio
 diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/browser/net/system_network_context_manager.cc
 --- a/chrome/browser/net/system_network_context_manager.cc
 +++ b/chrome/browser/net/system_network_context_manager.cc
-@@ -24,6 +24,7 @@
+@@ -23,6 +23,7 @@
+ #include "chrome/browser/chrome_content_browser_client.h"
  #include "chrome/browser/component_updater/crl_set_component_installer.h"
- #include "chrome/browser/io_thread.h"
  #include "chrome/browser/net/chrome_mojo_proxy_resolver_factory.h"
 +#include "components/network_session_configurator/common/network_switches.h"
  #include "chrome/browser/safe_browsing/safe_browsing_service.h"
  #include "chrome/browser/ssl/ssl_config_service_manager.h"
  #include "chrome/common/channel_info.h"
-@@ -124,6 +125,7 @@ void GetStubResolverConfig(
+@@ -111,6 +112,7 @@ void GetStubResolverConfig(
        if (!net::dns_util::IsValidDoHTemplate(
                doh_server_list[i].GetString(),
                doh_server_method_list[i].GetString())) {
@@ -95,7 +95,7 @@ diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/brows
          continue;
        }
  
-@@ -400,15 +402,12 @@ SystemNetworkContextManager::SystemNetworkContextManager(
+@@ -378,15 +380,12 @@ SystemNetworkContextManager::SystemNetworkContextManager(
                                      base::Value(ShouldEnableAsyncDns()));
    base::ListValue default_doh_servers;
    base::ListValue default_doh_server_methods;
@@ -180,38 +180,7 @@ diff --git a/net/base/load_flags_list.h b/net/base/load_flags_list.h
 diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
 --- a/net/dns/dns_transaction.cc
 +++ b/net/dns/dns_transaction.cc
-@@ -358,29 +358,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
-     extra_request_headers.SetHeader("Accept", kDnsOverHttpResponseContentType);
- 
-     DCHECK(url_request_context);
--    request_ = url_request_context->CreateRequest(
--        url, request_priority_, this,
--        net::DefineNetworkTrafficAnnotation("dns_over_https", R"(
--        semantics {
--          sender: "DNS over HTTPS"
--          description: "Domain name resolution over HTTPS"
--          trigger: "User enters a navigates to a domain or Chrome otherwise "
--                   "makes a connection to a domain whose IP address isn't cached"
--          data: "The domain name that is being requested"
--          destination: OTHER
--          destination_other: "The user configured DNS over HTTPS server, which"
--                             "may be dns.google.com"
--        }
--        policy {
--          cookies_allowed: NO
--          setting:
--            "You can configure this feature via that 'dns_over_https_servers' and"
--            "'dns_over_https.method' prefs. Empty lists imply this feature is"
--            "disabled"
--          policy_exception_justification: "Experimental feature that"
--                                          "is disabled by default"
--        }
--      )"));
-+    request_ = url_request_context->CreateRequest(url, request_priority_, this);
-     net_log_ = request_->net_log();
- 
-     if (use_post) {
-@@ -396,6 +374,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
+@@ -392,6 +392,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
  
      request_->SetExtraRequestHeaders(extra_request_headers);
      request_->SetLoadFlags(request_->load_flags() | LOAD_DISABLE_CACHE |
@@ -219,7 +188,7 @@ diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
                             LOAD_BYPASS_PROXY);
      request_->set_allow_credentials(false);
    }
-@@ -811,7 +790,7 @@ class DnsTransactionImpl : public DnsTransaction,
+@@ -806,7 +807,7 @@ class DnsTransactionImpl : public DnsTransaction,
          doh_attempt_(false),
          first_server_index_(0),
          url_request_context_(url_request_context),
@@ -231,7 +200,7 @@ diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
 diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_request_http_job.cc
 --- a/net/url_request/url_request_http_job.cc
 +++ b/net/url_request/url_request_http_job.cc
-@@ -345,6 +345,7 @@ void URLRequestHttpJob::Start() {
+@@ -340,6 +340,7 @@ void URLRequestHttpJob::Start() {
    // plugin could set a referrer although sending the referrer is inhibited.
    request_info_.extra_headers.RemoveHeader(HttpRequestHeaders::kReferer);
  
@@ -239,7 +208,7 @@ diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_reque
    // Our consumer should have made sure that this is a safe referrer. See for
    // instance WebCore::FrameLoader::HideReferrer.
    if (referrer.is_valid()) {
-@@ -360,11 +361,14 @@ void URLRequestHttpJob::Start() {
+@@ -355,11 +356,14 @@ void URLRequestHttpJob::Start() {
      request_info_.extra_headers.SetHeader(HttpRequestHeaders::kReferer,
                                            referer_value);
    }
@@ -254,7 +223,7 @@ diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_reque
  
    AddExtraHeaders();
    AddCookieHeaderAndStart();
-@@ -588,10 +592,12 @@ void URLRequestHttpJob::AddExtraHeaders() {
+@@ -582,10 +586,12 @@ void URLRequestHttpJob::AddExtraHeaders() {
      } else {
        // Advertise "br" encoding only if transferred data is opaque to proxy.
        bool advertise_brotli = false;
@@ -271,7 +240,7 @@ diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_reque
          }
        }
  
-@@ -609,7 +615,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
+@@ -603,7 +609,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
      }
    }
  
