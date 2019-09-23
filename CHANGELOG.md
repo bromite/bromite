@@ -1,3 +1,5 @@
+# 77.0.3865.95
+
 # 77.0.3865.81
 * use native subresource filtering instead of Bromite engine
 * introduce Bromite AdBlockUpdate service
