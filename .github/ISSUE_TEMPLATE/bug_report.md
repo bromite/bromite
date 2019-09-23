@@ -14,6 +14,8 @@ Device model: (example: `SM-G960UZKABST`)
 **Is this bug about the SystemWebView?**
 Yes/No
 
+No support for SystemWebView installations is provided.
+
 **Is the bug reproducible with latest version?**
 
 Do not report bugs which are not reproducible with latest version
