@@ -11,6 +11,9 @@ Arch: `arm` or `arm64` or `x86`
 Android version: (example: `9.0`)
 Device model: (example: `SM-G960UZKABST`)
 
+**Is this bug about the SystemWebView?**
+Yes/No
+
 **Is the bug reproducible with latest version?**
 
 Do not report bugs which are not reproducible with latest version
@@ -42,4 +45,4 @@ A clear and concise description of what you expected to happen.
 
 **Screenshots**
 
-If applicable, add screenshots to help explain your problem.
+If applicable, add screenshots to help explain your problem. Otherwise remove this section.
