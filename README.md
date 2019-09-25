@@ -52,10 +52,6 @@ See also [the wiki page](https://github.com/bromite/bromite/wiki/Installing-Syst
 
 See [this wiki page](https://github.com/bromite/bromite/wiki/Enabling-DNS-over-HTTPS).
 
-## Can you add dark mode/some cool themes?
-No.
-Bromite is about privacy and adblocking.
-
 ## Can you add HTTPS everywhere?
 No.
 We cannot add add-ons to Bromite (merely some features).
