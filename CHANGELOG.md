@@ -1,3 +1,7 @@
+# 77.0.3865.104
+* revert upstream commit for search privacy options and related translations removal (fixes https://github.com/bromite/bromite/issues/375)
+* remove unused patch for enabling subresource filter on all sites
+
 # 77.0.3865.95
 
 # 77.0.3865.81
