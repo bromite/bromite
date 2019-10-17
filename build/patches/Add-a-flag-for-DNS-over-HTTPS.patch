@@ -10,28 +10,26 @@ Do not fallback to UDP when using DoH
 
 See also: https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-14.txt
 ---
- chrome/browser/about_flags.cc                           | 11 +++++++++++
- chrome/browser/flag_descriptions.cc                     |  3 +++
- chrome/browser/flag_descriptions.h                      |  3 +++
- chrome/browser/net/system_network_context_manager.cc    | 17 ++++++++---------
- .../common/network_features.cc                          |  7 +++++--
- .../common/network_features.h                           |  5 ++++-
- .../common/network_switch_list.h                        |  4 ++++
- net/base/load_flags_list.h                              |  6 ++++++
- net/dns/dns_transaction.cc                              |  3 ++-
- net/url_request/url_request_http_job.cc                 | 16 +++++++++++-----
- 10 files changed, 57 insertions(+), 18 deletions(-)
+ chrome/browser/about_flags.cc                          | 11 +++++++++++
+ chrome/browser/net/system_network_context_manager.cc   | 18 +++++++++++-------
+ .../common/network_features.cc                         |  6 ++++++
+ .../common/network_features.h                          |  6 ++++++
+ .../common/network_switch_list.h                       |  4 ++++
+ net/base/load_flags_list.h                             |  6 ++++++
+ net/dns/dns_transaction.cc                             |  4 ++--
+ net/url_request/url_request_http_job.cc                | 16 +++++++++++-----
+ 8 files changed, 57 insertions(+), 14 deletions(-)
 
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
-@@ -403,6 +403,14 @@ const FeatureEntry::FeatureVariation kCCTModuleCacheVariations[] = {
+@@ -417,6 +417,14 @@ const FeatureEntry::FeatureVariation kCCTModuleCacheVariations[] = {
       base::size(kCCTModuleCache_ThirtyMinutes), nullptr},
  };
  
 +const FeatureEntry::Choice kDnsOverHttpsChoices[] = {
 +    {features::kDnsOverHttpsChoiceDefault, "", ""},
-+    {features::kDnsOverHttpsChoiceGoogle, switches::kDnsOverHttpsServer, "https://dns.google.com/experimental"},
++    {features::kDnsOverHttpsChoiceGoogle, switches::kDnsOverHttpsServer, "https://dns.google/dns-query"},
 +    {features::kDnsOverHttpsChoiceCloudflare, switches::kDnsOverHttpsServer, "https://1.1.1.1/dns-query"},
 +    {features::kDnsOverHttpsChoiceQuad9, switches::kDnsOverHttpsServer, "https://9.9.9.9/dns-query"},
 +    {features::kDnsOverHttpsChoiceAdGuard, switches::kDnsOverHttpsServer, "https://dns.adguard.com/dns-query"}
@@ -39,8 +37,8 @@ diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 +
  #endif  // OS_ANDROID
  
- const FeatureEntry::Choice kEnableGpuRasterizationChoices[] = {
-@@ -3438,6 +3446,9 @@ const FeatureEntry kFeatureEntries[] = {
+ const FeatureEntry::FeatureParam kForceDark_SimpleHsl[] = {
+@@ -3578,6 +3586,9 @@ const FeatureEntry kFeatureEntries[] = {
       flag_descriptions::kEnableSyncUSSBookmarksName,
       flag_descriptions::kEnableSyncUSSBookmarksDescription, kOsAll,
       FEATURE_VALUE_TYPE(switches::kSyncUSSBookmarks)},
@@ -50,106 +48,79 @@ diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
  
      {"enable-lookalike-url-navigation-suggestions",
       flag_descriptions::kLookalikeUrlNavigationSuggestionsName,
-diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
---- a/chrome/browser/flag_descriptions.cc
-+++ b/chrome/browser/flag_descriptions.cc
-@@ -2182,6 +2182,9 @@ const char kAutoFetchOnNetErrorPageDescription[] =
-     "When enabled, and navigation fails with an offline error, schedule a "
-     "fetch of the page when online again.";
- 
-+const char kDnsOverHttpsName[] = "DNS over HTTPS";
-+const char kDnsOverHttpsDescription[] = "Enables DNS-over-HTTPS (experimental).";
-+
- const char kAutofillAccessoryViewName[] =
-     "Autofill suggestions as keyboard accessory view";
- const char kAutofillAccessoryViewDescription[] =
-diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptions.h
---- a/chrome/browser/flag_descriptions.h
-+++ b/chrome/browser/flag_descriptions.h
-@@ -1294,6 +1294,9 @@ extern const char kAsyncDnsDescription[];
- extern const char kAutoFetchOnNetErrorPageName[];
- extern const char kAutoFetchOnNetErrorPageDescription[];
- 
-+extern const char kDnsOverHttpsName[];
-+extern const char kDnsOverHttpsDescription[];
-+
- extern const char kAutofillAccessoryViewName[];
- extern const char kAutofillAccessoryViewDescription[];
- 
 diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/browser/net/system_network_context_manager.cc
 --- a/chrome/browser/net/system_network_context_manager.cc
 +++ b/chrome/browser/net/system_network_context_manager.cc
-@@ -23,6 +23,7 @@
+@@ -25,6 +25,7 @@
  #include "chrome/browser/chrome_content_browser_client.h"
  #include "chrome/browser/component_updater/crl_set_component_installer.h"
  #include "chrome/browser/net/chrome_mojo_proxy_resolver_factory.h"
 +#include "components/network_session_configurator/common/network_switches.h"
+ #include "chrome/browser/net/dns_util.h"
  #include "chrome/browser/safe_browsing/safe_browsing_service.h"
  #include "chrome/browser/ssl/ssl_config_service_manager.h"
- #include "chrome/common/channel_info.h"
-@@ -111,6 +112,7 @@ void GetStubResolverConfig(
-       if (!net::dns_util::IsValidDoHTemplate(
-               doh_server_list[i].GetString(),
-               doh_server_method_list[i].GetString())) {
-+        LOG(ERROR) << "Invalid DoH template: " << doh_server_list[i].GetString() << " with method " << doh_server_method_list[i].GetString();
+@@ -142,6 +143,7 @@ void GetStubResolverConfig(
+                      base::SPLIT_WANT_NONEMPTY)) {
+       if (!chrome_browser_net::IsValidDohTemplate(server_template,
+                                                   &server_method)) {
++        LOG(ERROR) << "Invalid DoH template: " << server_template << " with method " << server_method;
          continue;
        }
  
-@@ -378,15 +380,12 @@ SystemNetworkContextManager::SystemNetworkContextManager(
+@@ -406,14 +408,16 @@ SystemNetworkContextManager::SystemNetworkContextManager(
                                      base::Value(ShouldEnableAsyncDns()));
-   base::ListValue default_doh_servers;
-   base::ListValue default_doh_server_methods;
+   std::string default_doh_mode = chrome_browser_net::kDnsOverHttpsModeOff;
+   std::string default_doh_templates = "";
 -  if (base::FeatureList::IsEnabled(features::kDnsOverHttps)) {
--    std::string server(variations::GetVariationParamValueByFeature(
--        features::kDnsOverHttps, "server"));
--    std::string method(variations::GetVariationParamValueByFeature(
--        features::kDnsOverHttps, "method"));
--    if (!server.empty()) {
--      default_doh_servers.AppendString(server);
--      default_doh_server_methods.AppendString(method);
+-    if (features::kDnsOverHttpsFallbackParam.Get()) {
+-      default_doh_mode = chrome_browser_net::kDnsOverHttpsModeAutomatic;
+-    } else {
+-      default_doh_mode = chrome_browser_net::kDnsOverHttpsModeSecure;
 -    }
+-    default_doh_templates = features::kDnsOverHttpsTemplatesParam.Get();
++
 +  std::string server =
 +      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
 +      switches::kDnsOverHttpsServer);
 +  if (!server.empty()) {
-+    default_doh_servers.AppendString(server);
-+    default_doh_server_methods.AppendString("POST");
++    default_doh_mode = chrome_browser_net::kDnsOverHttpsModeSecure;
++    // will use POST when URLs do not contain a 'dns' query parameter
++    default_doh_templates = server;
    }
-   local_state_->SetDefaultPrefValue(prefs::kDnsOverHttpsServers,
-                                     std::move(default_doh_servers));
++
+   local_state_->SetDefaultPrefValue(prefs::kDnsOverHttpsMode,
+                                     base::Value(default_doh_mode));
+   local_state_->SetDefaultPrefValue(prefs::kDnsOverHttpsTemplates,
 diff --git a/components/network_session_configurator/common/network_features.cc b/components/network_session_configurator/common/network_features.cc
 --- a/components/network_session_configurator/common/network_features.cc
 +++ b/components/network_session_configurator/common/network_features.cc
-@@ -8,7 +8,10 @@
+@@ -8,4 +8,10 @@
  
  namespace features {
  
--const base::Feature kDnsOverHttps{"dns-over-https",
--                                  base::FEATURE_DISABLED_BY_DEFAULT};
 +const char kDnsOverHttpsChoiceDefault[] = "Disabled",
 +                 kDnsOverHttpsChoiceGoogle[] = "Google",
 +                 kDnsOverHttpsChoiceCloudflare[] = "Cloudflare",
 +                 kDnsOverHttpsChoiceQuad9[] = "Quad9",
 +                 kDnsOverHttpsChoiceAdGuard[] = "AdGuard";
- 
++
  }  // namespace features
 diff --git a/components/network_session_configurator/common/network_features.h b/components/network_session_configurator/common/network_features.h
 --- a/components/network_session_configurator/common/network_features.h
 +++ b/components/network_session_configurator/common/network_features.h
-@@ -10,9 +10,12 @@
+@@ -10,6 +10,12 @@
  
  namespace features {
  
--// Enabled DNS over HTTPS
 +// DNS over HTTPS server endpoint choices
- // (https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-12.txt).
- NETWORK_SESSION_CONFIGURATOR_EXPORT extern const base::Feature kDnsOverHttps;
++ // (https://tools.ietf.org/id/draft-ietf-doh-dns-over-https-12.txt).
 +NETWORK_SESSION_CONFIGURATOR_EXPORT extern const char kDnsOverHttpsChoiceDefault[],
 +   kDnsOverHttpsChoiceGoogle[], kDnsOverHttpsChoiceCloudflare[], kDnsOverHttpsChoiceQuad9[],
 +   kDnsOverHttpsChoiceAdGuard[];
- 
++
  }  // namespace features
  
+ #endif  // COMPONENTS_NETWORK_SESSION_CONFIGURATOR_COMMON_NETWORK_FEATURES_H_
 diff --git a/components/network_session_configurator/common/network_switch_list.h b/components/network_session_configurator/common/network_switch_list.h
 --- a/components/network_session_configurator/common/network_switch_list.h
 +++ b/components/network_session_configurator/common/network_switch_list.h
@@ -167,29 +138,30 @@ diff --git a/components/network_session_configurator/common/network_switch_list.
 diff --git a/net/base/load_flags_list.h b/net/base/load_flags_list.h
 --- a/net/base/load_flags_list.h
 +++ b/net/base/load_flags_list.h
-@@ -105,3 +105,9 @@ LOAD_FLAG(SKIP_VARY_CHECK, 1 << 16)
- // does not complete in 60 seconds, the cache treat the stale resource as
- // invalid, as it did not specify stale-while-revalidate.
- LOAD_FLAG(SUPPORT_ASYNC_REVALIDATION, 1 << 17)
+@@ -117,3 +117,9 @@ LOAD_FLAG(RESTRICTED_PREFETCH, 1 << 18)
+ // is considered privileged, and therefore this flag must only be set from a
+ // trusted process.
+ LOAD_FLAG(CAN_USE_RESTRICTED_PREFETCH, 1 << 19)
 +
 +// This load will not send Accept-Language or User-Agent headers, and not
 +// advertise brotli encoding.
 +// Used to comply with IETF (draft) DNS-over-HTTPS:
 +// "Implementors SHOULD NOT set non-essential HTTP headers in DoH client requests."
-+LOAD_FLAG(MINIMAL_HEADERS, 1 << 18)
++LOAD_FLAG(MINIMAL_HEADERS, 1 << 20)
 diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
 --- a/net/dns/dns_transaction.cc
 +++ b/net/dns/dns_transaction.cc
-@@ -392,6 +392,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
- 
-     request_->SetExtraRequestHeaders(extra_request_headers);
+@@ -403,7 +403,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
+     // perspective to prevent the client from sending AIA requests).
      request_->SetLoadFlags(request_->load_flags() | LOAD_DISABLE_CACHE |
-+                           LOAD_IGNORE_LIMITS | LOAD_MINIMAL_HEADERS |
-                            LOAD_BYPASS_PROXY);
+                            LOAD_BYPASS_PROXY |
+-                           LOAD_DISABLE_CERT_NETWORK_FETCHES);
++                           LOAD_DISABLE_CERT_NETWORK_FETCHES | LOAD_MINIMAL_HEADERS);
      request_->set_allow_credentials(false);
    }
-@@ -806,7 +807,7 @@ class DnsTransactionImpl : public DnsTransaction,
-         doh_attempt_(false),
+ 
+@@ -997,7 +997,7 @@ class DnsTransactionImpl : public DnsTransaction,
+         had_tcp_attempt_(false),
          first_server_index_(0),
          url_request_context_(url_request_context),
 -        request_priority_(DEFAULT_PRIORITY) {
@@ -200,7 +172,7 @@ diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
 diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_request_http_job.cc
 --- a/net/url_request/url_request_http_job.cc
 +++ b/net/url_request/url_request_http_job.cc
-@@ -340,6 +340,7 @@ void URLRequestHttpJob::Start() {
+@@ -339,6 +339,7 @@ void URLRequestHttpJob::Start() {
    // plugin could set a referrer although sending the referrer is inhibited.
    request_info_.extra_headers.RemoveHeader(HttpRequestHeaders::kReferer);
  
@@ -208,7 +180,7 @@ diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_reque
    // Our consumer should have made sure that this is a safe referrer. See for
    // instance WebCore::FrameLoader::HideReferrer.
    if (referrer.is_valid()) {
-@@ -355,11 +356,14 @@ void URLRequestHttpJob::Start() {
+@@ -354,11 +355,14 @@ void URLRequestHttpJob::Start() {
      request_info_.extra_headers.SetHeader(HttpRequestHeaders::kReferer,
                                            referer_value);
    }

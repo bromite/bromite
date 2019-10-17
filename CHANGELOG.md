@@ -1,3 +1,10 @@
+# 78.0.3904.63
+* replace Beta DoH service URL for Google (https://developers.google.com/speed/public-dns/docs/doh/migration)
+* disable AImageReaderMediaPlayer until upstream bug is fixed (https://bugs.chromium.org/p/chromium/issues/detail?id=977583)
+* disabled face detection provider
+* removed non-working SystemWebView adblock patch (not working since v77)
+* bring back some privacy options which upstream moved to Sync settings (fixes https://github.com/bromite/bromite/issues/383)
+
 # 77.0.3865.104
 * revert upstream commit for search privacy options and related translations removal (fixes https://github.com/bromite/bromite/issues/375)
 * remove unused patch for enabling subresource filter on all sites

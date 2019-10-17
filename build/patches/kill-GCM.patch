@@ -5,35 +5,36 @@ Subject: kill GCM
 ---
  chrome/android/BUILD.gn                            |   1 -
  chrome/android/chrome_java_sources.gni             |   6 -
- chrome/android/java/AndroidManifest.xml            |  64 --------
- .../chrome/browser/BackgroundSyncLauncher.java     |  97 ------------
+ chrome/android/java/AndroidManifest.xml            |  64 -------
+ .../chrome/browser/BackgroundSyncLauncher.java     |  97 ----------
  .../chrome/browser/ChromeBackgroundService.java    |   1 -
+ .../ChromeBackgroundTaskFactory.java               |   3 -
  .../invalidation/InvalidationController.java       |   8 -
- .../browser/ntp/snippets/SnippetsLauncher.java     |  44 ------
+ .../browser/ntp/snippets/SnippetsLauncher.java     |  44 -----
  .../browser/services/gcm/GCMBackgroundTask.java    |   2 +-
  .../gcm/InvalidationGcmUpstreamSender.java         |  15 --
  components/background_task_scheduler/BUILD.gn      |   1 -
- .../BackgroundTaskSchedulerGcmNetworkManager.java  | 166 +--------------------
+ .../BackgroundTaskSchedulerGcmNetworkManager.java  | 206 +--------------------
  components/gcm_driver/android/BUILD.gn             |   1 -
  components/gcm_driver/instance_id/android/BUILD.gn |   1 -
- .../gcm_driver/instance_id/InstanceIDBridge.java   |  40 +----
+ .../gcm_driver/instance_id/InstanceIDBridge.java   |  49 +----
  components/sync/android/BUILD.gn                   |   1 -
  third_party/cacheinvalidation/BUILD.gn             |   6 -
- .../client/contrib/MultiplexingGcmListener.java    |  91 +----------
+ .../client/contrib/MultiplexingGcmListener.java    |  91 +--------
  .../android2/channel/AndroidNetworkChannel.java    |   6 +-
- 18 files changed, 9 insertions(+), 542 deletions(-)
+ 19 files changed, 9 insertions(+), 594 deletions(-)
 
 diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
 --- a/chrome/android/BUILD.gn
 +++ b/chrome/android/BUILD.gn
-@@ -368,7 +368,6 @@ android_library("chrome_java") {
+@@ -379,7 +379,6 @@ android_library("chrome_java") {
      "//third_party/android_deps:com_google_protobuf_protobuf_lite_java",
      "//third_party/android_deps:javax_inject_javax_inject_java",
      "//third_party/android_media:android_media_java",
 -    "//third_party/android_sdk:android_gcm_java",
+     "//third_party/android_sdk/androidx_browser:androidx_browser_java",
      "//third_party/android_swipe_refresh:android_swipe_refresh_java",
      "//third_party/blink/public:blink_headers_java",
-     "//third_party/blink/public/mojom:android_mojo_bindings_java",
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
@@ -45,7 +46,7 @@ diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java
    "java/src/org/chromium/chrome/browser/ChromeBackupAgent.java",
    "java/src/org/chromium/chrome/browser/ChromeBackupWatcher.java",
    "java/src/org/chromium/chrome/browser/ChromeBaseAppCompatActivity.java",
-@@ -1395,11 +1394,6 @@ chrome_java_sources = [
+@@ -1424,11 +1423,6 @@ chrome_java_sources = [
    "java/src/org/chromium/chrome/browser/services/AndroidEduAndChildAccountHelper.java",
    "java/src/org/chromium/chrome/browser/services/AndroidEduOwnerCheckCallback.java",
    "java/src/org/chromium/chrome/browser/services/GoogleServicesManager.java",
@@ -55,8 +56,8 @@ diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java
 -  "java/src/org/chromium/chrome/browser/services/gcm/GcmUma.java",
 -  "java/src/org/chromium/chrome/browser/services/gcm/InvalidationGcmUpstreamSender.java",
    "java/src/org/chromium/chrome/browser/sessions/SessionTabHelper.java",
+   "java/src/org/chromium/chrome/browser/share/LensUtils.java",
    "java/src/org/chromium/chrome/browser/share/OptionalShareTargetsManager.java",
-   "java/src/org/chromium/chrome/browser/share/ShareActivity.java",
 diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/AndroidManifest.xml
 --- a/chrome/android/java/AndroidManifest.xml
 +++ b/chrome/android/java/AndroidManifest.xml
@@ -83,7 +84,7 @@ diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/Andro
      <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT"/>
  
      {% block extra_uses_permissions %}
-@@ -1040,49 +1035,8 @@ by a child template that "extends" this file.
+@@ -1068,49 +1063,8 @@ by a child template that "extends" this file.
              android:configChanges="orientation|keyboardHidden|keyboard|screenSize|mcc|mnc|screenLayout|smallestScreenSize"
              android:hardwareAccelerated="false" />
  
@@ -133,7 +134,7 @@ diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/Andro
          <receiver android:name="com.google.ipc.invalidation.ticl.android2.AndroidInternalScheduler$AlarmReceiver"
              android:exported="false"/>
          <receiver android:name="com.google.ipc.invalidation.external.client.contrib.AndroidListener$AlarmReceiver"
-@@ -1109,24 +1063,6 @@ by a child template that "extends" this file.
+@@ -1137,24 +1091,6 @@ by a child template that "extends" this file.
              android:exported="false"
              android:permission="android.permission.BIND_JOB_SERVICE"/>
  
@@ -304,6 +305,26 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeBackgroun
      }
  
      private void handleSnippetsOnBrowserUpgraded() {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/background_task_scheduler/ChromeBackgroundTaskFactory.java b/chrome/android/java/src/org/chromium/chrome/browser/background_task_scheduler/ChromeBackgroundTaskFactory.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/background_task_scheduler/ChromeBackgroundTaskFactory.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/background_task_scheduler/ChromeBackgroundTaskFactory.java
+@@ -19,7 +19,6 @@ import org.chromium.chrome.browser.offlinepages.OfflineBackgroundTask;
+ import org.chromium.chrome.browser.offlinepages.prefetch.OfflineNotificationBackgroundTask;
+ import org.chromium.chrome.browser.offlinepages.prefetch.PrefetchBackgroundTask;
+ import org.chromium.chrome.browser.omaha.OmahaService;
+-import org.chromium.chrome.browser.services.gcm.GCMBackgroundTask;
+ import org.chromium.chrome.browser.webapps.WebApkUpdateTask;
+ import org.chromium.components.background_task_scheduler.BackgroundTask;
+ import org.chromium.components.background_task_scheduler.BackgroundTaskFactory;
+@@ -48,8 +47,6 @@ public class ChromeBackgroundTaskFactory implements BackgroundTaskFactory {
+         switch (taskId) {
+             case TaskIds.OMAHA_JOB_ID:
+                 return new OmahaService();
+-            case TaskIds.GCM_BACKGROUND_TASK_JOB_ID:
+-                return new GCMBackgroundTask();
+             case TaskIds.OFFLINE_PAGES_BACKGROUND_JOB_ID:
+                 return new OfflineBackgroundTask();
+             case TaskIds.OFFLINE_PAGES_PREFETCH_JOB_ID:
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/invalidation/InvalidationController.java b/chrome/android/java/src/org/chromium/chrome/browser/invalidation/InvalidationController.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/invalidation/InvalidationController.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/invalidation/InvalidationController.java
@@ -470,14 +491,14 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/services/gcm/In
 diff --git a/components/background_task_scheduler/BUILD.gn b/components/background_task_scheduler/BUILD.gn
 --- a/components/background_task_scheduler/BUILD.gn
 +++ b/components/background_task_scheduler/BUILD.gn
-@@ -30,7 +30,6 @@ if (is_android) {
-   android_library("background_task_scheduler_java") {
-     java_files = [
+@@ -32,7 +32,6 @@ if (is_android) {
        "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTask.java",
+       "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskBroadcastReceiver.java",
+       "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskFactory.java",
 -      "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskGcmTaskService.java",
        "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskJobService.java",
-       "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskReflection.java",
        "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskScheduler.java",
+       "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskSchedulerAlarmManager.java",
 diff --git a/components/background_task_scheduler/android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskSchedulerGcmNetworkManager.java b/components/background_task_scheduler/android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskSchedulerGcmNetworkManager.java
 --- a/components/background_task_scheduler/android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskSchedulerGcmNetworkManager.java
 +++ b/components/background_task_scheduler/android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskSchedulerGcmNetworkManager.java
@@ -496,32 +517,44 @@ diff --git a/components/background_task_scheduler/android/java/src/org/chromium/
  import org.chromium.base.Log;
  import org.chromium.base.ThreadUtils;
  import org.chromium.base.VisibleForTesting;
-@@ -42,124 +34,6 @@ class BackgroundTaskSchedulerGcmNetworkManager implements BackgroundTaskSchedule
+@@ -42,212 +34,16 @@ class BackgroundTaskSchedulerGcmNetworkManager implements BackgroundTaskSchedule
          sClock = clock;
      }
  
--    static BackgroundTask getBackgroundTaskFromTaskParams(@NonNull TaskParams taskParams) {
--        String backgroundTaskClassName = getBackgroundTaskClassFromTaskParams(taskParams);
--        return BackgroundTaskReflection.getBackgroundTaskFromClassName(backgroundTaskClassName);
--    }
--
--    private static String getBackgroundTaskClassFromTaskParams(@NonNull TaskParams taskParams) {
+-    /**
+-     * Checks if a task expired, based on the current time of the service.
+-     *
+-     * @param taskParams parameters sent to the service, which contain the scheduling information
+-     * regarding expiration.
+-     * @param currentTimeMs the current time of the service.
+-     * @return true if the task expired and false otherwise.
+-     */
+-    static boolean didTaskExpire(TaskParams taskParams, long currentTimeMs) {
 -        Bundle extras = taskParams.getExtras();
--        if (extras == null) return null;
--        return extras.getString(BACKGROUND_TASK_CLASS_KEY);
--    }
--
--    static Long getDeadlineTimeFromTaskParams(@NonNull TaskParams taskParams) {
--        Bundle extras = taskParams.getExtras();
--        if (extras == null || !extras.containsKey(BACKGROUND_TASK_DEADLINE_KEY)) {
--            return null;
+-        if (extras == null || !extras.containsKey(BACKGROUND_TASK_SCHEDULE_TIME_KEY)) {
+-            return false;
 -        }
--        return extras.getLong(BACKGROUND_TASK_DEADLINE_KEY);
--    }
 -
--    private static long getDeadlineTime(TaskInfo taskInfo) {
--        long windowEndTimeMs = taskInfo.getOneOffInfo().getWindowEndTimeMs();
--        return sClock.currentTimeMillis() + windowEndTimeMs;
+-        long scheduleTimeMs = extras.getLong(BACKGROUND_TASK_SCHEDULE_TIME_KEY);
+-        if (extras.containsKey(BACKGROUND_TASK_END_TIME_KEY)) {
+-            long endTimeMs =
+-                    extras.getLong(BackgroundTaskSchedulerDelegate.BACKGROUND_TASK_END_TIME_KEY);
+-            return TaskInfo.OneOffInfo.getExpirationStatus(
+-                    scheduleTimeMs, endTimeMs, currentTimeMs);
+-        } else {
+-            long intervalTimeMs = extras.getLong(BACKGROUND_TASK_INTERVAL_TIME_KEY);
+-
+-            // If flex is never set, it is given a default value of 10% of the period time, as
+-            // per the GcmNetworkManager behaviour. This default value is set in
+-            // https://developers.google.com/android/reference/com/google/android/gms/gcm/PeriodicTask.
+-            double defaultFlexAsFractionOfInterval = 0.1f;
+-
+-            long flexTimeMs = extras.getLong(BACKGROUND_TASK_FLEX_TIME_KEY,
+-                    /*defaultValue=*/(long) (defaultFlexAsFractionOfInterval * intervalTimeMs));
+-
+-            return TaskInfo.PeriodicInfo.getExpirationStatus(
+-                    scheduleTimeMs, intervalTimeMs, flexTimeMs, currentTimeMs);
+-        }
 -    }
 -
 -    /**
@@ -553,22 +586,13 @@ diff --git a/components/background_task_scheduler/android/java/src/org/chromium/
 -    @VisibleForTesting
 -    static Task createTaskFromTaskInfo(@NonNull TaskInfo taskInfo) {
 -        Bundle taskExtras = new Bundle();
--        taskExtras.putString(
--                BACKGROUND_TASK_CLASS_KEY, taskInfo.getBackgroundTaskClass().getName());
--        if (!taskInfo.isPeriodic() && taskInfo.getOneOffInfo().expiresAfterWindowEndTime()) {
--            taskExtras.putLong(BACKGROUND_TASK_DEADLINE_KEY, getDeadlineTime(taskInfo));
--        }
 -        taskExtras.putBundle(BACKGROUND_TASK_EXTRAS_KEY, taskInfo.getExtras());
 -
--        Task.Builder builder;
--        if (taskInfo.isPeriodic()) {
--            builder = getPeriodicTaskBuilder(taskInfo.getPeriodicInfo());
--        } else {
--            builder = getOneOffTaskBuilder(taskInfo.getOneOffInfo());
--        }
+-        TaskBuilderVisitor taskBuilderVisitor = new TaskBuilderVisitor(taskExtras);
+-        taskInfo.getTimingInfo().accept(taskBuilderVisitor);
+-        Task.Builder builder = taskBuilderVisitor.getBuilder();
 -
--        builder.setExtras(taskExtras)
--                .setPersisted(taskInfo.isPersisted())
+-        builder.setPersisted(taskInfo.isPersisted())
 -                .setRequiredNetwork(getGcmNetworkManagerNetworkTypeFromTypeFromTaskNetworkType(
 -                        taskInfo.getRequiredNetworkType()))
 -                .setRequiresCharging(taskInfo.requiresCharging())
@@ -579,27 +603,65 @@ diff --git a/components/background_task_scheduler/android/java/src/org/chromium/
 -        return builder.build();
 -    }
 -
--    private static Task.Builder getPeriodicTaskBuilder(TaskInfo.PeriodicInfo periodicInfo) {
--        PeriodicTask.Builder builder = new PeriodicTask.Builder();
--        builder.setPeriod(TimeUnit.MILLISECONDS.toSeconds(periodicInfo.getIntervalMs()));
--        if (periodicInfo.hasFlex()) {
--            builder.setFlex(TimeUnit.MILLISECONDS.toSeconds(periodicInfo.getFlexMs()));
--        }
--        return builder;
--    }
+-    private static class TaskBuilderVisitor implements TaskInfo.TimingInfoVisitor {
+-        private Task.Builder mBuilder;
+-        private final Bundle mTaskExtras;
 -
--    private static Task.Builder getOneOffTaskBuilder(TaskInfo.OneOffInfo oneOffInfo) {
--        OneoffTask.Builder builder = new OneoffTask.Builder();
--        long windowStartSeconds = oneOffInfo.hasWindowStartTimeConstraint()
--                ? TimeUnit.MILLISECONDS.toSeconds(oneOffInfo.getWindowStartTimeMs())
--                : 0;
--        long windowEndTimeMs = oneOffInfo.getWindowEndTimeMs();
--        if (oneOffInfo.expiresAfterWindowEndTime()) {
--            windowEndTimeMs += DEADLINE_DELTA_MS;
+-        TaskBuilderVisitor(Bundle taskExtras) {
+-            mTaskExtras = taskExtras;
 -        }
--        builder.setExecutionWindow(
--                windowStartSeconds, TimeUnit.MILLISECONDS.toSeconds(windowEndTimeMs));
--        return builder;
+-
+-        // Only valid after a TimingInfo object was visited.
+-        Task.Builder getBuilder() {
+-            return mBuilder;
+-        }
+-
+-        @Override
+-        public void visit(TaskInfo.OneOffInfo oneOffInfo) {
+-            if (oneOffInfo.expiresAfterWindowEndTime()) {
+-                mTaskExtras.putLong(BACKGROUND_TASK_SCHEDULE_TIME_KEY, sClock.currentTimeMillis());
+-                mTaskExtras.putLong(BACKGROUND_TASK_END_TIME_KEY, oneOffInfo.getWindowEndTimeMs());
+-            }
+-
+-            OneoffTask.Builder builder = new OneoffTask.Builder();
+-            long windowStartSeconds = oneOffInfo.hasWindowStartTimeConstraint()
+-                    ? TimeUnit.MILLISECONDS.toSeconds(oneOffInfo.getWindowStartTimeMs())
+-                    : 0;
+-            long windowEndTimeMs = oneOffInfo.getWindowEndTimeMs();
+-            if (oneOffInfo.expiresAfterWindowEndTime()) {
+-                windowEndTimeMs += DEADLINE_DELTA_MS;
+-            }
+-            builder.setExecutionWindow(
+-                    windowStartSeconds, TimeUnit.MILLISECONDS.toSeconds(windowEndTimeMs));
+-            builder.setExtras(mTaskExtras);
+-            mBuilder = builder;
+-        }
+-
+-        @Override
+-        public void visit(TaskInfo.PeriodicInfo periodicInfo) {
+-            if (periodicInfo.expiresAfterWindowEndTime()) {
+-                mTaskExtras.putLong(BACKGROUND_TASK_SCHEDULE_TIME_KEY, sClock.currentTimeMillis());
+-                mTaskExtras.putLong(
+-                        BACKGROUND_TASK_INTERVAL_TIME_KEY, periodicInfo.getIntervalMs());
+-                if (periodicInfo.hasFlex()) {
+-                    mTaskExtras.putLong(BACKGROUND_TASK_FLEX_TIME_KEY, periodicInfo.getFlexMs());
+-                }
+-            }
+-
+-            PeriodicTask.Builder builder = new PeriodicTask.Builder();
+-            builder.setPeriod(TimeUnit.MILLISECONDS.toSeconds(periodicInfo.getIntervalMs()));
+-            if (periodicInfo.hasFlex()) {
+-                builder.setFlex(TimeUnit.MILLISECONDS.toSeconds(periodicInfo.getFlexMs()));
+-            }
+-            builder.setExtras(mTaskExtras);
+-            mBuilder = builder;
+-        }
+-
+-        @Override
+-        public void visit(TaskInfo.ExactInfo exactInfo) {
+-            throw new RuntimeException("Exact tasks should not be scheduled with "
+-                    + "GcmNetworkManager.");
+-        }
 -    }
 -
 -    private static int getGcmNetworkManagerNetworkTypeFromTypeFromTaskNetworkType(
@@ -621,11 +683,7 @@ diff --git a/components/background_task_scheduler/android/java/src/org/chromium/
      @Override
      public boolean schedule(Context context, @NonNull TaskInfo taskInfo) {
          ThreadUtils.assertOnUiThread();
-@@ -170,50 +44,12 @@ class BackgroundTaskSchedulerGcmNetworkManager implements BackgroundTaskSchedule
-                             + " has no parameterless public constructor.");
-             return false;
-         }
--
+ 
 -        GcmNetworkManager gcmNetworkManager = getGcmNetworkManager(context);
 -        if (gcmNetworkManager == null) {
 -            Log.e(TAG, "GcmNetworkManager is not available.");
@@ -687,7 +745,7 @@ diff --git a/components/gcm_driver/android/BUILD.gn b/components/gcm_driver/andr
 diff --git a/components/gcm_driver/instance_id/android/BUILD.gn b/components/gcm_driver/instance_id/android/BUILD.gn
 --- a/components/gcm_driver/instance_id/android/BUILD.gn
 +++ b/components/gcm_driver/instance_id/android/BUILD.gn
-@@ -25,7 +25,6 @@ android_library("instance_id_driver_java") {
+@@ -28,7 +28,6 @@ android_library("instance_id_driver_java") {
  
    java_files = [
      "java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDBridge.java",
@@ -698,7 +756,7 @@ diff --git a/components/gcm_driver/instance_id/android/BUILD.gn b/components/gcm
 diff --git a/components/gcm_driver/instance_id/android/java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDBridge.java b/components/gcm_driver/instance_id/android/java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDBridge.java
 --- a/components/gcm_driver/instance_id/android/java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDBridge.java
 +++ b/components/gcm_driver/instance_id/android/java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDBridge.java
-@@ -26,7 +26,6 @@ public class InstanceIDBridge {
+@@ -28,7 +28,6 @@ public class InstanceIDBridge {
       * Underlying InstanceIDWithSubtype. May be shared by multiple InstanceIDBridges. Must be
       * initialized on a background thread.
       */
@@ -706,7 +764,7 @@ diff --git a/components/gcm_driver/instance_id/android/java/src/org/chromium/com
  
      private static boolean sBlockOnAsyncTasksForTesting;
  
-@@ -71,7 +70,7 @@ public class InstanceIDBridge {
+@@ -73,7 +72,7 @@ public class InstanceIDBridge {
          new BridgeAsyncTask<String>() {
              @Override
              protected String doBackgroundWork() {
@@ -715,7 +773,7 @@ diff --git a/components/gcm_driver/instance_id/android/java/src/org/chromium/com
              }
              @Override
              protected void sendResultToNative(String id) {
-@@ -86,7 +85,7 @@ public class InstanceIDBridge {
+@@ -88,7 +87,7 @@ public class InstanceIDBridge {
          new BridgeAsyncTask<Long>() {
              @Override
              protected Long doBackgroundWork() {
@@ -724,15 +782,21 @@ diff --git a/components/gcm_driver/instance_id/android/java/src/org/chromium/com
              }
              @Override
              protected void sendResultToNative(Long creationTime) {
-@@ -111,15 +110,7 @@ public class InstanceIDBridge {
+@@ -113,21 +112,7 @@ public class InstanceIDBridge {
          new BridgeAsyncTask<String>() {
              @Override
              protected String doBackgroundWork() {
 -                try {
+-                    // TODO(knollr): Migrate stored LazySubscriptionsManager data to
+-                    // SubscriptionFlagManager.
 -                    LazySubscriptionsManager.storeLazinessInformation(
 -                            LazySubscriptionsManager.buildSubscriptionUniqueId(
 -                                    mSubtype, authorizedEntity),
--                            isLazy);
+-                            (flags & InstanceIDFlags.IS_LAZY) == InstanceIDFlags.IS_LAZY);
+-                    SubscriptionFlagManager.setFlags(
+-                            SubscriptionFlagManager.buildSubscriptionUniqueId(
+-                                    mSubtype, authorizedEntity),
+-                            flags);
 -                    return mInstanceID.getToken(authorizedEntity, scope, extras);
 -                } catch (IOException ex) {
 -                    return "";
@@ -741,7 +805,7 @@ diff --git a/components/gcm_driver/instance_id/android/java/src/org/chromium/com
              }
              @Override
              protected void sendResultToNative(String token) {
-@@ -135,18 +126,7 @@ public class InstanceIDBridge {
+@@ -143,21 +128,7 @@ public class InstanceIDBridge {
          new BridgeAsyncTask<Boolean>() {
              @Override
              protected Boolean doBackgroundWork() {
@@ -753,6 +817,9 @@ diff --git a/components/gcm_driver/instance_id/android/java/src/org/chromium/com
 -                        LazySubscriptionsManager.deletePersistedMessagesForSubscriptionId(
 -                                subscriptionId);
 -                    }
+-                    SubscriptionFlagManager.clearFlags(
+-                            SubscriptionFlagManager.buildSubscriptionUniqueId(
+-                                    mSubtype, authorizedEntity));
 -                    return true;
 -                } catch (IOException ex) {
 -                    return false;
@@ -761,7 +828,7 @@ diff --git a/components/gcm_driver/instance_id/android/java/src/org/chromium/com
              }
              @Override
              protected void sendResultToNative(Boolean success) {
-@@ -161,12 +141,7 @@ public class InstanceIDBridge {
+@@ -172,12 +143,7 @@ public class InstanceIDBridge {
          new BridgeAsyncTask<Boolean>() {
              @Override
              protected Boolean doBackgroundWork() {
@@ -775,7 +842,7 @@ diff --git a/components/gcm_driver/instance_id/android/java/src/org/chromium/com
              }
              @Override
              protected void sendResultToNative(Boolean success) {
-@@ -205,11 +180,6 @@ public class InstanceIDBridge {
+@@ -216,11 +182,6 @@ public class InstanceIDBridge {
                  @Override
                  @SuppressWarnings("NoSynchronizedThisCheck") // Only used/accessible by native.
                  protected Result doInBackground() {
