@@ -1,3 +1,8 @@
+# 78.0.3904.72
+* updated fixed User-agent phone model
+* fix network predictions bug (fixes https://github.com/bromite/bromite/issues/387)
+* fix crash in settings (fixes https://github.com/bromite/bromite/issues/388)
+
 # 78.0.3904.63
 * replace Beta DoH service URL for Google (https://developers.google.com/speed/public-dns/docs/doh/migration)
 * disable AImageReaderMediaPlayer until upstream bug is fixed (https://bugs.chromium.org/p/chromium/issues/detail?id=977583)
