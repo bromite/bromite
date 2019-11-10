@@ -1,5 +1,17 @@
+# 78.0.3904.93
+* introduce flags to disable browser fingerprinting capabilities (fixes https://github.com/bromite/bromite/issues/402)
+* major enhancements to AMP sanitization for news/images
+* remove duplicate network predictions privacy setting
+* disable some signed exchanges features
+* ungoogled-chromium-android: patches to block all GCM/GMS/PlayServices integrations
+* ungoogled-chromium: block all connection requests to substituted domains
+* disable GVR services build flag
+* disable HEAD requests for single words typed and clicked in Omnibar
+* increase number of autocomplete matches from 5 to 10
+* replace DoH probe domain with RIPE domain
+
 # 78.0.3904.72
-* updated fixed User-agent phone model
+* updated User-agent phone model and version
 * fix network predictions bug (fixes https://github.com/bromite/bromite/issues/387)
 * fix crash in settings (fixes https://github.com/bromite/bromite/issues/388)
 

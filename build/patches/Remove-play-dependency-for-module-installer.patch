@@ -1,0 +1,481 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sat, 2 Nov 2019 16:27:51 +0100
+Subject: Remove play dependency for module installer
+
+---
+ .../FakeModuleInstallerBackend.java                |  16 +-
+ .../module_installer/ModuleInstallerImpl.java      | 150 ---------------
+ .../PlayCoreModuleInstallerBackend.java            | 210 +--------------------
+ 3 files changed, 10 insertions(+), 366 deletions(-)
+
+diff --git a/components/module_installer/android/java/src/org/chromium/components/module_installer/FakeModuleInstallerBackend.java b/components/module_installer/android/java/src/org/chromium/components/module_installer/FakeModuleInstallerBackend.java
+--- a/components/module_installer/android/java/src/org/chromium/components/module_installer/FakeModuleInstallerBackend.java
++++ b/components/module_installer/android/java/src/org/chromium/components/module_installer/FakeModuleInstallerBackend.java
+@@ -7,9 +7,6 @@ package org.chromium.components.module_installer;
+ import android.content.Context;
+ import android.content.pm.PackageManager;
+ 
+-import com.google.android.play.core.splitcompat.SplitCompat;
+-import com.google.android.play.core.splitcompat.ingestion.Verifier;
+-
+ import org.chromium.base.BuildInfo;
+ import org.chromium.base.ContextUtils;
+ import org.chromium.base.Log;
+@@ -132,18 +129,7 @@ class FakeModuleInstallerBackend extends ModuleInstallerBackend {
+             return false;
+         }
+ 
+-        // Check that the module's signature matches Chrome's.
+-        try {
+-            Verifier verifier = new Verifier(context);
+-            if (!verifier.verifySplits()) {
+-                return false;
+-            }
+-        } catch (IOException | PackageManager.NameNotFoundException e) {
+-            return false;
+-        }
+-
+-        // Tell SplitCompat to do a full emulation of the module.
+-        return SplitCompat.fullInstall(context);
++        return false;
+     }
+ 
+     private File joinPaths(String... paths) {
+diff --git a/components/module_installer/android/java/src/org/chromium/components/module_installer/ModuleInstallerImpl.java b/components/module_installer/android/java/src/org/chromium/components/module_installer/ModuleInstallerImpl.java
+--- a/components/module_installer/android/java/src/org/chromium/components/module_installer/ModuleInstallerImpl.java
++++ b/components/module_installer/android/java/src/org/chromium/components/module_installer/ModuleInstallerImpl.java
+@@ -11,9 +11,6 @@ import android.content.pm.PackageManager.NameNotFoundException;
+ import android.os.Build;
+ import android.text.TextUtils;
+ 
+-import com.google.android.play.core.splitcompat.SplitCompat;
+-import com.google.android.play.core.splitinstall.SplitInstallManagerFactory;
+-
+ import org.chromium.base.BuildInfo;
+ import org.chromium.base.CommandLine;
+ import org.chromium.base.ContextUtils;
+@@ -57,152 +54,5 @@ import java.util.TreeSet;
+         sInstance = moduleInstaller;
+     }
+ 
+-    @Override
+-    public void init() {
+-        try (Timer ignored1 = new Timer()) {
+-            if (sAppContextSplitCompatted) return;
+-            // SplitCompat.install may copy modules into Chrome's internal folder or clean them up.
+-            try (StrictModeContext ignored = StrictModeContext.allowDiskWrites()) {
+-                SplitCompat.install(ContextUtils.getApplicationContext());
+-                sAppContextSplitCompatted = true;
+-            }
+-            // SplitCompat.install may add emulated modules. Thus, update crash keys.
+-            updateCrashKeys();
+-        }
+-    }
+-
+-    @Override
+-    public void initActivity(Activity activity) {
+-        try (Timer ignored = new Timer()) {
+-            // SplitCompat#install should always be run for the application first before it is run
+-            // for any activities.
+-            init();
+-            SplitCompat.installActivity(activity);
+-        }
+-    }
+-
+-    @Override
+-    public void recordModuleAvailability() {
+-        try (Timer ignored = new Timer()) {
+-            getBackend().recordModuleAvailability();
+-        }
+-    }
+-
+-    @Override
+-    public void recordStartupTime() {
+-        getBackend().recordStartupTime(Timer.getTotalTime());
+-    }
+-
+-    @Override
+-    public void updateCrashKeys() {
+-        try (Timer ignored = new Timer()) {
+-            Context context = ContextUtils.getApplicationContext();
+-
+-            // Get modules that are fully installed as split APKs (excluding base which is always
+-            // installed). Tree set to have ordered and, thus, deterministic results.
+-            Set<String> fullyInstalledModules = new TreeSet<>();
+-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+-                // Split APKs are only supported on Android L+.
+-                try {
+-                    PackageInfo packageInfo = context.getPackageManager().getPackageInfo(
+-                            BuildInfo.getInstance().packageName, 0);
+-                    if (packageInfo.splitNames != null) {
+-                        fullyInstalledModules.addAll(Arrays.asList(packageInfo.splitNames));
+-                    }
+-                } catch (NameNotFoundException e) {
+-                    throw new RuntimeException(e);
+-                }
+-            }
+-
+-            // Create temporary split install manager to retrieve both fully installed and emulated
+-            // modules. Then remove fully installed ones to get emulated ones only. Querying the
+-            // installed modules can only be done if splitcompat has already been called. Otherwise,
+-            // emulation of later modules won't work. If splitcompat has not been called no modules
+-            // are emulated. Therefore, use an empty set in that case.
+-            Set<String> emulatedModules = new TreeSet<>();
+-            if (sAppContextSplitCompatted) {
+-                emulatedModules.addAll(
+-                        SplitInstallManagerFactory.create(context).getInstalledModules());
+-                emulatedModules.removeAll(fullyInstalledModules);
+-            }
+-
+-            CrashKeys.getInstance().set(
+-                    CrashKeyIndex.INSTALLED_MODULES, encodeCrashKeyValue(fullyInstalledModules));
+-            CrashKeys.getInstance().set(
+-                    CrashKeyIndex.EMULATED_MODULES, encodeCrashKeyValue(emulatedModules));
+-        }
+-    }
+-
+-    @Override
+-    public void install(String moduleName, OnModuleInstallFinishedListener onFinishedListener) {
+-        try (Timer ignored = new Timer()) {
+-            ThreadUtils.assertOnUiThread();
+-
+-            if (!mModuleNameListenerMap.containsKey(moduleName)) {
+-                mModuleNameListenerMap.put(moduleName, new LinkedList<>());
+-            }
+-            List<OnModuleInstallFinishedListener> onFinishedListeners =
+-                    mModuleNameListenerMap.get(moduleName);
+-            onFinishedListeners.add(onFinishedListener);
+-            if (onFinishedListeners.size() > 1) {
+-                // Request is already running.
+-                return;
+-            }
+-            getBackend().install(moduleName);
+-        }
+-    }
+-
+-    @Override
+-    public void installDeferred(String moduleName) {
+-        try (Timer ignored = new Timer()) {
+-            ThreadUtils.assertOnUiThread();
+-            getBackend().installDeferred(moduleName);
+-        }
+-    }
+-
+-    private void onFinished(boolean success, List<String> moduleNames) {
+-        // Add timer to this private method since it is passed as a callback.
+-        try (Timer ignored = new Timer()) {
+-            ThreadUtils.assertOnUiThread();
+-
+-            mActivityObserver.onModuleInstalled();
+-
+-            for (String moduleName : moduleNames) {
+-                List<OnModuleInstallFinishedListener> onFinishedListeners =
+-                        mModuleNameListenerMap.get(moduleName);
+-                if (onFinishedListeners == null) continue;
+-
+-                for (OnModuleInstallFinishedListener listener : onFinishedListeners) {
+-                    listener.onFinished(success);
+-                }
+-                mModuleNameListenerMap.remove(moduleName);
+-            }
+-
+-            if (mModuleNameListenerMap.isEmpty()) {
+-                mBackend.close();
+-                mBackend = null;
+-            }
+-
+-            updateCrashKeys();
+-        }
+-    }
+-
+-    private ModuleInstallerBackend getBackend() {
+-        if (mBackend == null) {
+-            ModuleInstallerBackend.OnFinishedListener listener = this::onFinished;
+-            mBackend = CommandLine.getInstance().hasSwitch(FAKE_FEATURE_MODULE_INSTALL)
+-                    ? new FakeModuleInstallerBackend(listener)
+-                    : new PlayCoreModuleInstallerBackend(listener);
+-        }
+-        return mBackend;
+-    }
+-
+-    private String encodeCrashKeyValue(Set<String> moduleNames) {
+-        if (moduleNames.isEmpty()) return "<none>";
+-        // Values with dots are interpreted as URLs. Some module names have dots in them. Make sure
+-        // they don't get sanitized.
+-        return TextUtils.join(",", moduleNames).replace('.', '$');
+-    }
+-
+     private ModuleInstallerImpl() {}
+ }
+diff --git a/components/module_installer/android/java/src/org/chromium/components/module_installer/PlayCoreModuleInstallerBackend.java b/components/module_installer/android/java/src/org/chromium/components/module_installer/PlayCoreModuleInstallerBackend.java
+--- a/components/module_installer/android/java/src/org/chromium/components/module_installer/PlayCoreModuleInstallerBackend.java
++++ b/components/module_installer/android/java/src/org/chromium/components/module_installer/PlayCoreModuleInstallerBackend.java
+@@ -7,15 +7,6 @@ package org.chromium.components.module_installer;
+ import android.content.SharedPreferences;
+ import android.util.SparseLongArray;
+ 
+-import com.google.android.play.core.splitinstall.SplitInstallException;
+-import com.google.android.play.core.splitinstall.SplitInstallManager;
+-import com.google.android.play.core.splitinstall.SplitInstallManagerFactory;
+-import com.google.android.play.core.splitinstall.SplitInstallRequest;
+-import com.google.android.play.core.splitinstall.SplitInstallSessionState;
+-import com.google.android.play.core.splitinstall.SplitInstallStateUpdatedListener;
+-import com.google.android.play.core.splitinstall.model.SplitInstallErrorCode;
+-import com.google.android.play.core.splitinstall.model.SplitInstallSessionStatus;
+-
+ import org.chromium.base.ContextUtils;
+ import org.chromium.base.Log;
+ import org.chromium.base.metrics.CachedMetrics.EnumeratedHistogramSample;
+@@ -33,14 +24,13 @@ import java.util.Set;
+  * Backend that uses the Play Core SDK to download a module from Play and install it subsequently.
+  */
+ /* package */ class PlayCoreModuleInstallerBackend
+-        extends ModuleInstallerBackend implements SplitInstallStateUpdatedListener {
++        extends ModuleInstallerBackend {
+     private static class InstallTimes {
+         public final boolean mIsCached;
+         public final SparseLongArray mInstallTimes = new SparseLongArray();
+ 
+         public InstallTimes(boolean isCached) {
+             mIsCached = isCached;
+-            mInstallTimes.put(SplitInstallSessionStatus.UNKNOWN, System.currentTimeMillis());
+         }
+     }
+ 
+@@ -50,7 +40,6 @@ import java.util.Set;
+     private static final String KEY_MODULES_DEFERRED_REQUESTED_PREVIOUSLY =
+             "key_modules_deferred_requested_previously";
+     private final Map<String, InstallTimes> mInstallTimesMap = new HashMap<>();
+-    private final SplitInstallManager mManager;
+     private boolean mIsClosed;
+ 
+     // FeatureModuleInstallStatus defined in //tools/metrics/histograms/enums.xml.
+@@ -90,183 +79,31 @@ import java.util.Set;
+     // Keep this one at the end and increment appropriately when adding new status.
+     private static final int AVAILABILITY_STATUS_COUNT = 3;
+ 
+-    /** Records via UMA all modules that have been requested and are currently installed. */
+-    @Override
+-    /* package */ void recordModuleAvailability() {
+-        SharedPreferences prefs = ContextUtils.getAppSharedPreferences();
+-        Set<String> requestedModules = new HashSet<>();
+-        requestedModules.addAll(
+-                prefs.getStringSet(KEY_MODULES_ONDEMAND_REQUESTED_PREVIOUSLY, new HashSet<>()));
+-        requestedModules.addAll(
+-                prefs.getStringSet(KEY_MODULES_DEFERRED_REQUESTED_PREVIOUSLY, new HashSet<>()));
+-        Set<String> installedModules = mManager.getInstalledModules();
+-
+-        for (String name : requestedModules) {
+-            EnumeratedHistogramSample sample = new EnumeratedHistogramSample(
+-                    "Android.FeatureModules.AvailabilityStatus." + name, AVAILABILITY_STATUS_COUNT);
+-            if (installedModules.contains(name)) {
+-                sample.record(AVAILABILITY_STATUS_INSTALLED_REQUESTED);
+-            } else {
+-                sample.record(AVAILABILITY_STATUS_REQUESTED);
+-            }
+-        }
+-
+-        for (String name : installedModules) {
+-            if (!requestedModules.contains(name)) {
+-                // Module appeared without being requested. Weird.
+-                EnumeratedHistogramSample sample = new EnumeratedHistogramSample(
+-                        "Android.FeatureModules.AvailabilityStatus." + name,
+-                        AVAILABILITY_STATUS_COUNT);
+-                sample.record(AVAILABILITY_STATUS_INSTALLED_UNREQUESTED);
+-            }
+-        }
+-    }
+-
+-    @Override
+-    /* package */ void recordStartupTime(long durationMs) {
+-        TimesHistogramSample sample =
+-                new TimesHistogramSample("Android.FeatureModules.StartupTime");
+-        sample.record(durationMs);
+-    }
+-
+     /* package */ PlayCoreModuleInstallerBackend(OnFinishedListener listener) {
+         super(listener);
+-        // MUST call init before creating a SplitInstallManager.
+-        ModuleInstaller.getInstance().init();
+-        mManager = SplitInstallManagerFactory.create(ContextUtils.getApplicationContext());
+-        mManager.registerListener(this);
+     }
+ 
+     @Override
+-    public void install(String moduleName) {
++    public void close() {
+         assert !mIsClosed;
+-
+-        // Record start time in order to later report the install duration via UMA. We want to make
+-        // a difference between modules that have been requested first before and after the last
+-        // Chrome start. Modules that have been requested before may install quicker as they may be
+-        // installed form cache. To do this, we use shared prefs to track modules previously
+-        // requested. Additionally, storing requested modules helps us to record module install
+-        // status at next Chrome start.
+-        assert !mInstallTimesMap.containsKey(moduleName);
+-        mInstallTimesMap.put(moduleName,
+-                new InstallTimes(storeModuleRequested(
+-                        moduleName, KEY_MODULES_ONDEMAND_REQUESTED_PREVIOUSLY)));
+-
+-        SplitInstallRequest request =
+-                SplitInstallRequest.newBuilder().addModule(moduleName).build();
+-
+-        mManager.startInstall(request).addOnFailureListener(exception -> {
+-            int status = exception instanceof SplitInstallException
+-                    ? getHistogramCode(((SplitInstallException) exception).getErrorCode())
+-                    : INSTALL_STATUS_UNKNOWN_REQUEST_ERROR;
+-            Log.e(TAG, "Failed to request module '%s': error code %s", moduleName, status);
+-            // If we reach this error condition |onStateUpdate| won't be called. Thus, call
+-            // |onFinished| here.
+-            finish(false, Collections.singletonList(moduleName), status);
+-        });
++        mIsClosed = true;
+     }
+ 
+     @Override
+-    public void installDeferred(String moduleName) {
+-        assert !mIsClosed;
+-        mManager.deferredInstall(Collections.singletonList(moduleName));
+-        storeModuleRequested(moduleName, KEY_MODULES_DEFERRED_REQUESTED_PREVIOUSLY);
++    /* package */ void recordModuleAvailability() {
++        SharedPreferences prefs = ContextUtils.getAppSharedPreferences();
+     }
+ 
+     @Override
+-    public void close() {
+-        assert !mIsClosed;
+-        mManager.unregisterListener(this);
+-        mIsClosed = true;
++    /* package */ void recordStartupTime(long durationMs) {
+     }
+ 
+     @Override
+-    public void onStateUpdate(SplitInstallSessionState state) {
+-        assert !mIsClosed;
+-        Log.i(TAG, "Status for modules '%s' updated to %d", state.moduleNames(), state.status());
+-        switch (state.status()) {
+-            case SplitInstallSessionStatus.DOWNLOADING:
+-            case SplitInstallSessionStatus.INSTALLING:
+-            case SplitInstallSessionStatus.INSTALLED:
+-                for (String name : state.moduleNames()) {
+-                    mInstallTimesMap.get(name).mInstallTimes.put(
+-                            state.status(), System.currentTimeMillis());
+-                }
+-                if (state.status() == SplitInstallSessionStatus.INSTALLED) {
+-                    finish(true, state.moduleNames(), INSTALL_STATUS_SUCCESS);
+-                }
+-                break;
+-            // DOWNLOADED only gets sent if SplitCompat is not enabled. That's an error.
+-            // SplitCompat should always be enabled.
+-            case SplitInstallSessionStatus.DOWNLOADED:
+-            case SplitInstallSessionStatus.CANCELED:
+-            case SplitInstallSessionStatus.FAILED:
+-                int status;
+-                if (state.status() == SplitInstallSessionStatus.DOWNLOADED) {
+-                    status = INSTALL_STATUS_NO_SPLITCOMPAT;
+-                } else if (state.status() == SplitInstallSessionStatus.CANCELED) {
+-                    status = INSTALL_STATUS_CANCELLATION;
+-                } else {
+-                    status = getHistogramCode(state.errorCode());
+-                }
+-                Log.e(TAG, "Failed to install modules '%s': error code %s", state.moduleNames(),
+-                        status);
+-                finish(false, state.moduleNames(), status);
+-                break;
+-        }
+-    }
+-
+-    private void finish(boolean success, List<String> moduleNames, int eventId) {
+-        for (String name : moduleNames) {
+-            RecordHistogram.recordEnumeratedHistogram(
+-                    "Android.FeatureModules.InstallStatus." + name, eventId, INSTALL_STATUS_COUNT);
+-            if (success) {
+-                recordInstallTimes(name);
+-            }
+-        }
+-        onFinished(success, moduleNames);
++    public void install(String moduleName) {
+     }
+ 
+-    /**
+-     * Gets the UMA code based on a SplitInstall error code
+-     * @param errorCode The error code
+-     * @return int The User Metric Analysis code
+-     */
+-    private int getHistogramCode(@SplitInstallErrorCode int errorCode) {
+-        switch (errorCode) {
+-            case SplitInstallErrorCode.ACCESS_DENIED:
+-                return INSTALL_STATUS_ACCESS_DENIED;
+-            case SplitInstallErrorCode.ACTIVE_SESSIONS_LIMIT_EXCEEDED:
+-                return INSTALL_STATUS_ACTIVE_SESSIONS_LIMIT_EXCEEDED;
+-            case SplitInstallErrorCode.API_NOT_AVAILABLE:
+-                return INSTALL_STATUS_API_NOT_AVAILABLE;
+-            case SplitInstallErrorCode.INCOMPATIBLE_WITH_EXISTING_SESSION:
+-                return INSTALL_STATUS_INCOMPATIBLE_WITH_EXISTING_SESSION;
+-            case SplitInstallErrorCode.INSUFFICIENT_STORAGE:
+-                return INSTALL_STATUS_INSUFFICIENT_STORAGE;
+-            case SplitInstallErrorCode.INVALID_REQUEST:
+-                return INSTALL_STATUS_INVALID_REQUEST;
+-            case SplitInstallErrorCode.MODULE_UNAVAILABLE:
+-                return INSTALL_STATUS_MODULE_UNAVAILABLE;
+-            case SplitInstallErrorCode.NETWORK_ERROR:
+-                return INSTALL_STATUS_NETWORK_ERROR;
+-            case SplitInstallErrorCode.NO_ERROR:
+-                return INSTALL_STATUS_NO_ERROR;
+-            case SplitInstallErrorCode.SERVICE_DIED:
+-                return INSTALL_STATUS_SERVICE_DIED;
+-            case SplitInstallErrorCode.SESSION_NOT_FOUND:
+-                return INSTALL_STATUS_SESSION_NOT_FOUND;
+-            case SplitInstallErrorCode.SPLITCOMPAT_COPY_ERROR:
+-                return INSTALL_STATUS_SPLITCOMPAT_COPY_ERROR;
+-            case SplitInstallErrorCode.SPLITCOMPAT_EMULATION_ERROR:
+-                return INSTALL_STATUS_SPLITCOMPAT_EMULATION_ERROR;
+-            case SplitInstallErrorCode.SPLITCOMPAT_VERIFICATION_ERROR:
+-                return INSTALL_STATUS_SPLITCOMPAT_VERIFICATION_ERROR;
+-            case SplitInstallErrorCode.INTERNAL_ERROR:
+-                return INSTALL_STATUS_INTERNAL_ERROR;
+-            default:
+-                return INSTALL_STATUS_UNKNOWN_SPLITINSTALL_ERROR;
+-        }
++    @Override
++    public void installDeferred(String moduleName) {
+     }
+ 
+     /**
+@@ -286,33 +123,4 @@ import java.util.Set;
+         editor.apply();
+         return modulesRequestedPreviously.contains(moduleName);
+     }
+-
+-    /** Records via UMA module install times divided into install steps. */
+-    private void recordInstallTimes(String moduleName) {
+-        recordInstallTime(moduleName, "", SplitInstallSessionStatus.UNKNOWN,
+-                SplitInstallSessionStatus.INSTALLED);
+-        recordInstallTime(moduleName, ".PendingDownload", SplitInstallSessionStatus.UNKNOWN,
+-                SplitInstallSessionStatus.DOWNLOADING);
+-        recordInstallTime(moduleName, ".Download", SplitInstallSessionStatus.DOWNLOADING,
+-                SplitInstallSessionStatus.INSTALLING);
+-        recordInstallTime(moduleName, ".Installing", SplitInstallSessionStatus.INSTALLING,
+-                SplitInstallSessionStatus.INSTALLED);
+-    }
+-
+-    private void recordInstallTime(
+-            String moduleName, String histogramSubname, int startKey, int endKey) {
+-        assert mInstallTimesMap.containsKey(moduleName);
+-        InstallTimes installTimes = mInstallTimesMap.get(moduleName);
+-        if (installTimes.mInstallTimes.get(startKey) == 0
+-                || installTimes.mInstallTimes.get(endKey) == 0) {
+-            // Time stamps for install times have not been stored. Don't record anything to not skew
+-            // data.
+-            return;
+-        }
+-        RecordHistogram.recordLongTimesHistogram(
+-                String.format("Android.FeatureModules.%sInstallDuration%s.%s",
+-                        installTimes.mIsCached ? "Cached" : "Uncached", histogramSubname,
+-                        moduleName),
+-                installTimes.mInstallTimes.get(endKey) - installTimes.mInstallTimes.get(startKey));
+-    }
+ }
+-- 
+2.11.0
+

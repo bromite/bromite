@@ -3,18 +3,19 @@ Date: Tue, 16 Oct 2018 05:22:59 +0200
 Subject: Disable safe browsing
 
 Originally based on ungoogled-chromium patch
+Contains Android-specific fixes to remove Safe Browsing
 ---
  chrome/android/chrome_java_sources.gni             |  1 -
  .../android/java/res/xml/privacy_preferences.xml   | 21 -----
  .../java/res/xml/sync_and_services_preferences.xml | 20 -----
- .../preferences/privacy/PrivacyPreferences.java    | 97 ----------------------
+ .../preferences/privacy/PrivacyPreferences.java    | 94 ----------------------
  .../chrome/browser/webshare/ShareServiceImpl.java  |  6 --
  .../java/strings/android_chrome_strings.grd        | 33 --------
  chrome/browser/BUILD.gn                            |  2 -
  chrome/browser/browser_process.h                   | 16 ----
- chrome/browser/browser_process_impl.cc             | 36 --------
+ chrome/browser/browser_process_impl.cc             | 36 ---------
  chrome/browser/browser_process_impl.h              |  6 --
- .../chrome_browsing_data_remover_delegate.cc       | 41 ---------
+ .../chrome_browsing_data_remover_delegate.cc       | 41 ----------
  chrome/browser/chrome_content_browser_client.cc    | 62 +++-----------
  .../file_type_policies_component_installer.cc      | 16 +---
  .../download/chrome_download_manager_delegate.cc   | 31 +++----
@@ -22,7 +23,7 @@ Originally based on ungoogled-chromium patch
  chrome/browser/download/download_item_model.cc     | 13 ++-
  chrome/browser/download/download_item_model.h      |  4 +
  chrome/browser/download/download_prefs.cc          | 17 ++--
- .../browser/download/download_target_determiner.cc | 46 +++++-----
+ .../browser/download/download_target_determiner.cc | 46 +++++------
  .../browser/download/download_target_determiner.h  |  6 ++
  chrome/browser/download/download_target_info.cc    |  4 +
  chrome/browser/download/download_target_info.h     |  4 +
@@ -34,7 +35,7 @@ Originally based on ungoogled-chromium patch
  .../browser/extensions/blacklist_state_fetcher.cc  | 34 +-------
  .../browser/extensions/blacklist_state_fetcher.h   |  3 -
  .../metrics/chrome_metrics_service_client.cc       |  3 -
- ...chrome_native_file_system_permission_context.cc | 91 --------------------
+ ...chrome_native_file_system_permission_context.cc | 91 ---------------------
  .../chrome_native_file_system_permission_context.h |  6 --
  .../trial_comparison_cert_verifier_controller.cc   |  3 -
  .../chrome_browser_main_extra_parts_profiles.cc    |  1 -
@@ -42,7 +43,7 @@ Originally based on ungoogled-chromium patch
  chrome/browser/safe_browsing/BUILD.gn              |  3 +-
  chrome/browser/ssl/captive_portal_blocking_page.cc |  7 +-
  chrome/browser/ssl/cert_report_helper.cc           |  2 -
- chrome/browser/ssl/security_state_tab_helper.cc    | 82 ------------------
+ chrome/browser/ssl/security_state_tab_helper.cc    | 82 -------------------
  .../chrome_subresource_filter_client.cc            | 10 ---
  chrome/browser/ui/BUILD.gn                         |  1 -
  chrome/browser/ui/tab_helpers.cc                   | 11 +--
@@ -52,10 +53,10 @@ Originally based on ungoogled-chromium patch
  components/password_manager/core/browser/BUILD.gn  |  2 +-
  components/safe_browsing/features.cc               |  2 +-
  .../unified_consent/unified_consent_service.cc     |  2 +-
- .../native_file_system_file_writer_impl.cc         | 46 +---------
+ .../native_file_system_file_writer_impl.cc         | 46 +----------
  .../native_file_system_file_writer_impl.h          | 15 +---
  .../native_file_system_permission_context.h        |  7 --
- 51 files changed, 119 insertions(+), 841 deletions(-)
+ 51 files changed, 119 insertions(+), 838 deletions(-)
 
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
@@ -93,10 +94,10 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
 -        android:title="@string/safe_browsing_title"
 -        android:summary="@string/safe_browsing_summary" />
 -    <org.chromium.chrome.browser.preferences.ChromeBaseCheckBoxPreference
-         android:key="network_predictions"
-         android:title="@string/network_predictions_title"
-         android:summary="@string/network_predictions_summary"
-@@ -38,14 +25,6 @@
+         android:key="can_make_payment"
+         android:title="@string/can_make_payment_title"
+         android:summary="@string/settings_can_make_payment_toggle_label" />
+@@ -33,14 +20,6 @@
          android:title="@string/preload_pages_title"
          android:summary="@string/preload_pages_summary"
          android:persistent="false" />
@@ -163,7 +164,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
 -    private static final String PREF_SAFE_BROWSING = "safe_browsing";
      private static final String PREF_CAN_MAKE_PAYMENT = "can_make_payment";
      private static final String PREF_CONTEXTUAL_SEARCH = "contextual_search";
-     private static final String PREF_NETWORK_PREDICTIONS = "network_predictions";
+     private static final String PREF_NETWORK_PREDICTIONS = "preload_pages";
      private static final String PREF_DO_NOT_TRACK = "do_not_track";
 -    private static final String PREF_USAGE_AND_CRASH_REPORTING = "usage_and_crash_reports";
      private static final String PREF_CLEAR_BROWSING_DATA = "clear_browsing_data";
@@ -220,7 +221,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
          updateSummaries();
       }
  
-@@ -146,18 +114,8 @@ public class PrivacyPreferences
+@@ -146,15 +114,8 @@ public class PrivacyPreferences
          String key = preference.getKey();
          if (PREF_SEARCH_SUGGESTIONS.equals(key)) {
              PrefServiceBridge.getInstance().setSearchSuggestEnabled((boolean) newValue);
@@ -233,13 +234,10 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
              PrefServiceBridge.getInstance().setNetworkPredictionEnabled((boolean) newValue);
 -        } else if (PREF_NAVIGATION_ERROR.equals(key)) {
 -            PrefServiceBridge.getInstance().setResolveNavigationErrorEnabled((boolean) newValue);
--        } else if (PREF_CAN_MAKE_PAYMENT.equals(key)) {
--            PrefServiceBridge.getInstance().setBoolean(
--                    Pref.CAN_MAKE_PAYMENT_ENABLED, (boolean) newValue);
-         }
- 
-         return true;
-@@ -180,32 +138,12 @@ public class PrivacyPreferences
+         } else if (PREF_CONTEXTUAL_SEARCH.equals(key)) {
+             PrefServiceBridge.getInstance().setContextualSearchPreference(((boolean) newValue) ? "true" : "false");
+         } else if (PREF_CAN_MAKE_PAYMENT.equals(key)) {
+@@ -182,32 +143,12 @@ public class PrivacyPreferences
          CharSequence textOn = getActivity().getResources().getText(R.string.text_on);
          CharSequence textOff = getActivity().getResources().getText(R.string.text_off);
  
@@ -272,7 +270,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
          CheckBoxPreference canMakePaymentPref =
                  (CheckBoxPreference) findPreference(PREF_CAN_MAKE_PAYMENT);
          if (canMakePaymentPref != null) {
-@@ -223,50 +161,15 @@ public class PrivacyPreferences
+@@ -225,50 +166,15 @@ public class PrivacyPreferences
              boolean isContextualSearchEnabled = !prefServiceBridge.isContextualSearchDisabled();
              contextualPref.setSummary(isContextualSearchEnabled ? textOn : textOff);
          }
@@ -403,10 +401,10 @@ diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/and
 -      <message name="IDS_SAFE_BROWSING_SUMMARY" desc="Summary for safe browsing.">
 -        Sends URLs of some pages you visit to Google, when your security is at risk
 -      </message>
-       <message name="IDS_NETWORK_PREDICTIONS_TITLE" desc="Title of a setting in Chrome settings. Followed by a body that describes the setting. If setting is turned on, Chrome will download certain pages to the user’s phone automatically for offline reading. 'predictions' convey the idea that Chrome is using predictive models to figure out pages likely of interest to the user.">
-         Use page predictions
+       <message name="IDS_CONTEXTUAL_SEARCH_TITLE" desc="Name for the Contextual Search feature, which allows users to search for a term in a web page by tapping on it.">
+         Tap to Search
        </message>
-@@ -4044,9 +4014,6 @@ The site does NOT gain access to the camera. The camera images are only visible
+@@ -4038,9 +4008,6 @@ The site does NOT gain access to the camera. The camera images are only visible
        <message name="IDS_USAGE_STATS_CONSENT_PROMPT" desc="Consent prompt when authorizing Digital Wellbeing to access Chrome usage data">
         You can see sites you visit in Chrome and set timers for them.\n\nGoogle gets info about the sites you set timers for and how long you visit them. This info is used to make Digital Wellbeing better.
        </message>
@@ -647,7 +645,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  #include "chrome/browser/ssl/typed_navigation_timing_throttle.h"
  #include "chrome/browser/subresource_filter/chrome_subresource_filter_client.h"
  #include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
-@@ -861,30 +862,6 @@ void SetApplicationLocaleOnIOThread(const std::string& locale) {
+@@ -862,30 +863,6 @@ void SetApplicationLocaleOnIOThread(const std::string& locale) {
    GetIOThreadApplicationLocale() = locale;
  }
  
@@ -678,7 +676,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  #if defined(OS_ANDROID)
  float GetDeviceScaleAdjustment() {
    static const float kMinFSM = 1.05f;
-@@ -1263,7 +1240,9 @@ void ChromeContentBrowserClient::PostAfterStartupTask(
+@@ -1264,7 +1241,9 @@ void ChromeContentBrowserClient::PostAfterStartupTask(
    InitNetworkContextsParentDirectory();
  
    DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -688,7 +686,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  }
  
  bool ChromeContentBrowserClient::IsBrowserStartupComplete() {
-@@ -2030,7 +2009,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+@@ -2031,7 +2010,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
    }
  #elif defined(OS_POSIX)
  #if defined(OS_ANDROID)
@@ -697,7 +695,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  #else
    bool enable_crash_reporter = breakpad::IsCrashReporterEnabled();
  #endif
-@@ -2121,7 +2100,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+@@ -2122,7 +2101,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
        // Disable client-side phishing detection in the renderer if it is
        // disabled in the Profile preferences or the browser process.
        if (!prefs->GetBoolean(prefs::kSafeBrowsingEnabled) ||
@@ -706,7 +704,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
          command_line->AppendSwitch(
              switches::kDisableClientSidePhishingDetection);
        }
-@@ -4201,12 +4180,12 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
+@@ -4202,12 +4181,12 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
  
    throttles.push_back(std::make_unique<PolicyBlacklistNavigationThrottle>(
        handle, handle->GetWebContents()->GetBrowserContext()));
@@ -721,7 +719,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
    throttles.push_back(std::make_unique<LoginNavigationThrottle>(handle));
  
    std::unique_ptr<content::NavigationThrottle> https_upgrade_timing_throttle =
-@@ -4237,11 +4216,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
+@@ -4238,11 +4217,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
        PreviewsLitePageDecider::MaybeCreateThrottleFor(handle);
    if (previews_lite_page_throttle)
      throttles.push_back(std::move(previews_lite_page_throttle));
@@ -733,7 +731,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  
  #if defined(OS_WIN) || defined(OS_MACOSX) || \
      (defined(OS_LINUX) && !defined(OS_CHROMEOS))
-@@ -5249,19 +5223,7 @@ ChromeContentBrowserClient::GetSafeBrowsingUrlCheckerDelegate(
+@@ -5250,19 +5224,7 @@ ChromeContentBrowserClient::GetSafeBrowsingUrlCheckerDelegate(
      content::ResourceContext* resource_context) {
    DCHECK_CURRENTLY_ON(BrowserThread::IO);
  

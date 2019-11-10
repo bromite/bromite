@@ -6,12 +6,13 @@ Subject: Revert "Remove pre unified consent code in sync and privacy
 This reverts commit c672a0683e89eba3554e2562156b3c8532136f21.
 
 Restore translations
+Restore contextual search preference toggle
 ---
- .../android/java/res/xml/privacy_preferences.xml   |  35 +++++
+ .../android/java/res/xml/privacy_preferences.xml   |  30 ++++
  .../preferences/privacy/PrivacyPreferences.java    | 157 +++++++++++++++++++--
  .../preferences/sync/SyncPreferenceUtils.java      |   5 +-
  .../browser/sync/SyncNotificationController.java   |  17 ++-
- .../java/strings/android_chrome_strings.grd        |  21 +++
+ .../java/strings/android_chrome_strings.grd        |  15 ++
  .../translations/android_chrome_strings_am.xtb     |  19 ++-
  .../translations/android_chrome_strings_ar.xtb     |  19 ++-
  .../translations/android_chrome_strings_bg.xtb     |  19 ++-
@@ -66,12 +67,12 @@ Restore translations
  .../translations/android_chrome_strings_zh-TW.xtb  |  19 ++-
  .../chromium/chrome/browser/sync/SyncTestRule.java |   9 +-
  .../org/chromium/chrome/browser/sync/UkmTest.java  |  50 ++++++-
- 59 files changed, 1208 insertions(+), 74 deletions(-)
+ 59 files changed, 1198 insertions(+), 73 deletions(-)
 
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
 --- a/chrome/android/java/res/xml/privacy_preferences.xml
 +++ b/chrome/android/java/res/xml/privacy_preferences.xml
-@@ -7,6 +7,29 @@
+@@ -7,6 +7,24 @@
      xmlns:app="http://schemas.android.com/apk/res-auto">
  
      <org.chromium.chrome.browser.preferences.ChromeBaseCheckBoxPreference
@@ -93,15 +94,10 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
 +        android:title="@string/safe_browsing_title"
 +        android:summary="@string/safe_browsing_summary" />
 +    <org.chromium.chrome.browser.preferences.ChromeBaseCheckBoxPreference
-+        android:key="network_predictions"
-+        android:title="@string/network_predictions_title"
-+        android:summary="@string/network_predictions_summary"
-+        android:persistent="false" />
-+    <org.chromium.chrome.browser.preferences.ChromeBaseCheckBoxPreference
          android:key="can_make_payment"
          android:title="@string/can_make_payment_title"
          android:summary="@string/settings_can_make_payment_toggle_label" />
-@@ -19,15 +42,27 @@
+@@ -19,15 +37,27 @@
          android:key="usage_stats_reporting"
          android:title="@string/usage_stats_setting_title"
          android:persistent="false" />
@@ -158,10 +154,9 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
 +            "safe_browsing_scout_reporting";
 +    private static final String PREF_SAFE_BROWSING = "safe_browsing";
      private static final String PREF_CAN_MAKE_PAYMENT = "can_make_payment";
--    private static final String PREF_NETWORK_PREDICTIONS = "preload_pages";
--    private static final String PREF_USAGE_STATS = "usage_stats_reporting";
 +    private static final String PREF_CONTEXTUAL_SEARCH = "contextual_search";
-+    private static final String PREF_NETWORK_PREDICTIONS = "network_predictions";
+     private static final String PREF_NETWORK_PREDICTIONS = "preload_pages";
+-    private static final String PREF_USAGE_STATS = "usage_stats_reporting";
      private static final String PREF_DO_NOT_TRACK = "do_not_track";
 +    private static final String PREF_USAGE_AND_CRASH_REPORTING = "usage_and_crash_reports";
 +    private static final String PREF_CLEAR_BROWSING_DATA = "clear_browsing_data";
@@ -180,7 +175,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
  
          mManagedPreferenceDelegate = createManagedPreferenceDelegate();
  
-@@ -62,26 +76,88 @@ public class PrivacyPreferences
+@@ -62,26 +76,90 @@ public class PrivacyPreferences
          networkPredictionPref.setOnPreferenceChangeListener(this);
          networkPredictionPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
  
@@ -275,13 +270,15 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
              PrefServiceBridge.getInstance().setNetworkPredictionEnabled((boolean) newValue);
 +        } else if (PREF_NAVIGATION_ERROR.equals(key)) {
 +            PrefServiceBridge.getInstance().setResolveNavigationErrorEnabled((boolean) newValue);
++        } else if (PREF_CONTEXTUAL_SEARCH.equals(key)) {
++            PrefServiceBridge.getInstance().setContextualSearchPreference(((boolean) newValue) ? "true" : "false");
 +        } else if (PREF_CAN_MAKE_PAYMENT.equals(key)) {
 +            PrefServiceBridge.getInstance().setBoolean(
 +                    Pref.CAN_MAKE_PAYMENT_ENABLED, (boolean) newValue);
          }
  
          return true;
-@@ -99,9 +175,37 @@ public class PrivacyPreferences
+@@ -99,9 +177,37 @@ public class PrivacyPreferences
      public void updateSummaries() {
          PrefServiceBridge prefServiceBridge = PrefServiceBridge.getInstance();
  
@@ -319,7 +316,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
          CheckBoxPreference canMakePaymentPref =
                  (CheckBoxPreference) findPreference(PREF_CAN_MAKE_PAYMENT);
          if (canMakePaymentPref != null) {
-@@ -114,6 +218,19 @@ public class PrivacyPreferences
+@@ -114,6 +220,19 @@ public class PrivacyPreferences
              doNotTrackPref.setSummary(prefServiceBridge.isDoNotTrackEnabled() ? textOn : textOff);
          }
  
@@ -339,7 +336,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
          Preference usageStatsPref = findPreference(PREF_USAGE_STATS);
          if (usageStatsPref != null) {
              if (BuildInfo.isAtLeastQ() && prefServiceBridge.getBoolean(Pref.USAGE_STATS_ENABLED)) {
-@@ -138,6 +255,18 @@ public class PrivacyPreferences
+@@ -138,6 +257,18 @@ public class PrivacyPreferences
          return preference -> {
              String key = preference.getKey();
              PrefServiceBridge prefs = PrefServiceBridge.getInstance();
@@ -441,20 +438,7 @@ diff --git a/chrome/android/java/strings/android_chrome_strings.grd b/chrome/and
        <message name="IDS_SAFE_BROWSING_SCOUT_REPORTING_TITLE" desc="Title for checkbox that controls reporting data to detect bad apps/sites. Please ensure ‘Safe Browsing’ in this message matches the ‘Safe Browsing’ settings title.">
          Help improve Chrome security
        </message>
-@@ -740,6 +752,12 @@ CHAR-LIMIT guidelines:
-       <message name="IDS_SAFE_BROWSING_SUMMARY" desc="Summary for safe browsing.">
-         Sends URLs of some pages you visit to Google, when your security is at risk
-       </message>
-+      <message name="IDS_NETWORK_PREDICTIONS_TITLE" desc="Title of a setting in Chrome settings. Followed by a body that describes the setting. If setting is turned on, Chrome will download certain pages to the user’s phone automatically for offline reading. 'predictions' convey the idea that Chrome is using predictive models to figure out pages likely of interest to the user.">
-+        Use page predictions
-+      </message>
-+      <message name="IDS_NETWORK_PREDICTIONS_SUMMARY" desc="Body text for the “Use page predictions” setting in Chrome settings. Describes what happens if the setting is turned on. 'Preload' conveys the idea that Chrome is getting pages for the user without their explicit interaction or consent.">
-+        Preload pages for faster loading and offline reading
-+      </message>
-       <message name="IDS_CONTEXTUAL_SEARCH_TITLE" desc="Name for the Contextual Search feature, which allows users to search for a term in a web page by tapping on it.">
-         Tap to Search
-       </message>
-@@ -1506,6 +1524,9 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -1506,6 +1518,9 @@ Your Google account may have other forms of browsing history like searches and a
        <message name="IDS_ACCOUNT_MANAGEMENT_TITLE" desc="Header title for the account management screen. [CHAR-LIMIT=32]">
          Signed in to Google as
        </message>
