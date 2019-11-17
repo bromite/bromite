@@ -1,3 +1,8 @@
+# 78.0.3904.105
+* add flag to disable WebGL (fixes https://github.com/bromite/bromite/issues/411)
+* more selective AMP sanitization (fixes https://github.com/bromite/bromite/issues/410)
+* build optimizations to disable debug information
+
 # 78.0.3904.93
 * introduce flags to disable browser fingerprinting capabilities (fixes https://github.com/bromite/bromite/issues/402)
 * major enhancements to AMP sanitization for news/images
@@ -9,6 +14,8 @@
 * disable HEAD requests for single words typed and clicked in Omnibar
 * increase number of autocomplete matches from 5 to 10
 * replace DoH probe domain with RIPE domain
+* merged fixes for adblock/javascript menu text (https://github.com/bromite/bromite/pull/398)
+* updated User-agent phone model and version
 
 # 78.0.3904.72
 * updated User-agent phone model and version
