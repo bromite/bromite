@@ -1,3 +1,7 @@
+# 78.0.3904.119
+* replace fixed DNS-over-HTTPS feature flag with user-customizable option
+* fix background playback issue (fixes https://github.com/bromite/bromite/issues/424)
+
 # 78.0.3904.105
 * add flag to disable WebGL (fixes https://github.com/bromite/bromite/issues/411)
 * more selective AMP sanitization (fixes https://github.com/bromite/bromite/issues/410)
