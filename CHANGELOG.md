@@ -1,3 +1,11 @@
+# 78.0.3904.130
+* support user-specified subresources filter URL (fixes https://github.com/bromite/bromite/issues/2)
+* revert removal of flag for disabling pull-to-refresh effect
+* fix crash when entering no DoH URL (fixes https://github.com/bromite/bromite/issues/430)
+* added Peter Lowe's Ad and tracking server list (fixes https://github.com/bromite/bromite/issues/423)
+* removed Startpage
+* enabled dav1d_decoder
+
 # 78.0.3904.119
 * replace fixed DNS-over-HTTPS feature flag with user-customizable option
 * fix background playback issue (fixes https://github.com/bromite/bromite/issues/424)

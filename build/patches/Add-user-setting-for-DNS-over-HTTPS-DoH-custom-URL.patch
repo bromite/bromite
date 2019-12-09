@@ -1,6 +1,6 @@
 From: csagan5 <32685696+csagan5@users.noreply.github.com>
 Date: Sat, 23 Nov 2019 10:55:16 +0100
-Subject: Add user setting for DNS-over-HTTPS custom URL
+Subject: Add user setting for DNS-over-HTTPS (DoH) custom URL
 
 ---
  chrome/android/chrome_java_sources.gni             |  2 +
@@ -14,9 +14,9 @@ Subject: Add user setting for DNS-over-HTTPS custom URL
  .../java/strings/android_chrome_strings.grd        | 11 +++
  chrome/app/generated_resources.grd                 |  6 ++
  chrome/browser/android/feature_utilities.cc        | 23 ++++++
- .../browser/net/system_network_context_manager.cc  | 36 +--------
+ .../browser/net/system_network_context_manager.cc  | 46 +++--------
  chrome/common/chrome_features.cc                   |  4 +-
- 13 files changed, 313 insertions(+), 34 deletions(-)
+ 13 files changed, 320 insertions(+), 37 deletions(-)
  create mode 100644 chrome/android/java/res/layout/doh_editor.xml
  create mode 100644 chrome/android/java/res/xml/doh_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/preferences/DoHEditor.java
@@ -220,7 +220,7 @@ new file mode 100644
 +
 +    @Override
 +    public void onTextChanged(CharSequence s, int start, int before, int count) {
-+        mSaveButton.setEnabled(true);
++        mSaveButton.setEnabled(s.length() != 0);
 +        mResetButton.setEnabled(true);
 +    }
 +
@@ -434,15 +434,25 @@ diff --git a/chrome/browser/android/feature_utilities.cc b/chrome/browser/androi
 diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/browser/net/system_network_context_manager.cc
 --- a/chrome/browser/net/system_network_context_manager.cc
 +++ b/chrome/browser/net/system_network_context_manager.cc
-@@ -134,6 +134,7 @@ void GetStubResolverConfig(
+@@ -134,9 +134,14 @@ void GetStubResolverConfig(
  
    std::string doh_templates =
        local_state->GetString(prefs::kDnsOverHttpsTemplates);
+-  std::string server_method;
+-  if (!doh_templates.empty() &&
+-      *secure_dns_mode != net::DnsConfig::SecureDnsMode::OFF) {
++  if (doh_templates.empty()) {
++    *secure_dns_mode = net::DnsConfig::SecureDnsMode::OFF;
++    doh_mode = chrome_browser_net::kDnsOverHttpsModeOff;
++  }
++
 +  LOG(INFO) << "DoH templates: '" << doh_templates << "' with mode " << doh_mode;
-   std::string server_method;
-   if (!doh_templates.empty() &&
-       *secure_dns_mode != net::DnsConfig::SecureDnsMode::OFF) {
-@@ -404,40 +405,11 @@ SystemNetworkContextManager::SystemNetworkContextManager(
++  if (*secure_dns_mode != net::DnsConfig::SecureDnsMode::OFF) {
++    std::string server_method;
+     for (const std::string& server_template :
+          SplitString(doh_templates, " ", base::TRIM_WHITESPACE,
+                      base::SPLIT_WANT_NONEMPTY)) {
+@@ -404,40 +409,11 @@ SystemNetworkContextManager::SystemNetworkContextManager(
    // features before registering change callbacks for these preferences.
    local_state_->SetDefaultPrefValue(prefs::kBuiltInDnsClientEnabled,
                                      base::Value(ShouldEnableAsyncDns()));

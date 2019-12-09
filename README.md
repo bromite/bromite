@@ -161,7 +161,7 @@ Bromite uses an unindexed filter file, which is periodically published at https:
 * [EasyList](https://easylist.to/#easylist)
 * [EasyPrivacy](https://easylist.to/#easyprivacy)
 * [uBlock Origin](https://github.com/uBlockOrigin)
-
+* [Peter Lowe's Ad and tracking server list](https://pgl.yoyo.org/adservers/)
 # License
 
 The patches published as part of the Bromite project are released under [GNU GPL v3](./LICENSE).
