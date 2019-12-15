@@ -154,7 +154,6 @@ Bromite uses an unindexed filter file, which is periodically published at https:
 * [GrapheneOS](https://github.com/GrapheneOS) for some security patches
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (via ungoogled-chromium)
 * [Brave Browser](https://github.com/brave/browser-android-tabs) for some patches
-* nochromo for the original adblock patch, currently used only in the SystemWebView
 * [Vadim Pleshkov](http://vadimpleshkov.me/) for Bromite's logo
 
 # Filters credits
