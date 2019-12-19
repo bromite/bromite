@@ -1,8 +1,11 @@
 # 79.0.3945.94
-* removed Startpage
 * removed patches which do not apply anymore (Widevine version punting, always show homepage settings, network errors UMA recording)
-* removed split APKs support
-* disabled password reuse functionality
+* removed split APKs support (Play integration)
+* disabled password reuse functionality (Play integration)
+* re-introduced minimal headers for DoH
+* removed Startpage
+* disable feed support
+* updated User-agent version
 
 # 78.0.3904.130
 * support user-specified subresources filter URL (fixes https://github.com/bromite/bromite/issues/2)
