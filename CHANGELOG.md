@@ -1,3 +1,8 @@
+# 79.0.3945.100
+* log timeout values for DoH
+* enable DFM (fixes https://github.com/bromite/bromite/issues/441)
+* updated User-agent version
+
 # 79.0.3945.94
 * removed patches which do not apply anymore (Widevine version punting, always show homepage settings, network errors UMA recording)
 * removed split APKs support (Play integration)
