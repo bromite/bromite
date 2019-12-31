@@ -7,12 +7,14 @@ This reverts commit c672a0683e89eba3554e2562156b3c8532136f21.
 
 Restore translations
 Restore contextual search preference toggle
+Disable unified consent on Android
+Unified consent miscellanous backport fixes
 ---
- .../java/res/xml/privacy_preferences.xml      |  30 ++++
- .../privacy/PrivacyPreferences.java           | 159 ++++++++++++++++--
- .../preferences/sync/SyncPreferenceUtils.java |   5 +-
- .../sync/SyncNotificationController.java      |  17 +-
- .../java/strings/android_chrome_strings.grd   |  15 ++
+ .../java/res/xml/privacy_preferences.xml      |  30 +++++
+ .../privacy/PrivacyPreferences.java           | 117 +++++++++++++++---
+ .../preferences/sync/SyncPreferenceUtils.java |   2 +-
+ .../sync/SyncNotificationController.java      |  11 +-
+ .../java/strings/android_chrome_strings.grd   |  15 +++
  .../android_chrome_strings_am.xtb             |  19 ++-
  .../android_chrome_strings_ar.xtb             |  19 ++-
  .../android_chrome_strings_bg.xtb             |  19 ++-
@@ -66,8 +68,11 @@ Restore contextual search preference toggle
  .../android_chrome_strings_zh-CN.xtb          |  19 ++-
  .../android_chrome_strings_zh-TW.xtb          |  19 ++-
  .../chrome/browser/sync/SyncTestRule.java     |   9 +-
- .../chromium/chrome/browser/sync/UkmTest.java |  50 +++++-
- 59 files changed, 1200 insertions(+), 73 deletions(-)
+ .../chromium/chrome/browser/sync/UkmTest.java |  50 +++++++-
+ chrome/browser/profiles/profile.cc            |   3 +-
+ .../unified_consent_service_factory.cc        |   5 +-
+ components/unified_consent/feature.cc         |   2 +-
+ 62 files changed, 1150 insertions(+), 82 deletions(-)
 
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
 --- a/chrome/android/java/res/xml/privacy_preferences.xml
@@ -128,14 +133,7 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/privacy/PrivacyPreferences.java b/chrome/android/java/src/org/chromium/chrome/browser/preferences/privacy/PrivacyPreferences.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/preferences/privacy/PrivacyPreferences.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/preferences/privacy/PrivacyPreferences.java
-@@ -9,12 +9,15 @@ import android.support.graphics.drawable.VectorDrawableCompat;
- import android.support.v7.preference.CheckBoxPreference;
- import android.support.v7.preference.Preference;
- import android.support.v7.preference.PreferenceFragmentCompat;
-+import android.support.v7.preference.PreferenceScreen;
- import android.view.Menu;
- import android.view.MenuInflater;
- import android.view.MenuItem;
+@@ -15,6 +15,8 @@ import android.view.MenuItem;
  
  import org.chromium.base.BuildInfo;
  import org.chromium.chrome.R;
@@ -144,7 +142,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
  import org.chromium.chrome.browser.help.HelpAndFeedback;
  import org.chromium.chrome.browser.preferences.ChromeBaseCheckBoxPreference;
  import org.chromium.chrome.browser.preferences.ManagedPreferenceDelegate;
-@@ -33,11 +36,21 @@ import org.chromium.ui.text.SpanApplier;
+@@ -33,18 +35,25 @@ import org.chromium.ui.text.SpanApplier;
   */
  public class PrivacyPreferences
          extends PreferenceFragmentCompat implements Preference.OnPreferenceChangeListener {
@@ -158,7 +156,6 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
      private static final String PREF_NETWORK_PREDICTIONS = "preload_pages";
 -    private static final String PREF_USAGE_STATS = "usage_stats_reporting";
      private static final String PREF_DO_NOT_TRACK = "do_not_track";
-+    private static final String PREF_USAGE_AND_CRASH_REPORTING = "usage_and_crash_reports";
 +    private static final String PREF_CLEAR_BROWSING_DATA = "clear_browsing_data";
 +    private static final String PREF_SYNC_AND_SERVICES_LINK_DIVIDER =
 +            "sync_and_services_link_divider";
@@ -167,15 +164,14 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
  
      private ManagedPreferenceDelegate mManagedPreferenceDelegate;
  
-@@ -49,6 +62,7 @@ public class PrivacyPreferences
+     @Override
+     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
+-        PrivacyPreferencesManager privacyPrefManager = PrivacyPreferencesManager.getInstance();
+-        privacyPrefManager.migrateNetworkPredictionPreferences();
+         PreferenceUtils.addPreferencesFromResource(this, R.xml.privacy_preferences);
          getActivity().setTitle(R.string.prefs_privacy);
          setHasOptionsMenu(true);
-         PrefServiceBridge prefServiceBridge = PrefServiceBridge.getInstance();
-+        PreferenceScreen preferenceScreen = getPreferenceScreen();
- 
-         mManagedPreferenceDelegate = createManagedPreferenceDelegate();
- 
-@@ -62,26 +76,90 @@ public class PrivacyPreferences
+@@ -62,26 +71,57 @@ public class PrivacyPreferences
          networkPredictionPref.setOnPreferenceChangeListener(this);
          networkPredictionPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
  
@@ -187,41 +183,8 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
 -        syncAndServicesLink.setSummary(
 -                SpanApplier.applySpans(getString(R.string.privacy_sync_and_services_link),
 -                        new SpanApplier.SpanInfo("<link>", "</link>", linkSpan)));
-+        if (ChromeFeatureList.isEnabled(ChromeFeatureList.UNIFIED_CONSENT)) {
-+            // Remove preferences that were migrated to SyncAndServicesPreferences.
-+            preferenceScreen.removePreference(findPreference(PREF_NAVIGATION_ERROR));
-+            preferenceScreen.removePreference(findPreference(PREF_SEARCH_SUGGESTIONS));
-+            preferenceScreen.removePreference(findPreference(PREF_SAFE_BROWSING_SCOUT_REPORTING));
-+            preferenceScreen.removePreference(findPreference(PREF_SAFE_BROWSING));
-+            preferenceScreen.removePreference(findPreference(PREF_CONTEXTUAL_SEARCH));
-+            preferenceScreen.removePreference(findPreference(PREF_USAGE_AND_CRASH_REPORTING));
-+
-+            // TODO(https://crbug.com/846376): Update strings in XML after UNIFIED_CONSENT launch.
-+            networkPredictionPref.setTitle(R.string.preload_pages_title);
-+            networkPredictionPref.setSummary(R.string.preload_pages_summary);
-+
-+            // Put networkPredictionPref after canMakePaymentPref by overriding order value.
-+            // However, calling setOrder doesn't change existing order if Preference has already
-+            // been added to PreferenceGroup. Remove and re-add it to work around this.
-+            // TODO(https://crbug.com/846376): Reorder prefs in XML after UNIFIED_CONSENT launch.
-+            preferenceScreen.removePreference(networkPredictionPref);
-+            networkPredictionPref.setOrder(canMakePaymentPref.getOrder());
-+            preferenceScreen.addPreference(networkPredictionPref);
-+
-+            Preference syncAndServicesLink = findPreference(PREF_SYNC_AND_SERVICES_LINK);
-+            NoUnderlineClickableSpan linkSpan = new NoUnderlineClickableSpan(getResources(), view -> {
-+                PreferencesLauncher.launchSettingsPage(getActivity(), SyncAndServicesPreferences.class,
-+                        SyncAndServicesPreferences.createArguments(false));
-+            });
-+            syncAndServicesLink.setSummary(
-+                    SpanApplier.applySpans(getString(R.string.privacy_sync_and_services_link),
-+                            new SpanApplier.SpanInfo("<link>", "</link>", linkSpan)));
-+
-+            updateSummaries();
-+            return;
-+        }
-+        preferenceScreen.removePreference(findPreference(PREF_SYNC_AND_SERVICES_LINK_DIVIDER));
-+        preferenceScreen.removePreference(findPreference(PREF_SYNC_AND_SERVICES_LINK));
++        getPreferenceScreen().removePreference(findPreference(PREF_SYNC_AND_SERVICES_LINK_DIVIDER));
++        getPreferenceScreen().removePreference(findPreference(PREF_SYNC_AND_SERVICES_LINK));
 +
 +        ChromeBaseCheckBoxPreference navigationErrorPref =
 +                (ChromeBaseCheckBoxPreference) findPreference(PREF_NAVIGATION_ERROR);
@@ -234,7 +197,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
 +        searchSuggestionsPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
 +
 +        if (!ContextualSearchFieldTrial.isEnabled()) {
-+            preferenceScreen.removePreference(findPreference(PREF_CONTEXTUAL_SEARCH));
++            getPreferenceScreen().removePreference(findPreference(PREF_CONTEXTUAL_SEARCH));
 +        }
 +
 +        // Listen to changes to the Extended Reporting pref.
@@ -278,12 +241,10 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
          }
  
          return true;
-@@ -98,6 +176,36 @@ public class PrivacyPreferences
-      */
+@@ -99,6 +139,35 @@ public class PrivacyPreferences
      public void updateSummaries() {
          PrefServiceBridge prefServiceBridge = PrefServiceBridge.getInstance();
-+        PrivacyPreferencesManager privacyPrefManager = PrivacyPreferencesManager.getInstance();
-+
+ 
 +        CharSequence textOn = getActivity().getResources().getText(R.string.text_on);
 +        CharSequence textOff = getActivity().getResources().getText(R.string.text_off);
 +
@@ -312,10 +273,11 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
 +        if (safeBrowsingPref != null) {
 +            safeBrowsingPref.setChecked(prefServiceBridge.isSafeBrowsingEnabled());
 +        }
- 
++
          CheckBoxPreference canMakePaymentPref =
                  (CheckBoxPreference) findPreference(PREF_CAN_MAKE_PAYMENT);
-@@ -112,6 +220,19 @@ public class PrivacyPreferences
+         if (canMakePaymentPref != null) {
+@@ -112,6 +181,12 @@ public class PrivacyPreferences
                      prefServiceBridge.isDoNotTrackEnabled() ? R.string.text_on : R.string.text_off);
          }
  
@@ -325,17 +287,10 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
 +            contextualPref.setSummary(isContextualSearchEnabled ? textOn : textOff);
 +        }
 +
-+        Preference usageAndCrashPref = findPreference(PREF_USAGE_AND_CRASH_REPORTING);
-+        if (usageAndCrashPref != null) {
-+            usageAndCrashPref.setSummary(
-+                    privacyPrefManager.isUsageAndCrashReportingPermittedByUser() ? textOn
-+                                                                                 : textOff);
-+        }
-+
          Preference usageStatsPref = findPreference(PREF_USAGE_STATS);
          if (usageStatsPref != null) {
              if (BuildInfo.isAtLeastQ() && prefServiceBridge.getBoolean(Pref.USAGE_STATS_ENABLED)) {
-@@ -136,6 +257,18 @@ public class PrivacyPreferences
+@@ -136,6 +211,18 @@ public class PrivacyPreferences
          return preference -> {
              String key = preference.getKey();
              PrefServiceBridge prefs = PrefServiceBridge.getInstance();
@@ -357,14 +312,11 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/pri
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/preferences/sync/SyncPreferenceUtils.java b/chrome/android/java/src/org/chromium/chrome/browser/preferences/sync/SyncPreferenceUtils.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/preferences/sync/SyncPreferenceUtils.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/preferences/sync/SyncPreferenceUtils.java
-@@ -118,7 +118,10 @@ public class SyncPreferenceUtils {
+@@ -118,7 +118,7 @@ public class SyncPreferenceUtils {
              if (profileSyncService.isPassphraseRequiredForPreferredDataTypes()) {
                  return res.getString(R.string.sync_need_passphrase);
              }
 -            return context.getString(R.string.sync_and_services_summary_sync_on);
-+            if (ChromeFeatureList.isEnabled(ChromeFeatureList.UNIFIED_CONSENT)) {
-+                return context.getString(R.string.sync_and_services_summary_sync_on);
-+            }
 +            return context.getString(R.string.account_management_sync_summary, accountName);
          }
          return context.getString(R.string.sync_is_disabled);
@@ -394,22 +346,16 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/sync/SyncNotifi
  import org.chromium.chrome.browser.sync.GoogleServiceAuthError.State;
  import org.chromium.chrome.browser.sync.ui.PassphraseActivity;
  import org.chromium.components.sync.AndroidSyncSettings;
-@@ -154,9 +157,17 @@ public class SyncNotificationController implements ProfileSyncService.SyncStateC
+@@ -154,9 +157,11 @@ public class SyncNotificationController implements ProfileSyncService.SyncStateC
       * @return the intent for opening the settings
       */
      private Intent createSettingsIntent() {
 -        return PreferencesLauncher.createIntentForSettingsPage(ContextUtils.getApplicationContext(),
 -                SyncAndServicesPreferences.class.getName(),
 -                SyncAndServicesPreferences.createArguments(false));
-+        final String fragmentName;
-+        final Bundle fragmentArguments;
-+        if (ChromeFeatureList.isEnabled(ChromeFeatureList.UNIFIED_CONSENT)) {
-+            fragmentName = SyncAndServicesPreferences.class.getName();
-+            fragmentArguments = SyncAndServicesPreferences.createArguments(false);
-+        } else {
-+            fragmentName = AccountManagementFragment.class.getName();
-+            fragmentArguments = null;
-+        }
++        final String fragmentName = AccountManagementFragment.class.getName();
++        final Bundle fragmentArguments = null;
++
 +        return PreferencesLauncher.createIntentForSettingsPage(
 +                ContextUtils.getApplicationContext(), fragmentName, fragmentArguments);
      }
@@ -1954,6 +1900,46 @@ diff --git a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/UkmTe
 +        }
      }
  }
+diff --git a/chrome/browser/profiles/profile.cc b/chrome/browser/profiles/profile.cc
+--- a/chrome/browser/profiles/profile.cc
++++ b/chrome/browser/profiles/profile.cc
+@@ -154,8 +154,7 @@ void Profile::RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+ #if defined(OS_ANDROID)
+   registry->RegisterStringPref(
+       prefs::kContextualSearchEnabled,
+-      std::string(),
+-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
++      std::string());
+ #endif  // defined(OS_ANDROID)
+   registry->RegisterBooleanPref(prefs::kSessionExitedCleanly, true);
+   registry->RegisterStringPref(prefs::kSessionExitType, std::string());
+diff --git a/chrome/browser/unified_consent/unified_consent_service_factory.cc b/chrome/browser/unified_consent/unified_consent_service_factory.cc
+--- a/chrome/browser/unified_consent/unified_consent_service_factory.cc
++++ b/chrome/browser/unified_consent/unified_consent_service_factory.cc
+@@ -36,10 +36,7 @@ std::vector<std::string> GetSyncedServicePrefNames() {
+   return {
+     prefs::kSearchSuggestEnabled, prefs::kAlternateErrorPagesEnabled,
+         prefs::kSafeBrowsingEnabled, prefs::kSafeBrowsingScoutReportingEnabled,
+-        spellcheck::prefs::kSpellCheckUseSpellingService,
+-#if defined(OS_ANDROID)
+-        prefs::kContextualSearchEnabled
+-#endif
++        spellcheck::prefs::kSpellCheckUseSpellingService
+   };
+ }
+ 
+diff --git a/components/unified_consent/feature.cc b/components/unified_consent/feature.cc
+--- a/components/unified_consent/feature.cc
++++ b/components/unified_consent/feature.cc
+@@ -11,7 +11,7 @@ namespace unified_consent {
+ // base::Feature definition.
+ const base::Feature kUnifiedConsent {
+   "UnifiedConsent",
+-#if defined(OS_CHROMEOS)
++#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
+       base::FEATURE_DISABLED_BY_DEFAULT
+ #else
+       base::FEATURE_ENABLED_BY_DEFAULT
 -- 
 2.17.1
 
