@@ -1,7 +1,6 @@
 # 79.0.3945.107
 * always show cookies, javascript and ads site settings (fixes https://github.com/bromite/bromite/issues/133)
 * remove global ads and javascript menu options
-* fix crash with first tab open when using always incognito (fixes https://github.com/bromite/bromite/issues/453)
 
 # 79.0.3945.100
 * log timeout values for DoH
