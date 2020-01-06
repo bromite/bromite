@@ -69,14 +69,14 @@ Yes, since version 69. While the desktop version of Chromium has an option to di
 
 # Features
 
-* native adblock engine
+* customizable adblock filters via user-provided URL
 * remove click-tracking and AMP from search results
-* DNS-over-HTTPS support via Google, Cloudflare, Quad9 and AdGuard servers
-* [proxy configuration page](https://github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
-* [StartPage](https://startpage.com/), [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines
-* chrome flags to disable custom intents and clear session on exit
+* DNS-over-HTTPS support, you can use any DoH endpoint
 * always-incognito mode
 * completely removed safe browsing and other privacy-unfriendly features
+* [proxy configuration page](https://github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
+* [StartPage](https://startpage.com/), [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines available by default
+* chrome flags to disable custom intents and clear session on exit
 * anti-fingerprinting mitigations for canvas, audio, client rects, webGL and sensor APIs
 * use fixed User-Agent to conceal real model and browser version
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
