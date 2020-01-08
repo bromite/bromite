@@ -1,4 +1,5 @@
 # 79.0.3945.111
+* automatically disable video decoding acceleration on Android 10+ and arm64
 * restore enable-horizontal-tab-switcher flag
 * remove non-working contextual search settings
 * disable QUIC by default
