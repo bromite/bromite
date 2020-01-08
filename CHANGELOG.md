@@ -1,3 +1,10 @@
+# 79.0.3945.111
+* restore enable-horizontal-tab-switcher flag
+* remove non-working contextual search settings
+* disable QUIC by default
+* fix DoH timeouts issue (https://github.com/bromite/bromite/issues/437)
+* remove logging for DoH timeouts
+
 # 79.0.3945.107
 * always show cookies, javascript and ads site settings (fixes https://github.com/bromite/bromite/issues/133)
 * remove global ads and javascript menu options
