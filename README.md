@@ -39,12 +39,16 @@ No.
 ## Is Bromite de-googled?
 
 Yes, although this has not been verified (and hardly can be) under all situations; if you were to find connections to cloud-based services please report them via the issue tracker.
+Bromite uses [ungoogled-chromium's python script](https://github.com/Eloston/ungoogled-chromium/blob/master/utils/domain_substitution.py) to disable URLs in the codebase since version `78.0.3904.93`.
+
 Projects which follow a strict approach on this are [Iridium](https://iridiumbrowser.de/) and [Inox patchset](https://github.com/gcarq/inox-patchset).
 
 ## What is the SystemWebView?
 It is the core component of Android for all web page visualizations. For example when you access a new wifi network and need to activate it, that is using the SystemWebView. If you do not know what it is then you do not need to install it.
 
 See also [the wiki page](https://github.com/bromite/bromite/wiki/Installing-SystemWebView) for community-contributed installation instructions.
+
+Ad-blocking was present and always enabled in the SystemWebView from version `72.0.3626.120` till version `77.0.3865.104`, when it stopped working due to [upstream NetworkService changes](https://docs.google.com/document/d/1TZEuPvr2KAbP4_TZpuuwtEEArQsyAkc2HDu68l66YwU/edit?ts=598244df#heading=h.ougoi5i6508y).
 
 ## How to enable DNS-over-HTTPS?
 
@@ -67,17 +71,30 @@ You can use F-Droid client to install and receive updates via [the official Brom
 ## Does Bromite support WebRTC?
 Yes, since version 69. While the desktop version of Chromium has an option to disable it (video/audio site settings), the Android version cannot.
 
+## Using Bromite will favour the monopoly of the Chromium/Blink engine, why do you develop and maintain Bromite?
+In short, to show what a Chromium-based engine could do **for the user** if the user experience and needs were the main focus of modern browser design.
+
+For a browser using an alternative engine see [Fennec F-Droid](https://f-droid.org/en/packages/org.mozilla.fennec_fdroid/).
+
 # Features
 
 * customizable adblock filters via user-provided URL
 * remove click-tracking and AMP from search results
-* DNS-over-HTTPS support, you can use any DoH endpoint
+* DNS-over-HTTPS support with any valid IETF DoH endpoint
 * always-incognito mode
+* all field triels permanently disabled
+* [QUIC](https://en.wikipedia.org/wiki/QUIC) disabled by default
+* always-visible cookies, javascript and ads site settings
+* removed Play integration binary blobs
+* uses CFI on all architectures except x86
+* disable media router and remoting by default
+* disable dynamic module loading
+* enable site-per-process isolation for all devices with memory > 1GB
 * completely removed safe browsing and other privacy-unfriendly features
 * [proxy configuration page](https://github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
 * [StartPage](https://startpage.com/), [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines available by default
 * chrome flags to disable custom intents and clear session on exit
-* anti-fingerprinting mitigations for canvas, audio, client rects, webGL and sensor APIs
+* flags to toggle anti-fingerprinting mitigations for canvas, audio, client rects, webGL and sensor APIs
 * use fixed User-Agent to conceal real model and browser version
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
 * security enhancement patches from [GrapheneOS](https://github.com/GrapheneOS) project
@@ -87,13 +104,25 @@ Yes, since version 69. While the desktop version of Chromium has an option to di
 * allow playing videos in background tabs and disable pause on switching tabs
 * all codecs included (proprietary, open H.264 etc.)
 * [AV1 codec support](https://github.com/bromite/bromite/wiki/AV1-support)
+* [dav1d](https://code.videolan.org/videolan/dav1d) decoder enabled by default
 * built with official speed optimizations
+* increased number of autocomplete matches
+* allow changing default download storage location
+* do not ignore save prompt for users without SD cards
+* disable articles and increase number of icons on new tab page
 
-You can inspect all functionality/privacy changes by reading the patches: https://github.com/bromite/bromite/tree/master/build/patches
+You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
+
+### Flags
+
+Flags which have been retired from upstream Chromium but are still available in Bromite.
+
+* `#enable-horizontal-tab-switcher`
+* `#pull-to-refresh`
 
 # Privacy limitations
 
-Bromite's privacy features, including anti-fingerprinting mitigations (which can be easily circumvented), **are not to be considered useful for journalists and people living in countries with freedom limitations**, please look at [Tor Browser](https://2019.www.torproject.org/projects/torbrowser.html.en) in such cases.
+Bromite's privacy features, including anti-fingerprinting mitigations (which are not comprehensive), **are not to be considered useful for journalists and people living in countries with freedom limitations**, please look at [Tor Browser](https://www.torproject.org/download/) in such cases.
 
 # Releases
 
@@ -116,8 +145,6 @@ arm64_ChromePublic.apk: OK
 arm64_ChromeModernPublic.apk: OK
 ```
 
-If you prefer an UI-based tool, you might want to look into [GtkHash](https://github.com/tristanheaven/gtkhash).
-
 You can verify authenticity, e.g. that the author ([csagan5](https://github.com/csagan5)) released the file, by using gpg2:
 ```
 $ gpg2 --quiet --verify brm_68.0.3440.54.sha256.txt.asc
@@ -127,8 +154,6 @@ gpg: Good signature from "csagan5 <32685696+csagan5@users.noreply.github.com>"
 ```
 
 You can download csagan5's public GnuPG key from here: [csagan5.asc](./csagan5.asc).
-
-**NOTE:** releases before v68 did not have published signed hashes files.
 
 # How to build
 
@@ -161,6 +186,7 @@ Bromite uses an unindexed filter file, which is periodically published at https:
 * [EasyPrivacy](https://easylist.to/#easyprivacy)
 * [uBlock Origin](https://github.com/uBlockOrigin)
 * [Peter Lowe's Ad and tracking server list](https://pgl.yoyo.org/adservers/)
+
 # License
 
 The patches published as part of the Bromite project are released under [GNU GPL v3](./LICENSE).
