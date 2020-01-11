@@ -1,9 +1,12 @@
+# 79.0.3945.123
+* updated User-agent version
+* increase minimum DoH timeout to 400ms (fixes https://github.com/bromite/bromite/issues/437)
+
 # 79.0.3945.111
 * automatically disable video decoding acceleration on Android 10+ and arm64
 * restore enable-horizontal-tab-switcher flag
 * remove non-working contextual search settings
 * disable QUIC by default
-* fix DoH timeouts issue (https://github.com/bromite/bromite/issues/437)
 * remove logging for DoH timeouts
 
 # 79.0.3945.107
