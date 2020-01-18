@@ -121,6 +121,7 @@ Flags which have been retired from upstream Chromium but are still available in 
 
 * `#enable-horizontal-tab-switcher`
 * `#pull-to-refresh`
+* `#enable-search-ready-omnibox`
 
 # Privacy limitations
 
