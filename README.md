@@ -43,6 +43,11 @@ Bromite uses [ungoogled-chromium's python script](https://github.com/Eloston/ung
 
 Projects which follow a strict approach on this are [Iridium](https://iridiumbrowser.de/) and [Inox patchset](https://github.com/gcarq/inox-patchset).
 
+## Does Bromite support DRM media?
+
+Yes, in order to play protected/encrypted media content the browser will use Android's DRM media framework to automatically negotiate access (same as Chromium).
+This means for example that requests to Android license servers will be performed (`www.googleapis.com`), see https://w3c.github.io/encrypted-media/#direct-individualization
+
 ## What is the SystemWebView?
 It is the core component of Android for all web page visualizations. For example when you access a new wifi network and need to activate it, that is using the SystemWebView. If you do not know what it is then you do not need to install it.
 
