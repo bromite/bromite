@@ -47,6 +47,7 @@ Projects which follow a strict approach on this are [Iridium](https://iridiumbro
 
 Yes, in order to play protected/encrypted media content the browser will use Android's DRM media framework to automatically negotiate access (same as Chromium).
 This means for example that requests to Android license servers will be performed (`www.googleapis.com`), see https://w3c.github.io/encrypted-media/#direct-individualization
+To disable this functionality you should disable protected content playback from Site settings -> Multimedia.
 
 ## What is the SystemWebView?
 It is the core component of Android for all web page visualizations. For example when you access a new wifi network and need to activate it, that is using the SystemWebView. If you do not know what it is then you do not need to install it.
@@ -83,21 +84,25 @@ In short, to show what a Chromium-based engine could do **for the user** if the 
 
 For an Android browser using an alternative engine see [Fennec F-Droid](https://f-droid.org/en/packages/org.mozilla.fennec_fdroid/).
 
+## Does Bromite support extensions?
+No; Bromite will support extensions only if upstream (Chromium) does, or similarly another project maintains the patch and functionality.
+
 # Features
 
 * customizable adblock filters via user-provided URL
 * remove click-tracking and AMP from search results
 * DNS-over-HTTPS support with any valid IETF DoH endpoint
 * always-incognito mode
-* all field trials permanently disabled
-* [QUIC](https://en.wikipedia.org/wiki/QUIC) disabled by default
+* disable all field trials permanently
+* disable [QUIC](https://en.wikipedia.org/wiki/QUIC) by default
+* disable smart search by default, allow web search from incognito mode
 * always-visible cookies, javascript and ads site settings
-* removed Play integration binary blobs
-* uses CFI on all architectures except x86
+* remove Play integration binary blobs
+* use [CFI](https://en.wikipedia.org/wiki/Control-flow_integrity) on all architectures except x86
 * disable media router and remoting by default
 * disable dynamic module loading
 * enable site-per-process isolation for all devices with memory > 1GB
-* completely removed safe browsing and other privacy-unfriendly features
+* completely remove safe browsing and other privacy-unfriendly features
 * [proxy configuration page](https://github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
 * [StartPage](https://startpage.com/), [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines available by default
 * flags to disable custom intents and clear session on exit
@@ -113,7 +118,7 @@ For an Android browser using an alternative engine see [Fennec F-Droid](https://
 * [AV1 codec support](https://github.com/bromite/bromite/wiki/AV1-support)
 * [dav1d](https://code.videolan.org/videolan/dav1d) decoder enabled by default
 * built with official speed optimizations
-* increased number of autocomplete matches
+* increase number of autocomplete matches
 * allow changing default download storage location
 * do not ignore save prompt for users without SD cards
 * disable articles and increase number of icons on new tab page

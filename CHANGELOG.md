@@ -1,3 +1,9 @@
+# 79.0.3945.139
+* remove patch to automatically disable video decoding acceleration on Android 10+ and arm64
+* fix referral headers bug in non-DoH requests (fixes https://github.com/bromite/bromite/issues/470)
+* disable smart selection by default, enable web search in incognito mode
+* disable DRM media pre-provisioning (fixes https://github.com/bromite/bromite/issues/471)
+
 # 79.0.3945.123
 * updated User-agent version
 * increase minimum DoH timeout to 400ms (fixes https://github.com/bromite/bromite/issues/437)
