@@ -87,6 +87,14 @@ For an Android browser using an alternative engine see [Fennec F-Droid](https://
 ## Does Bromite support extensions?
 No; Bromite will support extensions only if upstream (Chromium) does, or similarly another project maintains the patch and functionality.
 
+## Why do push notifications not work on this website?
+
+The [Chromium Blink engine](https://www.chromium.org/blink) uses [GCM](https://en.wikipedia.org/wiki/Google_Cloud_Messaging) to deliver messages
+when websites use the [Push API](https://w3c.github.io/push-api/); this will not work because cloud integrations are disabled in Bromite (GCM in this case).
+
+[ServiceWorker notifications](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerRegistration/showNotification) do work instead since they use
+[android.app.Notification](https://developer.android.com/guide/topics/ui/notifiers/notifications).
+
 # Features
 
 * customizable adblock filters via user-provided URL
