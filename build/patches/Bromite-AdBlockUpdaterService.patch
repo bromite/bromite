@@ -7,18 +7,18 @@ Do not use experiments to enable/disable presets
 Always enable ad filtering
 Download filters by checking Last-Modified header first
 ---
- .../chrome/browser/util/FeatureUtilities.java |  10 +
+ .../browser/flags/FeatureUtilities.java       |  10 +
  chrome/browser/after_startup_task_utils.cc    |   5 +
  chrome/browser/browser_process.h              |   7 +
  chrome/browser/browser_process_impl.cc        |  28 ++
  chrome/browser/browser_process_impl.h         |   3 +
  chrome/browser/chrome_browser_main.cc         |   5 +-
- .../browser/chrome_content_browser_client.cc  |  17 --
+ .../browser/chrome_content_browser_client.cc  |  16 --
  components/component_updater/BUILD.gn         |   6 +
  .../adblock_updater_service.cc                | 249 ++++++++++++++++++
  .../adblock_updater_service.h                 |  99 +++++++
- .../download_filters_task.cc                  | 228 ++++++++++++++++
- .../component_updater/download_filters_task.h | 131 +++++++++
+ .../download_filters_task.cc                  | 221 ++++++++++++++++
+ .../component_updater/download_filters_task.h | 129 +++++++++
  ...ent_subresource_filter_throttle_manager.cc |  11 +
  .../content/browser/ruleset_service.cc        |  33 ++-
  .../content/browser/ruleset_service.h         |   7 +-
@@ -28,16 +28,16 @@ Download filters by checking Last-Modified header first
  .../browser/subresource_filter_features.cc    | 113 +-------
  .../core/common/common_features.cc            |   2 +-
  .../frame_host/navigation_throttle_runner.cc  |  10 -
- 21 files changed, 827 insertions(+), 145 deletions(-)
+ 21 files changed, 818 insertions(+), 144 deletions(-)
  create mode 100644 components/component_updater/adblock_updater_service.cc
  create mode 100644 components/component_updater/adblock_updater_service.h
  create mode 100644 components/component_updater/download_filters_task.cc
  create mode 100644 components/component_updater/download_filters_task.h
 
-diff --git a/chrome/android/java/src/org/chromium/chrome/browser/util/FeatureUtilities.java b/chrome/android/java/src/org/chromium/chrome/browser/util/FeatureUtilities.java
---- a/chrome/android/java/src/org/chromium/chrome/browser/util/FeatureUtilities.java
-+++ b/chrome/android/java/src/org/chromium/chrome/browser/util/FeatureUtilities.java
-@@ -278,6 +278,14 @@ public class FeatureUtilities {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java b/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java
+@@ -156,6 +156,14 @@ public class FeatureUtilities {
          cacheServiceManagerForBackgroundPrefetch();
      }
  
@@ -52,8 +52,8 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/util/FeatureUti
      /**
       * @return True if tab model merging for Android N+ is enabled.
       */
-@@ -871,5 +879,7 @@ public class FeatureUtilities {
-         void setCustomTabVisible(boolean visible);
+@@ -729,5 +737,7 @@ public class FeatureUtilities {
+         void setActivityType(@ActivityType int type);
          void setIsInMultiWindowMode(boolean isInMultiWindowMode);
          boolean isNetworkServiceWarmUpEnabled();
 +        void setAdBlockFiltersURL(String url);
@@ -116,7 +116,7 @@ diff --git a/chrome/browser/browser_process.h b/chrome/browser/browser_process.h
 diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_process_impl.cc
 --- a/chrome/browser/browser_process_impl.cc
 +++ b/chrome/browser/browser_process_impl.cc
-@@ -1005,6 +1005,34 @@ BrowserProcessImpl::component_updater() {
+@@ -1007,6 +1007,34 @@ BrowserProcessImpl::component_updater() {
    return component_updater_.get();
  }
  
@@ -174,13 +174,14 @@ diff --git a/chrome/browser/browser_process_impl.h b/chrome/browser/browser_proc
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
-@@ -1715,8 +1715,11 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+@@ -1727,9 +1727,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
  
    PreBrowserStart();
  
 -  if (!parsed_command_line().HasSwitch(switches::kDisableComponentUpdate))
 +  if (!parsed_command_line().HasSwitch(switches::kDisableComponentUpdate)) {
-     RegisterComponentsForUpdate(profile_->GetPrefs());
+     RegisterComponentsForUpdate(profile_->IsOffTheRecord(),
+                                 profile_->GetPrefs());
 +    // force initialisation
 +    g_browser_process->adblock_updater();
 +  }
@@ -191,14 +192,14 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -63,7 +63,6 @@
+ #include "chrome/browser/gpu/chrome_browser_main_extra_parts_gpu.h"
  #include "chrome/browser/hid/chrome_hid_delegate.h"
- #include "chrome/browser/language/translate_frame_binder.h"
  #include "chrome/browser/lifetime/browser_shutdown.h"
 -#include "chrome/browser/lookalikes/lookalike_url_navigation_throttle.h"
  #include "chrome/browser/media/router/media_router_feature.h"
  #include "chrome/browser/media/router/presentation/presentation_service_delegate_impl.h"
  #include "chrome/browser/media/router/presentation/receiver_presentation_service_delegate_impl.h"
-@@ -207,7 +206,6 @@
+@@ -208,7 +207,6 @@
  #include "components/nacl/common/buildflags.h"
  #include "components/nacl/common/nacl_constants.h"
  #include "components/net_log/chrome_net_log.h"
@@ -206,7 +207,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  #include "components/page_load_metrics/browser/metrics_web_contents_observer.h"
  #include "components/page_load_metrics/browser/page_load_metrics_util.h"
  #include "components/payments/content/payment_request_display_manager.h"
-@@ -3798,16 +3796,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
+@@ -3802,16 +3800,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
      content::NavigationHandle* handle) {
    std::vector<std::unique_ptr<content::NavigationThrottle>> throttles;
  
@@ -223,14 +224,13 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  #if BUILDFLAG(ENABLE_PLUGINS)
    MaybeAddThrottle(&throttles,
                     FlashDownloadInterception::MaybeCreateThrottleFor(handle));
-@@ -3914,11 +3902,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
+@@ -3926,10 +3914,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
                     safe_browsing::MaybeCreateNavigationThrottle(handle));
  #endif
  
 -  MaybeAddThrottle(
 -      &throttles,
--      lookalikes::LookalikeUrlNavigationThrottle::MaybeCreateNavigationThrottle(
--          handle));
+-      LookalikeUrlNavigationThrottle::MaybeCreateNavigationThrottle(handle));
 -
    MaybeAddThrottle(&throttles,
                     PDFIFrameNavigationThrottle::MaybeCreateThrottleFor(handle));
@@ -613,7 +613,7 @@ diff --git a/components/component_updater/download_filters_task.cc b/components/
 new file mode 100644
 --- /dev/null
 +++ b/components/component_updater/download_filters_task.cc
-@@ -0,0 +1,228 @@
+@@ -0,0 +1,221 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -732,23 +732,14 @@ new file mode 100644
 +void DownloadFiltersTask::internalDownload() {
 +  simple_url_loader_->DownloadToTempFile(
 +      shared_url_network_factory_.get(),
-+      base::BindOnce(
-+          [](const network::SimpleURLLoader* simple_url_loader,
-+             update_client::NetworkFetcher::DownloadToFileCompleteCallback download_to_file_complete_callback,
-+             base::FilePath file_path) {
-+            std::move(download_to_file_complete_callback)
-+                .Run(file_path, simple_url_loader->NetError(),
-+                     simple_url_loader->GetContentSize());
-+          },
-+          simple_url_loader_.get(),
-+          base::BindOnce(&DownloadFiltersTask::OnDownloadComplete, base::Unretained(this))
-+      ), kMaxBodySize);
++      base::BindOnce(&DownloadFiltersTask::OnDownloadComplete, base::Unretained(this)),
++      kMaxBodySize);
 +}
 +
 +void DownloadFiltersTask::OnHeadersDownloadComplete(scoped_refptr<net::HttpResponseHeaders> headers) {
 +  // something went wrong
 +  if (headers == nullptr) {
-+    OnDownloadComplete(base::FilePath(), simple_url_loader_->NetError(), simple_url_loader_->GetContentSize() /* 0 */);
++    OnDownloadComplete(base::FilePath());
 +    return;
 +  }
 +
@@ -780,8 +771,10 @@ new file mode 100644
 +    LOG(INFO) << "DownloadFiltersTask: fetching URL '" << final_url.spec() << "' with method " << (min_last_modified_.is_null() ? "GET" : "HEAD");
 +}
 +
-+void DownloadFiltersTask::OnDownloadComplete(base::FilePath file_path, int net_error, int64_t content_size) {
++void DownloadFiltersTask::OnDownloadComplete(base::FilePath file_path) {
 +  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
++  int net_error = simple_url_loader_->NetError();
++  int64_t content_size = simple_url_loader_->GetContentSize();
 +
 +  const base::TimeTicks download_end_time(base::TimeTicks::Now());
 +  const base::TimeDelta download_time =
@@ -846,7 +839,7 @@ diff --git a/components/component_updater/download_filters_task.h b/components/c
 new file mode 100644
 --- /dev/null
 +++ b/components/component_updater/download_filters_task.h
-@@ -0,0 +1,131 @@
+@@ -0,0 +1,129 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -947,9 +940,7 @@ new file mode 100644
 +  void OnDownloadProgress(uint64_t current);
 +  void OnResponseStarted(const GURL& final_url,
 +                         const network::mojom::URLResponseHead& response_head);
-+  void OnDownloadComplete(base::FilePath file_path,
-+                                                    int net_error,
-+                                                    int64_t content_size);
++  void OnDownloadComplete(base::FilePath file_path);
 +  void OnHeadersDownloadComplete(scoped_refptr<net::HttpResponseHeaders> headers);
 +  void createSimpleURLLoader(bool);
 +  void internalDownload();
@@ -1353,14 +1344,14 @@ diff --git a/content/browser/frame_host/navigation_throttle_runner.cc b/content/
  #include "content/browser/frame_host/mixed_content_navigation_throttle.h"
  #include "content/browser/frame_host/navigation_request.h"
  #include "content/browser/frame_host/navigator_delegate.h"
-@@ -120,15 +119,6 @@ void NavigationThrottleRunner::RegisterNavigationThrottles() {
-        devtools_instrumentation::CreateNavigationThrottles(handle_)) {
+@@ -128,15 +127,6 @@ void NavigationThrottleRunner::RegisterNavigationThrottles() {
+        devtools_instrumentation::CreateNavigationThrottles(request)) {
      AddThrottle(std::move(throttle));
    }
 -
 -  // Delay navigation for an ablation study (if needed).
 -  AddThrottle(HistoryNavigationAblationStudyNavigationThrottle::
--                  MaybeCreateForNavigation(handle_));
+-                  MaybeCreateForNavigation(request));
 -
 -  // Insert all testing NavigationThrottles last.
 -  throttles_.insert(throttles_.end(),

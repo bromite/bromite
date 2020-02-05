@@ -58,7 +58,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * [AV1 codec support](https://github.com/bromite/bromite/wiki/AV1-support)
 * [dav1d](https://code.videolan.org/videolan/dav1d) decoder enabled by default
 * built with official speed optimizations
-* increase number of autocomplete matches
+* increase number of autocomplete matches from 5 to 10
 * allow changing default download storage location
 * do not ignore save prompt for users without SD cards
 * disable articles and increase number of icons on new tab page

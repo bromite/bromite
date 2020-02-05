@@ -1,3 +1,10 @@
+# 80.0.3987.78
+* removed ungoogled-chromium patch for non-remote developer tools resources
+* removed patch for 64-bit webview (it is now a default from upstream)
+* removed patch for enabling dark mode menu entry by default (it is now a default from upstream)
+* removed patch for enabling download rename by default (it is now a default from upstream)
+* removed some redundant Iridium safe browsing patches
+
 # 79.0.3945.139
 * remove patch to automatically disable video decoding acceleration on Android 10+ and arm64
 * fix referral headers bug in non-DoH requests (fixes https://github.com/bromite/bromite/issues/470)
