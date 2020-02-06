@@ -6,17 +6,20 @@ Originally based on ungoogled-chromium patch
 Contains Android-specific fixes to remove Safe Browsing
 Disable CrowdDeny feature
 ---
+ chrome/android/BUILD.gn                       |  1 -
+ chrome/android/chrome_java_sources.gni        |  1 -
  .../java/res/xml/privacy_preferences.xml      | 21 -----
  .../res/xml/sync_and_services_preferences.xml | 20 -----
- .../settings/privacy/PrivacyPreferences.java  | 77 -------------------
- .../browser/webshare/ShareServiceImpl.java    |  5 --
+ .../settings/privacy/PrivacyPreferences.java  | 78 -------------------
+ .../sync/SyncAndServicesPreferences.java      |  7 +-
+ .../browser/webshare/ShareServiceImpl.java    |  6 --
  chrome/browser/BUILD.gn                       |  4 -
  chrome/browser/about_flags.cc                 |  2 +-
  chrome/browser/browser_process.h              | 16 ----
  chrome/browser/browser_process_impl.cc        | 36 ---------
  chrome/browser/browser_process_impl.h         |  6 --
  .../chrome_browsing_data_remover_delegate.cc  | 41 ----------
- .../browser/chrome_content_browser_client.cc  | 60 ++++-----------
+ .../browser/chrome_content_browser_client.cc  | 60 ++++----------
  .../file_type_policies_component_installer.cc | 16 +---
  .../chrome_download_manager_delegate.cc       | 31 +++-----
  .../chrome_download_manager_delegate.h        |  8 +-
@@ -57,8 +60,30 @@ Disable CrowdDeny feature
  .../native_file_system_file_writer_impl.cc    | 48 +-----------
  .../native_file_system_file_writer_impl.h     | 15 +---
  .../native_file_system_permission_context.h   |  7 --
- 51 files changed, 151 insertions(+), 639 deletions(-)
+ 54 files changed, 153 insertions(+), 648 deletions(-)
 
+diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
+--- a/chrome/android/BUILD.gn
++++ b/chrome/android/BUILD.gn
+@@ -2780,7 +2780,6 @@ generate_jni("chrome_jni_headers") {
+     "java/src/org/chromium/chrome/browser/rappor/RapporServiceBridge.java",
+     "java/src/org/chromium/chrome/browser/rlz/RevenueStats.java",
+     "java/src/org/chromium/chrome/browser/rlz/RlzPingHandler.java",
+-    "java/src/org/chromium/chrome/browser/safe_browsing/SafeBrowsingBridge.java",
+     "java/src/org/chromium/chrome/browser/search_engines/TemplateUrlServiceFactory.java",
+     "java/src/org/chromium/chrome/browser/send_tab_to_self/NotificationManager.java",
+     "java/src/org/chromium/chrome/browser/send_tab_to_self/SendTabToSelfAndroidBridge.java",
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -1315,7 +1315,6 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/rappor/RapporServiceBridge.java",
+   "java/src/org/chromium/chrome/browser/rlz/RevenueStats.java",
+   "java/src/org/chromium/chrome/browser/rlz/RlzPingHandler.java",
+-  "java/src/org/chromium/chrome/browser/safe_browsing/SafeBrowsingBridge.java",
+   "java/src/org/chromium/chrome/browser/search_engines/SearchEngineChoiceMetrics.java",
+   "java/src/org/chromium/chrome/browser/search_engines/SearchEngineChoiceNotification.java",
+   "java/src/org/chromium/chrome/browser/search_engines/TemplateUrlServiceFactory.java",
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
 --- a/chrome/android/java/res/xml/privacy_preferences.xml
 +++ b/chrome/android/java/res/xml/privacy_preferences.xml
@@ -139,7 +164,15 @@ diff --git a/chrome/android/java/res/xml/sync_and_services_preferences.xml b/chr
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacyPreferences.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacyPreferences.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacyPreferences.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacyPreferences.java
-@@ -35,11 +35,7 @@ import org.chromium.ui.text.SpanApplier;
+@@ -20,7 +20,6 @@ import org.chromium.chrome.browser.help.HelpAndFeedback;
+ import org.chromium.chrome.browser.preferences.Pref;
+ import org.chromium.chrome.browser.preferences.PrefServiceBridge;
+ import org.chromium.chrome.browser.profiles.Profile;
+-import org.chromium.chrome.browser.safe_browsing.SafeBrowsingBridge;
+ import org.chromium.chrome.browser.settings.ChromeBaseCheckBoxPreference;
+ import org.chromium.chrome.browser.settings.ManagedPreferenceDelegate;
+ import org.chromium.chrome.browser.settings.PreferencesLauncher;
+@@ -35,11 +34,7 @@ import org.chromium.ui.text.SpanApplier;
   */
  public class PrivacyPreferences
          extends PreferenceFragmentCompat implements Preference.OnPreferenceChangeListener {
@@ -151,7 +184,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privac
      private static final String PREF_CAN_MAKE_PAYMENT = "can_make_payment";
      private static final String PREF_NETWORK_PREDICTIONS = "preload_pages";
      private static final String PREF_DO_NOT_TRACK = "do_not_track";
-@@ -47,7 +43,6 @@ public class PrivacyPreferences
+@@ -47,7 +42,6 @@ public class PrivacyPreferences
      private static final String PREF_SYNC_AND_SERVICES_LINK_DIVIDER =
              "sync_and_services_link_divider";
      private static final String PREF_SYNC_AND_SERVICES_LINK = "sync_and_services_link";
@@ -159,7 +192,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privac
  
      private ManagedPreferenceDelegate mManagedPreferenceDelegate;
  
-@@ -73,28 +68,11 @@ public class PrivacyPreferences
+@@ -73,28 +67,11 @@ public class PrivacyPreferences
          getPreferenceScreen().removePreference(findPreference(PREF_SYNC_AND_SERVICES_LINK_DIVIDER));
          getPreferenceScreen().removePreference(findPreference(PREF_SYNC_AND_SERVICES_LINK));
  
@@ -188,7 +221,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privac
          updateSummaries();
      }
  
-@@ -108,13 +86,6 @@ public class PrivacyPreferences
+@@ -108,13 +85,6 @@ public class PrivacyPreferences
              PrivacyPreferencesManager.getInstance().setNetworkPredictionEnabled((boolean) newValue);
          } else if (PREF_SEARCH_SUGGESTIONS.equals(key)) {
              PrefServiceBridge.getInstance().setBoolean(Pref.SEARCH_SUGGEST_ENABLED, (boolean) newValue);
@@ -202,7 +235,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privac
          }
  
          return true;
-@@ -135,32 +106,12 @@ public class PrivacyPreferences
+@@ -135,32 +105,12 @@ public class PrivacyPreferences
          CharSequence textOn = getActivity().getResources().getText(R.string.text_on);
          CharSequence textOff = getActivity().getResources().getText(R.string.text_off);
  
@@ -235,7 +268,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privac
          CheckBoxPreference canMakePaymentPref =
                  (CheckBoxPreference) findPreference(PREF_CAN_MAKE_PAYMENT);
          if (canMakePaymentPref != null) {
-@@ -174,42 +125,14 @@ public class PrivacyPreferences
+@@ -174,42 +124,14 @@ public class PrivacyPreferences
                              ? R.string.text_on
                              : R.string.text_off);
          }
@@ -278,10 +311,56 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privac
              if (PREF_NETWORK_PREDICTIONS.equals(key)) {
                  return PrivacyPreferencesManager.getInstance().isNetworkPredictionManaged();
              }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/SyncAndServicesPreferences.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/SyncAndServicesPreferences.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/SyncAndServicesPreferences.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/SyncAndServicesPreferences.java
+@@ -45,7 +45,6 @@ import org.chromium.chrome.browser.metrics.UmaSessionStats;
+ import org.chromium.chrome.browser.preferences.Pref;
+ import org.chromium.chrome.browser.preferences.PrefServiceBridge;
+ import org.chromium.chrome.browser.profiles.Profile;
+-import org.chromium.chrome.browser.safe_browsing.SafeBrowsingBridge;
+ import org.chromium.chrome.browser.settings.ChromeBasePreference;
+ import org.chromium.chrome.browser.settings.ChromeSwitchPreference;
+ import org.chromium.chrome.browser.settings.ManagedPreferenceDelegate;
+@@ -375,7 +374,6 @@ public class SyncAndServicesPreferences extends PreferenceFragmentCompat
+             mPrefServiceBridge.setBoolean(
+                     Pref.PASSWORD_MANAGER_LEAK_DETECTION_ENABLED, (boolean) newValue);
+         } else if (PREF_SAFE_BROWSING_SCOUT_REPORTING.equals(key)) {
+-            SafeBrowsingBridge.setSafeBrowsingExtendedReportingEnabled((boolean) newValue);
+         } else if (PREF_NAVIGATION_ERROR.equals(key)) {
+             mPrefServiceBridge.setBoolean(Pref.ALTERNATE_ERROR_PAGES_ENABLED, (boolean) newValue);
+         } else if (PREF_USAGE_AND_CRASH_REPORTING.equals(key)) {
+@@ -669,8 +667,7 @@ public class SyncAndServicesPreferences extends PreferenceFragmentCompat
+     private void updateLeakDetectionAndSafeBrowsingReportingPreferences() {
+         boolean safe_browsing_enabled = mPrefServiceBridge.getBoolean(Pref.SAFE_BROWSING_ENABLED);
+         mSafeBrowsingReporting.setEnabled(safe_browsing_enabled);
+-        mSafeBrowsingReporting.setChecked(safe_browsing_enabled
+-                && SafeBrowsingBridge.isSafeBrowsingExtendedReportingEnabled());
++        mSafeBrowsingReporting.setChecked(safe_browsing_enabled);
+ 
+         if (mPasswordLeakDetection == null) return; // Early exit without leak detection to update.
+ 
+@@ -700,7 +697,7 @@ public class SyncAndServicesPreferences extends PreferenceFragmentCompat
+                 return mPrefServiceBridge.isManagedPreference(Pref.SEARCH_SUGGEST_ENABLED);
+             }
+             if (PREF_SAFE_BROWSING_SCOUT_REPORTING.equals(key)) {
+-                return SafeBrowsingBridge.isSafeBrowsingExtendedReportingManaged();
++                return false;
+             }
+             if (PREF_SAFE_BROWSING.equals(key)) {
+                 return mPrefServiceBridge.isManagedPreference(Pref.SAFE_BROWSING_ENABLED);
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/webshare/ShareServiceImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/webshare/ShareServiceImpl.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/webshare/ShareServiceImpl.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/webshare/ShareServiceImpl.java
-@@ -196,11 +196,6 @@ public class ShareServiceImpl implements ShareService {
+@@ -20,7 +20,6 @@ import org.chromium.base.task.PostTask;
+ import org.chromium.base.task.TaskRunner;
+ import org.chromium.base.task.TaskTraits;
+ import org.chromium.chrome.browser.ChromeActivity;
+-import org.chromium.chrome.browser.safe_browsing.SafeBrowsingBridge;
+ import org.chromium.chrome.browser.share.ShareHelper;
+ import org.chromium.chrome.browser.share.ShareParams;
+ import org.chromium.content_public.browser.WebContents;
+@@ -196,11 +195,6 @@ public class ShareServiceImpl implements ShareService {
              return;
          }
  
