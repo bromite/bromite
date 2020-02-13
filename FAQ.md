@@ -1,4 +1,4 @@
-# F.A.Q.
+# Frequently Asked Questions
 
 ## Does Google Sync/Translate/Data saver work?
 No.
@@ -63,7 +63,7 @@ No; Bromite will support extensions only if upstream (Chromium) does, or similar
 ## Why do push notifications not work on this website?
 
 The [Chromium Blink engine](https://www.chromium.org/blink) uses [GCM](https://en.wikipedia.org/wiki/Google_Cloud_Messaging) to deliver messages
-when websites use the [Push API](https://w3c.github.io/push-api/); this will not work because cloud integrations are disabled in Bromite (GCM in this case).
+when websites use the [Push API](https://w3c.github.io/push-api/); this will not work in Bromite because cloud integrations are disabled (GCM in this case).
 
 [ServiceWorker notifications](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerRegistration/showNotification) do work instead since they use
 [android.app.Notification](https://developer.android.com/guide/topics/ui/notifiers/notifications).

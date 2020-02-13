@@ -47,7 +47,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * [StartPage](https://startpage.com/), [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines available by default
 * flags to disable custom intents and clear session on exit
 * flags to toggle anti-fingerprinting mitigations for canvas, audio, client rects, webGL and sensor APIs
-* use fixed User-Agent to conceal real model and browser version
+* use frozen User-Agent to conceal real model and browser version
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
 * security enhancement patches from [GrapheneOS](https://github.com/GrapheneOS) project
 
