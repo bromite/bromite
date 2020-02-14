@@ -1,3 +1,8 @@
+# 80.0.3987.95
+* enable user-agent freeze (fixes https://github.com/bromite/bromite/issues/483)
+* fix issue with AMP (fixes https://github.com/bromite/bromite/issues/488)
+* fix crash on home page (fixes https://github.com/bromite/bromite/issues/484)
+
 # 80.0.3987.78
 * removed ungoogled-chromium patch for non-remote developer tools resources
 * removed patch for 64-bit webview (it is now a default from upstream)
