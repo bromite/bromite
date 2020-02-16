@@ -12,6 +12,8 @@ Bromite is only available for Android v4.4 and above.
 
 For the Frequently Asked Questions see [F.A.Q.](./FAQ.md).
 
+For documentation see the [wiki](https://github.com/bromite/bromite/wiki).
+
 # Goals
 
 Bromite aims at providing a no-clutter browsing experience without privacy-invasive features and with the addition of a fast ad-blocking engine.
