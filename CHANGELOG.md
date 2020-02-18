@@ -1,3 +1,6 @@
+# 80.0.3987.109
+* restored GPU workaround for the ARM/ARM64 AImageReader crash (https://github.com/bromite/bromite/issues/445)
+
 # 80.0.3987.95
 * enable user-agent freeze (fixes https://github.com/bromite/bromite/issues/483)
 * fix issue with AMP (fixes https://github.com/bromite/bromite/issues/488)
