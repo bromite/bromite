@@ -67,3 +67,7 @@ when websites use the [Push API](https://w3c.github.io/push-api/); this will not
 
 [ServiceWorker notifications](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerRegistration/showNotification) do work instead since they use
 [android.app.Notification](https://developer.android.com/guide/topics/ui/notifiers/notifications).
+
+## Can PWAs be installed?
+
+PWAs are only supported as home shortcuts; WebAPKs will not work because they are generated server-side on googleapis.com (which is not allowed in Bromite).
