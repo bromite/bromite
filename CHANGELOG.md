@@ -1,6 +1,6 @@
 # 80.0.3987.118
 * disable AImageReader for all ARM64 devices (fixes https://github.com/bromite/bromite/issues/497)
-* use upstream workaround for SD card not found issue (fixes https://github.com/bromite/bromite/issues/485)
+* use upstream possible workaround for SD card not found issue (fixes https://github.com/bromite/bromite/issues/485)
 
 # 80.0.3987.109
 * restored GPU workaround for the ARM/ARM64 AImageReader crash (https://github.com/bromite/bromite/issues/445)
@@ -226,6 +226,7 @@
 * use adblock engine also in SystemWebView
 * add back uBlock Origin and EasyList filters
 * added Fanboy's Annoyance List
+* remove AdGuard filters
 
 # 72.0.3626.119
 * use AdGuard filters
