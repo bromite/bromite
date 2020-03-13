@@ -12,9 +12,9 @@ Unified consent miscellanous backport fixes
  .../chrome/browser/feed/FeedNewTabPage.java   |  2 +-
  .../browser/feed/TestNetworkClient.java       |  2 +-
  .../java/res/xml/privacy_preferences.xml      | 26 +++++
- .../settings/privacy/PrivacyPreferences.java  | 96 ++++++++++++++++---
- .../settings/sync/SyncPreferenceUtils.java    |  2 +-
- .../sync/SyncNotificationController.java      | 11 ++-
+ .../settings/privacy/PrivacySettings.java     | 96 ++++++++++++++++---
+ .../settings/sync/SyncSettingsUtils.java      |  2 +-
+ .../sync/SyncNotificationController.java      |  8 +-
  .../chrome/browser/sync/SyncTestRule.java     |  9 +-
  .../chromium/chrome/browser/sync/UkmTest.java | 50 +++++++++-
  .../strings/android_chrome_strings.grd        | 15 +++
@@ -71,7 +71,7 @@ Unified consent miscellanous backport fixes
  .../android_chrome_strings_zh-CN.xtb          | 19 +++-
  .../android_chrome_strings_zh-TW.xtb          | 19 +++-
  .../unified_consent_service_factory.cc        |  5 +-
- 62 files changed, 1129 insertions(+), 77 deletions(-)
+ 62 files changed, 1127 insertions(+), 76 deletions(-)
 
 diff --git a/chrome/android/feed/dummy/java/src/org/chromium/chrome/browser/feed/FeedNewTabPage.java b/chrome/android/feed/dummy/java/src/org/chromium/chrome/browser/feed/FeedNewTabPage.java
 --- a/chrome/android/feed/dummy/java/src/org/chromium/chrome/browser/feed/FeedNewTabPage.java
@@ -134,7 +134,7 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
 +        android:title="@string/usage_and_crash_reports_title"
 +        android:fragment="org.chromium.chrome.browser.settings.privacy.UsageAndCrashReportsPreferenceFragment" />
      <Preference
-         android:fragment="org.chromium.chrome.browser.settings.privacy.DoNotTrackPreference"
+         android:fragment="org.chromium.chrome.browser.settings.privacy.DoNotTrackSettings"
          android:key="do_not_track"
 @@ -28,6 +50,10 @@
          android:title="@string/clear_browsing_data_title"
@@ -147,9 +147,9 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
      <org.chromium.chrome.browser.settings.TextMessagePreference
          android:key="sync_and_services_link"
          android:summary="@string/privacy_sync_and_services_link"
-diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacyPreferences.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacyPreferences.java
---- a/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacyPreferences.java
-+++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacyPreferences.java
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacySettings.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacySettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacySettings.java
 @@ -15,10 +15,12 @@ import android.view.MenuItem;
  
  import org.chromium.base.BuildInfo;
@@ -162,10 +162,10 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privac
 +import org.chromium.chrome.browser.safe_browsing.SafeBrowsingBridge;
  import org.chromium.chrome.browser.settings.ChromeBaseCheckBoxPreference;
  import org.chromium.chrome.browser.settings.ManagedPreferenceDelegate;
- import org.chromium.chrome.browser.settings.PreferencesLauncher;
+ import org.chromium.chrome.browser.settings.SettingsLauncher;
 @@ -33,18 +35,24 @@ import org.chromium.ui.text.SpanApplier;
   */
- public class PrivacyPreferences
+ public class PrivacySettings
          extends PreferenceFragmentCompat implements Preference.OnPreferenceChangeListener {
 +    private static final String PREF_NAVIGATION_ERROR = "navigation_error";
 +    private static final String PREF_SEARCH_SUGGESTIONS = "search_suggestions";
@@ -191,14 +191,14 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privac
          SettingsUtils.addPreferencesFromResource(this, R.xml.privacy_preferences);
          getActivity().setTitle(R.string.prefs_privacy);
          setHasOptionsMenu(true);
-@@ -62,14 +70,30 @@ public class PrivacyPreferences
+@@ -62,14 +70,30 @@ public class PrivacySettings
          networkPredictionPref.setOnPreferenceChangeListener(this);
          networkPredictionPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
  
 -        Preference syncAndServicesLink = findPreference(PREF_SYNC_AND_SERVICES_LINK);
 -        NoUnderlineClickableSpan linkSpan = new NoUnderlineClickableSpan(getResources(), view -> {
--            PreferencesLauncher.launchSettingsPage(getActivity(), SyncAndServicesPreferences.class,
--                    SyncAndServicesPreferences.createArguments(false));
+-            SettingsLauncher.getInstance().launchSettingsPage(getActivity(),
+-                    SyncAndServicesSettings.class, SyncAndServicesSettings.createArguments(false));
 -        });
 -        syncAndServicesLink.setSummary(
 -                SpanApplier.applySpans(getString(R.string.privacy_sync_and_services_link),
@@ -230,7 +230,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privac
  
          updateSummaries();
      }
-@@ -82,6 +106,15 @@ public class PrivacyPreferences
+@@ -82,6 +106,15 @@ public class PrivacySettings
                      Pref.CAN_MAKE_PAYMENT_ENABLED, (boolean) newValue);
          } else if (PREF_NETWORK_PREDICTIONS.equals(key)) {
              PrivacyPreferencesManager.getInstance().setNetworkPredictionEnabled((boolean) newValue);
@@ -246,7 +246,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privac
          }
  
          return true;
-@@ -99,6 +132,35 @@ public class PrivacyPreferences
+@@ -99,6 +132,35 @@ public class PrivacySettings
      public void updateSummaries() {
          PrefServiceBridge prefServiceBridge = PrefServiceBridge.getInstance();
  
@@ -282,7 +282,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privac
          CheckBoxPreference canMakePaymentPref =
                  (CheckBoxPreference) findPreference(PREF_CAN_MAKE_PAYMENT);
          if (canMakePaymentPref != null) {
-@@ -136,6 +198,18 @@ public class PrivacyPreferences
+@@ -136,6 +198,18 @@ public class PrivacySettings
      private ManagedPreferenceDelegate createManagedPreferenceDelegate() {
          return preference -> {
              String key = preference.getKey();
@@ -301,10 +301,10 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privac
              if (PREF_NETWORK_PREDICTIONS.equals(key)) {
                  return PrivacyPreferencesManager.getInstance().isNetworkPredictionManaged();
              }
-diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/SyncPreferenceUtils.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/SyncPreferenceUtils.java
---- a/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/SyncPreferenceUtils.java
-+++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/SyncPreferenceUtils.java
-@@ -97,7 +97,7 @@ public class SyncPreferenceUtils {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/SyncSettingsUtils.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/SyncSettingsUtils.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/SyncSettingsUtils.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/SyncSettingsUtils.java
+@@ -191,7 +191,7 @@ public class SyncSettingsUtils {
                          : context.getString(R.string.sync_passwords_error_card_title);
              }
  
@@ -316,39 +316,32 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/sync/S
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/sync/SyncNotificationController.java b/chrome/android/java/src/org/chromium/chrome/browser/sync/SyncNotificationController.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/sync/SyncNotificationController.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/sync/SyncNotificationController.java
-@@ -7,11 +7,13 @@ package org.chromium.chrome.browser.sync;
+@@ -7,6 +7,7 @@ package org.chromium.chrome.browser.sync;
  import android.content.Context;
  import android.content.Intent;
  import android.os.Build;
 +import android.os.Bundle;
  import android.util.Log;
  
- import org.chromium.base.ContextUtils;
- import org.chromium.base.ThreadUtils;
- import org.chromium.chrome.R;
-+import org.chromium.chrome.browser.ChromeFeatureList;
- import org.chromium.chrome.browser.notifications.ChromeNotification;
- import org.chromium.chrome.browser.notifications.ChromeNotificationBuilder;
- import org.chromium.chrome.browser.notifications.NotificationBuilderFactory;
-@@ -24,6 +26,7 @@ import org.chromium.chrome.browser.notifications.PendingIntentProvider;
+ import androidx.annotation.StringRes;
+@@ -24,6 +25,7 @@ import org.chromium.chrome.browser.notifications.NotificationMetadata;
+ import org.chromium.chrome.browser.notifications.NotificationUmaTracker;
+ import org.chromium.chrome.browser.notifications.PendingIntentProvider;
  import org.chromium.chrome.browser.notifications.channels.ChannelDefinitions;
- import org.chromium.chrome.browser.settings.PreferencesLauncher;
- import org.chromium.chrome.browser.settings.sync.SyncAndServicesPreferences;
 +import org.chromium.chrome.browser.settings.sync.AccountManagementFragment;
- import org.chromium.chrome.browser.sync.GoogleServiceAuthError.State;
- import org.chromium.chrome.browser.sync.ui.PassphraseActivity;
- import org.chromium.components.sync.AndroidSyncSettings;
-@@ -169,9 +172,11 @@ public class SyncNotificationController implements ProfileSyncService.SyncStateC
+ import org.chromium.chrome.browser.settings.SettingsLauncher;
+ import org.chromium.chrome.browser.settings.sync.SyncAndServicesSettings;
+ import org.chromium.chrome.browser.signin.IdentityServicesProvider;
+@@ -196,9 +198,11 @@ public class SyncNotificationController implements ProfileSyncService.SyncStateC
       * @return the intent for opening the settings
       */
      private Intent createSettingsIntent() {
--        return PreferencesLauncher.createIntentForSettingsPage(ContextUtils.getApplicationContext(),
--                SyncAndServicesPreferences.class.getName(),
--                SyncAndServicesPreferences.createArguments(false));
 +        final String fragmentName = AccountManagementFragment.class.getName();
 +        final Bundle fragmentArguments = null;
 +
-+        return PreferencesLauncher.createIntentForSettingsPage(
+         return SettingsLauncher.getInstance().createIntentForSettingsPage(
+-                ContextUtils.getApplicationContext(), SyncAndServicesSettings.class.getName(),
+-                SyncAndServicesSettings.createArguments(false));
 +                ContextUtils.getApplicationContext(), fragmentName, fragmentArguments);
      }
  
@@ -356,7 +349,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/sync/SyncNotifi
 diff --git a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/SyncTestRule.java b/chrome/android/javatests/src/org/chromium/chrome/browser/sync/SyncTestRule.java
 --- a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/SyncTestRule.java
 +++ b/chrome/android/javatests/src/org/chromium/chrome/browser/sync/SyncTestRule.java
-@@ -18,6 +18,7 @@ import org.chromium.chrome.browser.ChromeFeatureList;
+@@ -17,6 +17,7 @@ import org.chromium.chrome.browser.ChromeActivity;
  import org.chromium.chrome.browser.SyncFirstSetupCompleteSource;
  import org.chromium.chrome.browser.autofill.PersonalDataManager;
  import org.chromium.chrome.browser.autofill.PersonalDataManager.CreditCard;
@@ -364,7 +357,7 @@ diff --git a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/SyncT
  import org.chromium.chrome.browser.identity.UniqueIdentificationGenerator;
  import org.chromium.chrome.browser.identity.UniqueIdentificationGeneratorFactory;
  import org.chromium.chrome.browser.identity.UuidBasedUniqueIdentificationGenerator;
-@@ -355,8 +356,12 @@ public class SyncTestRule extends ChromeActivityTestRule<ChromeActivity> {
+@@ -352,8 +353,12 @@ public class SyncTestRule extends ChromeActivityTestRule<ChromeActivity> {
                              Assert.fail("Sign-in was aborted");
                          }
                      });
@@ -459,7 +452,7 @@ diff --git a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/UkmTe
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -741,6 +741,18 @@ CHAR-LIMIT guidelines:
+@@ -648,6 +648,18 @@ CHAR-LIMIT guidelines:
        <message name="IDS_PREFS_PRIVACY" desc="Title for the Privacy preferences. [CHAR-LIMIT=32]">
          Privacy
        </message>
@@ -478,7 +471,7 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
        <message name="IDS_SAFE_BROWSING_SCOUT_REPORTING_TITLE" desc="Title for checkbox that controls reporting data to detect bad apps/sites. Please ensure ‘Safe Browsing’ in this message matches the ‘Safe Browsing’ settings title.">
          Help improve Chrome security
        </message>
-@@ -1521,6 +1533,9 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -1458,6 +1470,9 @@ Your Google account may have other forms of browsing history like searches and a
        <message name="IDS_ACCOUNT_MANAGEMENT_TITLE" desc="Header title for the account management screen. [CHAR-LIMIT=32]">
          Signed in to Google as
        </message>
@@ -491,7 +484,7 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_am.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_am.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_am.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_am.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">ይህ ለሁሉም ጣቢያዎች ውሂብን ያጸዳል፣ የሚከተሉትን ጨምሮ፦</translation>
  <translation id="983192555821071799">ሁሉንም ትሮች ይዝጉ</translation>
  <translation id="987264212798334818">አጠቃላይ</translation>
@@ -518,7 +511,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ar.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ar.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ar.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ar.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">سيؤدي هذا إلى محو بيانات جميع المواقع، بما في ذلك:</translation>
  <translation id="983192555821071799">إغلاق جميع علامات التبويب</translation>
  <translation id="987264212798334818">عام</translation>
@@ -545,7 +538,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_bg.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_bg.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_bg.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_bg.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">Това действие ще изчисти данните за всички сайтове, включително:</translation>
  <translation id="983192555821071799">Затваряне на всички раздели</translation>
  <translation id="987264212798334818">Общи</translation>
@@ -572,7 +565,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_bn.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_bn.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_bn.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_bn.xtb
-@@ -1128,4 +1128,21 @@
+@@ -1102,4 +1102,21 @@
  <translation id="982182592107339124">এটা সব সাইটের জন্য ডেটা সাফ করবে, এতে অন্তর্ভুক্ত আছে:</translation>
  <translation id="983192555821071799">সমস্ত ট্যাবগুলি বন্ধ করুন</translation>
  <translation id="987264212798334818">সাধারণ</translation>
@@ -599,7 +592,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ca.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ca.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ca.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ca.xtb
-@@ -1126,4 +1126,21 @@ El lloc web NO obté accés a la càmera. Només tu pots veure les imatges de la
+@@ -1100,4 +1100,21 @@ Mantén premuda qualsevol paraula per cercar-la. Per definir millor la cerca, aj
  <translation id="982182592107339124">S'esborraran les dades de tots els llocs web, com ara:</translation>
  <translation id="983192555821071799">Tanca totes les pestanyes</translation>
  <translation id="987264212798334818">General</translation>
@@ -626,7 +619,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_cs.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_cs.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_cs.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_cs.xtb
-@@ -1126,4 +1126,21 @@ Web NEZÍSKÁ přístup k fotoaparátu. Fotky z fotoaparátu uvidíte pouze vy
+@@ -1100,4 +1100,21 @@ Dlouhým stisknutím jakéhokoli slova z něj vytvoříte vyhledávací dotaz.
  <translation id="982182592107339124">Tímto vymažete data všech webů včetně těchto:</translation>
  <translation id="983192555821071799">Zavřít všechny karty</translation>
  <translation id="987264212798334818">Všeobecné</translation>
@@ -653,7 +646,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_da.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_da.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_da.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_da.xtb
-@@ -1126,4 +1126,21 @@ Websitet får IKKE adgang til kameraet. Kameraets billeder kan kun ses af dig.</
+@@ -1100,4 +1100,21 @@ Tryk længe på et ord for at søge efter det. Du kan tilpasse søgningen ved at
  <translation id="982182592107339124">Denne handling rydder dataene for alle websites, herunder:</translation>
  <translation id="983192555821071799">Luk alle faner</translation>
  <translation id="987264212798334818">Generelt</translation>
@@ -680,7 +673,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_de.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_de.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_de.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_de.xtb
-@@ -1126,4 +1126,21 @@ Die Website erhält KEINEN Zugriff auf die Kamera. Die Kamerabilder sind nur fü
+@@ -1100,4 +1100,21 @@ Halten Sie ein Wort lange gedrückt, um eine Suche damit zu starten. Sie können
  <translation id="982182592107339124">Alle Daten für alle Websites werden gelöscht, darunter:</translation>
  <translation id="983192555821071799">Alle Tabs schließen</translation>
  <translation id="987264212798334818">Allgemein</translation>
@@ -707,7 +700,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_el.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_el.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_el.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_el.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">Αυτή η ενέργεια θα εκκαθαρίσει τα δεδομένα για όλους τους ιστότοπους, όπως:</translation>
  <translation id="983192555821071799">Κλείσιμο όλων των καρτελών</translation>
  <translation id="987264212798334818">Γενικά</translation>
@@ -734,7 +727,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_en-GB.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_en-GB.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_en-GB.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_en-GB.xtb
-@@ -1126,4 +1126,21 @@ The site does NOT gain access to the camera. The camera images are only visible
+@@ -1100,4 +1100,21 @@ Long-press any word to create a search for it. To refine your search adjust the
  <translation id="982182592107339124">This will clear data for all sites, including:</translation>
  <translation id="983192555821071799">Close all tabs</translation>
  <translation id="987264212798334818">General</translation>
@@ -761,7 +754,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_es-419.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_es-419.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_es-419.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_es-419.xtb
-@@ -1126,4 +1126,21 @@ El sitio NO podrá acceder a la cámara. Solo tú podrás ver las imágenes de l
+@@ -1100,4 +1100,21 @@ Mantén presionada cualquier palabra para buscarla. Para definir mejor la búsqu
  <translation id="982182592107339124">Esta acción borrará los datos de todos los sitios, entre los que se incluyen:</translation>
  <translation id="983192555821071799">Cerrar todas las pestañas</translation>
  <translation id="987264212798334818">General</translation>
@@ -788,7 +781,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_es.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_es.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_es.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_es.xtb
-@@ -1126,4 +1126,21 @@ El sitio web no obtendrá acceso a la cámara. Solo tú puedes ver las imágenes
+@@ -1100,4 +1100,21 @@ Mantén pulsada cualquier palabra para buscarla. Para acotar la búsqueda, ajust
  <translation id="982182592107339124">Se borrarán los datos de todos los sitios web, incluidos:</translation>
  <translation id="983192555821071799">Cerrar todas las pestañas</translation>
  <translation id="987264212798334818">General</translation>
@@ -815,7 +808,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_et.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_et.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_et.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_et.xtb
-@@ -1126,4 +1126,21 @@ Sait EI saa juurdepääsu kaamerale. Kaamera jäädvustatud pildid on nähtavad
+@@ -1100,4 +1100,21 @@ Puudutage pikalt mis tahes sõnal, et seda otsida. Otsingu täpsustamiseks kohan
  <translation id="982182592107339124">See kustutab kõikide saitide andmed, sealhulgas:</translation>
  <translation id="983192555821071799">Sule kõik vahelehed</translation>
  <translation id="987264212798334818">Üldine</translation>
@@ -842,7 +835,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fa.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fa.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fa.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fa.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">با این کار داده‌های همه سایت‌ها پاک می‌شود، از جمله:</translation>
  <translation id="983192555821071799">بستن همه برگه‌ها</translation>
  <translation id="987264212798334818">موارد کلی</translation>
@@ -869,7 +862,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fi.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fi.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fi.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fi.xtb
-@@ -1126,4 +1126,21 @@ Sivusto EI saa kameran käyttöoikeutta. Kamerakuvat näkyvät vain sinulle.</tr
+@@ -1100,4 +1100,21 @@ Hae sanaa painamalla sitä pitkään. Jos haluat tarkentaa hakuasi, muuta valint
  <translation id="982182592107339124">Kaikkien sivustojen tiedot poistetaan, esimerkiksi:</translation>
  <translation id="983192555821071799">Sulje kaikki välilehdet</translation>
  <translation id="987264212798334818">Yleistä</translation>
@@ -896,7 +889,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fil.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fil.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fil.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fil.xtb
-@@ -1126,4 +1126,21 @@ HINDI magkakaroon ng access sa camera ang site. Ikaw lang ang makakakita ng mga
+@@ -1100,4 +1100,21 @@ Pindutin nang matagal ang anumang salita para hanapin ito. Para pinuhin ang iyon
  <translation id="982182592107339124">Iki-clear nito ang data para sa lahat ng site, kabilang ang:</translation>
  <translation id="983192555821071799">Isara ang lahat ng tab</translation>
  <translation id="987264212798334818">Pangkalahatan</translation>
@@ -923,7 +916,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fr.xtb
-@@ -1126,4 +1126,21 @@ En revanche, le site n'a PAS accès à la caméra. Vous seul pouvez voir les ima
+@@ -1100,4 +1100,21 @@ Pour sélectionner un mot, appuyez dessus de manière prolongée. Vous pouvez en
  <translation id="982182592107339124">Cette action entraînera la suppression des données pour tous les sites, y compris :</translation>
  <translation id="983192555821071799">Fermer tous les onglets</translation>
  <translation id="987264212798334818">Général</translation>
@@ -950,7 +943,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_gu.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_gu.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_gu.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_gu.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">આ બધી સાઇટ્સ પરથી ડેટા સાફ કરશે, આ સહિત:</translation>
  <translation id="983192555821071799">બધા ટેબ્સ બંધ કરો</translation>
  <translation id="987264212798334818">સામાન્ય</translation>
@@ -977,7 +970,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hi.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hi.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hi.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hi.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">इससे इन सभी साइटों का डेटा साफ़ हो जाएगा:</translation>
  <translation id="983192555821071799">सभी टैब बंद करें</translation>
  <translation id="987264212798334818">सामान्य</translation>
@@ -1004,7 +997,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hr.xtb
-@@ -1126,4 +1126,21 @@ Web-lokacija NE dobiva pristup fotoaparatu. Slike fotoaparata možete vidjeti sa
+@@ -1100,4 +1100,21 @@ Dugo pritisnite željenu riječ da biste je pretražili. Da biste precizirali pr
  <translation id="982182592107339124">Izbrisat će se podaci za sve web-lokacije, uključujući:</translation>
  <translation id="983192555821071799">Zatvori sve kartice</translation>
  <translation id="987264212798334818">Općenito</translation>
@@ -1031,7 +1024,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hu.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hu.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hu.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hu.xtb
-@@ -1126,4 +1126,21 @@ A webhely NEM kap hozzáférést a kamerához. A kamera képét csak Ön láthat
+@@ -1100,4 +1100,21 @@ A kívánt szó hosszú lenyomásával keresést végezhet. A keresés finomít
  <translation id="982182592107339124">Ezzel törli az összes webhely adatait, beleértve a következőket:</translation>
  <translation id="983192555821071799">Az összes lap bezárása</translation>
  <translation id="987264212798334818">Általános</translation>
@@ -1058,7 +1051,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_id.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_id.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_id.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_id.xtb
-@@ -1126,4 +1126,21 @@ Situs TIDAK mendapatkan akses ke kamera. Gambar kamera hanya dapat dilihat oleh
+@@ -1100,4 +1100,21 @@ Tekan lama kata apa pun untuk menelusurinya. Untuk menyaring penelusuran, Anda d
  <translation id="982182592107339124">Tindakan ini akan menghapus data untuk semua situs, termasuk:</translation>
  <translation id="983192555821071799">Tutup semua tab</translation>
  <translation id="987264212798334818">Umum</translation>
@@ -1085,7 +1078,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
-@@ -1126,4 +1126,21 @@ Il sito NON ottiene l'accesso alla videocamera. Le immagini della videocamera so
+@@ -1100,4 +1100,21 @@ Premi a lungo qualsiasi parola per creare una ricerca associata. Per perfezionar
  <translation id="982182592107339124">Questa operazione cancellerà i dati di tutti i siti, inclusi:</translation>
  <translation id="983192555821071799">Chiudi tutte le schede</translation>
  <translation id="987264212798334818">Generali</translation>
@@ -1112,7 +1105,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_iw.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_iw.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_iw.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_iw.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">פעולה זו תמחק נתונים של כל האתרים, כולל:</translation>
  <translation id="983192555821071799">סגור את כל הכרטיסיות</translation>
  <translation id="987264212798334818">כללי</translation>
@@ -1139,7 +1132,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ja.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ja.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ja.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ja.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">この操作を行うと、次を含むすべてのサイトのデータが削除されます。</translation>
  <translation id="983192555821071799">すべてのタブを閉じる</translation>
  <translation id="987264212798334818">全般</translation>
@@ -1166,7 +1159,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_kn.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_kn.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_kn.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_kn.xtb
-@@ -1127,4 +1127,21 @@
+@@ -1101,4 +1101,21 @@
  <translation id="982182592107339124">ಇದು ಎಲ್ಲಾ ಸೈಟ್‌ಗಳಿಗೆ ಡೇಟಾ ತೆರವುಗೊಳಿಸುತ್ತದೆ, ಇವುಗಳನ್ನೂ ಒಳಗೊಂಡು:</translation>
  <translation id="983192555821071799">ಎಲ್ಲ ಟ್ಯಾಬ್‌ಗಳನ್ನು ಮುಚ್ಚಿ</translation>
  <translation id="987264212798334818">ಸಾಮಾನ್ಯ</translation>
@@ -1193,7 +1186,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ko.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ko.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ko.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ko.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">다음을 포함한 모든 사이트의 데이터가 삭제됩니다.</translation>
  <translation id="983192555821071799">탭 모두 닫기</translation>
  <translation id="987264212798334818">일반</translation>
@@ -1220,7 +1213,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_lt.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_lt.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_lt.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_lt.xtb
-@@ -1126,4 +1126,21 @@ Svetainė NETURI prieigos prie fotoaparato. Fotoaparato vaizdai matomi tik jums.
+@@ -1100,4 +1100,21 @@ Palaikykite paspaudę bet kurį žodį, kad sukurtumėte jo paiešką. Jei norit
  <translation id="982182592107339124">Bus išvalyti visų svetainių duomenys, įskaitant:</translation>
  <translation id="983192555821071799">Uždar. visų skirtukų lapus</translation>
  <translation id="987264212798334818">Bendra</translation>
@@ -1247,7 +1240,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_lv.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_lv.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_lv.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_lv.xtb
-@@ -1126,4 +1126,21 @@ Vietnei NAV piekļuves kamerai. Kameras attēli ir redzami tikai jums.</translat
+@@ -1100,4 +1100,21 @@ Turiet nospiestu jebkuru vārdu, lai izveidotu tā meklēšanas vienumu. Lai pre
  <translation id="982182592107339124">Tādējādi tiks dzēsti dati no visām vietnēm, tostarp:</translation>
  <translation id="983192555821071799">Aizvērt visas cilnes</translation>
  <translation id="987264212798334818">Vispārīgi</translation>
@@ -1274,7 +1267,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ml.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ml.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ml.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ml.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">ഇത് ഇനിപ്പറയുന്നവ ഉൾപ്പെടെയുള്ള എല്ലാ സൈറ്റുകളുടെയും വിവരങ്ങൾ മായ്‌ക്കുന്നതിനിടയാക്കും:</translation>
  <translation id="983192555821071799">എല്ലാ ടാബുകളും അടയ്‌ക്കുക</translation>
  <translation id="987264212798334818">പൊതുവായ</translation>
@@ -1301,7 +1294,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_mr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_mr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_mr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_mr.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">हे यासह सर्व साइटसाठी डेटा साफ करेल:</translation>
  <translation id="983192555821071799">सर्व टॅब बंद करा</translation>
  <translation id="987264212798334818">सामान्य</translation>
@@ -1328,7 +1321,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ms.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ms.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ms.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ms.xtb
-@@ -1126,4 +1126,21 @@ Tapak TIDAK memperoleh akses kepada kamera. Hanya anda dapat melihat imej kamera
+@@ -1100,4 +1100,21 @@ Tekan lama-lama pada mana-mana perkataan untuk membuat carian tentang perkataan
  <translation id="982182592107339124">Ini akan memadamkan data untuk semua tapak web, termasuk:</translation>
  <translation id="983192555821071799">Tutup semua tab</translation>
  <translation id="987264212798334818">Umum</translation>
@@ -1355,7 +1348,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_nl.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_nl.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_nl.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_nl.xtb
-@@ -1126,4 +1126,21 @@ De site krijgt GEEN toegang tot de camera. De camerabeelden zijn alleen zichtbaa
+@@ -1100,4 +1100,21 @@ Druk lang op een woord om er een zoekopdracht voor te maken. Pas de selectie aan
  <translation id="982182592107339124">Hiermee worden de gegevens voor alle sites gewist, inclusief:</translation>
  <translation id="983192555821071799">Alle tabbladen sluiten</translation>
  <translation id="987264212798334818">Algemeen</translation>
@@ -1382,7 +1375,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_no.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_no.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_no.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_no.xtb
-@@ -1126,4 +1126,21 @@ Nettstedet får IKKE tilgang til kameraet. Kamerabildene er kun synlige for deg.
+@@ -1100,4 +1100,21 @@ Utfør lange trykk på ord for å søke etter dem. For å finstemme søket, just
  <translation id="982182592107339124">Dette fører til at dataene for alle nettsteder slettes, deriblant disse:</translation>
  <translation id="983192555821071799">Lukk alle faner</translation>
  <translation id="987264212798334818">Generelt</translation>
@@ -1409,7 +1402,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pl.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pl.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pl.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pl.xtb
-@@ -1126,4 +1126,21 @@ Witryna NIE uzyskuje dostępu do kamery. Tylko Ty widzisz rejestrowany obraz.</t
+@@ -1100,4 +1100,21 @@ Przytrzymaj dowolne słowo, by rozpocząć wyszukiwanie. Jeśli chcesz je doprec
  <translation id="982182592107339124">Spowoduje to usunięcie danych wszystkich witryn, w tym:</translation>
  <translation id="983192555821071799">Zamknij wszystkie karty</translation>
  <translation id="987264212798334818">Ogólne</translation>
@@ -1436,7 +1429,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-BR.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-BR.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-BR.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-BR.xtb
-@@ -1127,4 +1127,21 @@ O site NÃO terá acesso à câmera. As imagens da câmera são visíveis apenas
+@@ -1101,4 +1101,21 @@ Toque em qualquer palavra e a mantenha pressionada para criar uma pesquisa. Para
  <translation id="982182592107339124">Essa ação limpará os dados de todos os sites, incluindo:</translation>
  <translation id="983192555821071799">Fechar todas as guias</translation>
  <translation id="987264212798334818">Geral</translation>
@@ -1463,7 +1456,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-PT.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-PT.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-PT.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-PT.xtb
-@@ -1126,4 +1126,21 @@ O site NÃO fica com acesso à câmara. As imagens da câmara estão visíveis a
+@@ -1100,4 +1100,21 @@ Mantenha premida qualquer palavra para criar uma pesquisa para a mesma. Para ref
  <translation id="982182592107339124">Esta ação limpa os dados de todos os sites, incluindo:</translation>
  <translation id="983192555821071799">Fechar todos os separadores</translation>
  <translation id="987264212798334818">Geral</translation>
@@ -1490,7 +1483,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ro.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ro.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ro.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ro.xtb
-@@ -1126,4 +1126,21 @@ Acest site NU primește acces la cameră. Imaginile camerei sunt vizibile doar p
+@@ -1100,4 +1100,21 @@ Apasă lung pe orice cuvânt ca să creezi o căutare pentru acesta. Pentru a ra
  <translation id="982182592107339124">Astfel, se vor șterge datele pentru toate site-urile, inclusiv:</translation>
  <translation id="983192555821071799">Închide toate filele</translation>
  <translation id="987264212798334818">General</translation>
@@ -1517,7 +1510,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ru.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ru.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ru.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ru.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">Будут удалены данные всех сайтов, в том числе:</translation>
  <translation id="983192555821071799">Закрыть все вкладки</translation>
  <translation id="987264212798334818">Общие</translation>
@@ -1544,7 +1537,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sk.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sk.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sk.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sk.xtb
-@@ -1126,4 +1126,21 @@ Web NEZÍSKA prístup k fotoaparátu. Obrázky fotoaparátu sú viditeľné iba
+@@ -1100,4 +1100,21 @@ Ak chcete vyhľadať nejaké slovo, dlho ho stlačte. Ak chcete vyhľadávanie s
  <translation id="982182592107339124">Vymažete dáta všetkých webov vrátane týchto:</translation>
  <translation id="983192555821071799">Zavrieť všetky karty</translation>
  <translation id="987264212798334818">Všeobecné</translation>
@@ -1571,7 +1564,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sl.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sl.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sl.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sl.xtb
-@@ -1126,4 +1126,21 @@ Spletno mesto NIMA dostopa do kamere. Posnetki kamere so vidni samo vam.</transl
+@@ -1100,4 +1100,21 @@ Za dalj časa pritisnite poljubno besedo, če želite ustvariti iskanje zanjo. 
  <translation id="982182592107339124">S tem bodo izbrisani podatki za vsa spletna mesta, vključno s temi:</translation>
  <translation id="983192555821071799">Zapri vse zavihke</translation>
  <translation id="987264212798334818">Splošno</translation>
@@ -1598,7 +1591,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sr.xtb
-@@ -1126,4 +1126,21 @@ Google налог можда има друге облике историје п
+@@ -1100,4 +1100,21 @@ Google налог можда има друге облике историје п
  <translation id="982182592107339124">Овим бришете податке за све сајтове, укључујући:</translation>
  <translation id="983192555821071799">Затвори све картице</translation>
  <translation id="987264212798334818">Опште</translation>
@@ -1625,7 +1618,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sv.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sv.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sv.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sv.xtb
-@@ -1126,4 +1126,21 @@ Webbplatsen får INTE tillgång till kameran. Bara du kan se kamerabilderna.</tr
+@@ -1100,4 +1100,21 @@ Tryck länge på ett ord för att söka efter det. Om du vill finjustera söknin
  <translation id="982182592107339124">Åtgärden raderar data för alla webbplatser, inklusive:</translation>
  <translation id="983192555821071799">Stäng alla flikar</translation>
  <translation id="987264212798334818">Allmänt</translation>
@@ -1652,7 +1645,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sw.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sw.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sw.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sw.xtb
-@@ -1125,4 +1125,21 @@ Tovuti hii HAIPATI idhini ya kufikia kamera. Ni wewe pekee utaona picha hizi za
+@@ -1100,4 +1100,21 @@ Bonyeza neno lolote kwa muda mrefu ili utunge utafutaji wake. Ili uchuje utafuta
  <translation id="982182592107339124">Hatua hii itafuta data ya tovuti zote, ikiwa ni pamoja na:</translation>
  <translation id="983192555821071799">Funga vichupo vyote</translation>
  <translation id="987264212798334818">Jumla</translation>
@@ -1679,7 +1672,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ta.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ta.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ta.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ta.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">இதனால் எல்லா தளங்களுக்கான தரவும் அழிக்கப்படும், இதில் அடங்குபவை:</translation>
  <translation id="983192555821071799">எல்லா தாவல்களையும் மூடு</translation>
  <translation id="987264212798334818">பொது</translation>
@@ -1706,7 +1699,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_te.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_te.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_te.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_te.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">ఇది వీటితో సహా అన్ని సైట్‌ల డేటాను తీసివేస్తుంది:</translation>
  <translation id="983192555821071799">అన్ని ట్యాబ్‌లను మూసివేయి</translation>
  <translation id="987264212798334818">సాధారణం</translation>
@@ -1733,7 +1726,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_th.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_th.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_th.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_th.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">การดำเนินการนี้จะล้างข้อมูลสำหรับทุกเว็บไซต์ รวมถึง</translation>
  <translation id="983192555821071799">ปิดแท็บทั้งหมด</translation>
  <translation id="987264212798334818">ทั่วไป</translation>
@@ -1760,7 +1753,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_tr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_tr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_tr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_tr.xtb
-@@ -1126,4 +1126,21 @@ Site kameraya ERİŞMEZ. Kamera görüntülerini yalnızca siz görebilirsiniz.<
+@@ -1100,4 +1100,21 @@ Herhangi bir kelimeye uzun basarak o kelime için arama oluşturun. Aramanızı
  <translation id="982182592107339124">Bu işlem, aşağıdakiler de dahil olmak üzere tüm sitelere ilişkin verileri temizleyecek:</translation>
  <translation id="983192555821071799">Tüm sekmeleri kapat</translation>
  <translation id="987264212798334818">Genel</translation>
@@ -1787,7 +1780,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_uk.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_uk.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_uk.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_uk.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">Буде видалено дані всіх сайтів, зокрема:</translation>
  <translation id="983192555821071799">Закрити всі вкладки</translation>
  <translation id="987264212798334818">Загальне</translation>
@@ -1814,7 +1807,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_vi.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_vi.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_vi.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_vi.xtb
-@@ -1126,4 +1126,21 @@ Trang web này KHÔNG có quyền truy cập vào máy ảnh. Chỉ bạn mới
+@@ -1100,4 +1100,21 @@ Hãy nhấn và giữ từ bất kỳ để bắt đầu tìm kiếm từ đó.
  <translation id="982182592107339124">Thao tác này sẽ xóa dữ liệu của tất cả các trang web, bao gồm:</translation>
  <translation id="983192555821071799">Đóng tất cả các tab</translation>
  <translation id="987264212798334818">Chung</translation>
@@ -1841,7 +1834,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">这会清除所有网站的数据，包括：</translation>
  <translation id="983192555821071799">关闭所有标签页</translation>
  <translation id="987264212798334818">常规</translation>
@@ -1868,7 +1861,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-@@ -1126,4 +1126,21 @@
+@@ -1100,4 +1100,21 @@
  <translation id="982182592107339124">這會清除所有網站的資料，包括：</translation>
  <translation id="983192555821071799">關閉所有分頁</translation>
  <translation id="987264212798334818">一般</translation>
@@ -1895,9 +1888,9 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/unified_consent/unified_consent_service_factory.cc b/chrome/browser/unified_consent/unified_consent_service_factory.cc
 --- a/chrome/browser/unified_consent/unified_consent_service_factory.cc
 +++ b/chrome/browser/unified_consent/unified_consent_service_factory.cc
-@@ -35,10 +35,7 @@ std::vector<std::string> GetSyncedServicePrefNames() {
+@@ -36,10 +36,7 @@ std::vector<std::string> GetSyncedServicePrefNames() {
    return {
-     prefs::kSearchSuggestEnabled, prefs::kAlternateErrorPagesEnabled,
+     prefs::kSearchSuggestEnabled, embedder_support::kAlternateErrorPagesEnabled,
          prefs::kSafeBrowsingEnabled, prefs::kSafeBrowsingScoutReportingEnabled,
 -        spellcheck::prefs::kSpellCheckUseSpellingService,
 -#if defined(OS_ANDROID)

@@ -5,12 +5,12 @@ Subject: Disable promos displayed in bookmarks manager
 Remove personalized signin promo view from
 bookmarks, never reach signin thresholds.
 ---
- ...rsonalized_signin_promo_view_bookmarks.xml | 30 -----------
- .../bookmarks/BookmarkItemsAdapter.java       | 23 +-------
- .../bookmarks/BookmarkPromoHeader.java        | 52 +------------------
- .../ReorderBookmarkItemsAdapter.java          | 19 +------
- .../browser/signin/SigninPromoController.java | 21 +-------
- 5 files changed, 7 insertions(+), 138 deletions(-)
+ ...rsonalized_signin_promo_view_bookmarks.xml |  30 -----
+ .../bookmarks/BookmarkItemsAdapter.java       |  23 +---
+ .../bookmarks/BookmarkPromoHeader.java        | 111 +-----------------
+ .../ReorderBookmarkItemsAdapter.java          |  19 +--
+ .../browser/signin/SigninPromoController.java |  19 +--
+ 5 files changed, 7 insertions(+), 195 deletions(-)
  delete mode 100644 chrome/android/java/res/layout/personalized_signin_promo_view_bookmarks.xml
 
 diff --git a/chrome/android/java/res/layout/personalized_signin_promo_view_bookmarks.xml b/chrome/android/java/res/layout/personalized_signin_promo_view_bookmarks.xml
@@ -128,15 +128,79 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkPromoHeader.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkPromoHeader.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkPromoHeader.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkPromoHeader.java
-@@ -20,7 +20,6 @@ import org.chromium.chrome.R;
+@@ -20,19 +20,13 @@ import org.chromium.chrome.R;
  import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
  import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
  import org.chromium.chrome.browser.signin.IdentityServicesProvider;
 -import org.chromium.chrome.browser.signin.PersonalizedSigninPromoView;
  import org.chromium.chrome.browser.signin.ProfileDataCache;
- import org.chromium.chrome.browser.signin.SigninManager;
- import org.chromium.chrome.browser.signin.SigninManager.SignInStateObserver;
-@@ -124,19 +123,6 @@ class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObs
+-import org.chromium.chrome.browser.signin.SigninManager;
+-import org.chromium.chrome.browser.signin.SigninManager.SignInStateObserver;
+ import org.chromium.chrome.browser.signin.SigninPromoController;
+-import org.chromium.chrome.browser.signin.SigninPromoUtil;
+ import org.chromium.chrome.browser.signin.SyncPromoView;
+ import org.chromium.components.signin.AccountManagerFacade;
+ import org.chromium.components.signin.AccountsChangeObserver;
+ import org.chromium.components.signin.ChromeSigninController;
+ import org.chromium.components.signin.metrics.SigninAccessPoint;
+-import org.chromium.components.sync.AndroidSyncSettings;
+-import org.chromium.components.sync.AndroidSyncSettings.AndroidSyncSettingsObserver;
+ import org.chromium.content_public.browser.UiThreadTaskTraits;
+ 
+ import java.lang.annotation.Retention;
+@@ -42,7 +36,7 @@ import java.lang.annotation.RetentionPolicy;
+  * Class that manages all the logic and UI behind the signin promo header in the bookmark
+  * content UI. The header is shown only on certain situations, (e.g., not signed in).
+  */
+-class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObserver,
++class BookmarkPromoHeader implements
+                                      ProfileDataCache.Observer, AccountsChangeObserver {
+     /**
+      * Specifies the various states in which the Bookmarks promo can be.
+@@ -61,7 +55,6 @@ class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObs
+     private static @Nullable @PromoState Integer sPromoStateForTests;
+ 
+     private final Context mContext;
+-    private final SigninManager mSignInManager;
+     private final Runnable mPromoHeaderChangeAction;
+ 
+     private final @Nullable ProfileDataCache mProfileDataCache;
+@@ -76,8 +69,6 @@ class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObs
+         mContext = context;
+         mPromoHeaderChangeAction = promoHeaderChangeAction;
+ 
+-        AndroidSyncSettings.get().registerObserver(this);
+-
+         if (SigninPromoController.hasNotReachedImpressionLimit(
+                     SigninAccessPoint.BOOKMARK_MANAGER)) {
+             int imageSize =
+@@ -91,9 +82,6 @@ class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObs
+             mSigninPromoController = null;
+         }
+ 
+-        mSignInManager = IdentityServicesProvider.get().getSigninManager();
+-        mSignInManager.addSignInStateObserver(this);
+-
+         mPromoState = calculatePromoState();
+         if (mPromoState == PromoState.PROMO_SYNC) {
+             SharedPreferencesManager.getInstance().incrementInt(
+@@ -105,15 +93,11 @@ class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObs
+      * Clean ups the class. Must be called once done using this class.
+      */
+     void destroy() {
+-        AndroidSyncSettings.get().unregisterObserver(this);
+-
+         if (mSigninPromoController != null) {
+             AccountManagerFacade.get().removeObserver(this);
+             mProfileDataCache.removeObserver(this);
+             mSigninPromoController.onPromoDestroyed();
+         }
+-
+-        mSignInManager.removeSignInStateObserver(this);
+     }
+ 
+     /**
+@@ -124,19 +108,6 @@ class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObs
          return mPromoState;
      }
  
@@ -156,7 +220,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
      /**
       * @return Sync promo header {@link ViewHolder} instance that can be used with
       *         {@link RecyclerView}.
-@@ -149,40 +135,6 @@ class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObs
+@@ -149,49 +120,11 @@ class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObs
          return new ViewHolder(view) {};
      }
  
@@ -181,7 +245,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
 -     */
 -    private void setPersonalizedSigninPromoDeclined() {
 -        SharedPreferencesManager.getInstance().writeBoolean(
--                ChromePreferenceKeys.PREF_PERSONALIZED_SIGNIN_PROMO_DECLINED, true);
+-                ChromePreferenceKeys.SIGNIN_PROMO_PERSONALIZED_DECLINED, true);
 -        mPromoState = calculatePromoState();
 -        triggerPromoUpdate();
 -    }
@@ -189,25 +253,74 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
 -    /**
 -     * @return Whether the user declined the personalized signin promo.
 -     */
--    private boolean wasPersonalizedSigninPromoDeclined() {
+-    @VisibleForTesting
+-    static boolean wasPersonalizedSigninPromoDeclined() {
 -        return SharedPreferencesManager.getInstance().readBoolean(
--                ChromePreferenceKeys.PREF_PERSONALIZED_SIGNIN_PROMO_DECLINED, false);
+-                ChromePreferenceKeys.SIGNIN_PROMO_PERSONALIZED_DECLINED, false);
 -    }
 -
+     /**
+      * @return Whether the personalized signin promo should be shown to user.
+      */
+     private boolean shouldShowBookmarkSigninPromo() {
+-        return mSignInManager.isSignInAllowed()
+-                && SigninPromoController.hasNotReachedImpressionLimit(
+-                        SigninAccessPoint.BOOKMARK_MANAGER)
+-                && !wasPersonalizedSigninPromoDeclined();
++        return false;
+     }
+ 
      private @PromoState int calculatePromoState() {
-         if (sPromoStateForTests != null) {
+@@ -199,48 +132,9 @@ class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObs
              return sPromoStateForTests;
-@@ -195,8 +147,7 @@ class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObs
-         if (!ChromeSigninController.get().isSignedIn()) {
-             boolean impressionLimitReached = !SigninPromoController.hasNotReachedImpressionLimit(
-                     SigninAccessPoint.BOOKMARK_MANAGER);
--            if (!mSignInManager.isSignInAllowed() || impressionLimitReached
--                    || wasPersonalizedSigninPromoDeclined()) {
-+            if (!mSignInManager.isSignInAllowed() || impressionLimitReached) {
-                 return PromoState.PROMO_NONE;
-             }
-             return PromoState.PROMO_SIGNIN_PERSONALIZED;
-@@ -248,7 +199,6 @@ class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObs
+         }
+ 
+-        if (!AndroidSyncSettings.get().isMasterSyncEnabled()) {
+-            return PromoState.PROMO_NONE;
+-        }
+-
+-        if (!ChromeSigninController.get().isSignedIn()) {
+-            return shouldShowBookmarkSigninPromo() ? PromoState.PROMO_SIGNIN_PERSONALIZED
+-                                                   : PromoState.PROMO_NONE;
+-        }
+-
+-        boolean impressionLimitNotReached =
+-                SharedPreferencesManager.getInstance().readInt(
+-                        ChromePreferenceKeys.SIGNIN_AND_SYNC_PROMO_SHOW_COUNT)
+-                < MAX_SIGNIN_AND_SYNC_PROMO_SHOW_COUNT;
+-        if (!AndroidSyncSettings.get().isChromeSyncEnabled() && impressionLimitNotReached) {
+-            return PromoState.PROMO_SYNC;
+-        }
+         return PromoState.PROMO_NONE;
+     }
+ 
+-    // AndroidSyncSettingsObserver implementation.
+-    @Override
+-    public void androidSyncSettingsChanged() {
+-        // AndroidSyncSettings calls this method from non-UI threads.
+-        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> {
+-            mPromoState = calculatePromoState();
+-            triggerPromoUpdate();
+-        });
+-    }
+-
+-    // SignInStateObserver implementation.
+-    @Override
+-    public void onSignedIn() {
+-        mPromoState = calculatePromoState();
+-        triggerPromoUpdate();
+-    }
+-
+-    @Override
+-    public void onSignedOut() {
+-        mPromoState = calculatePromoState();
+-        triggerPromoUpdate();
+-    }
+-
+     // ProfileDataCache.Observer implementation.
+     @Override
+     public void onProfileDataUpdated(String accountId) {
+@@ -254,7 +148,6 @@ class BookmarkPromoHeader implements AndroidSyncSettingsObserver, SignInStateObs
      }
  
      private void triggerPromoUpdate() {
@@ -273,15 +386,14 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Reord
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninPromoController.java b/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninPromoController.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninPromoController.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninPromoController.java
-@@ -70,25 +70,8 @@ public class SigninPromoController {
+@@ -69,24 +69,7 @@ public class SigninPromoController {
+      * @param accessPoint The access point for which the impression limit is being checked.
       */
      public static boolean hasNotReachedImpressionLimit(@AccessPoint int accessPoint) {
-         SharedPreferencesManager preferencesManager = SharedPreferencesManager.getInstance();
+-        SharedPreferencesManager preferencesManager = SharedPreferencesManager.getInstance();
 -        switch (accessPoint) {
 -            case SigninAccessPoint.BOOKMARK_MANAGER:
--                return preferencesManager.readInt(
--                               ChromePreferenceKeys.SIGNIN_PROMO_IMPRESSIONS_COUNT_BOOKMARKS)
--                        < MAX_IMPRESSIONS_BOOKMARKS;
+-                return getSigninPromoImpressionsCountBookmarks() < MAX_IMPRESSIONS_BOOKMARKS;
 -            case SigninAccessPoint.NTP_CONTENT_SUGGESTIONS:
 -                // There is no impression limit for NTP content suggestions.
 -                return true;
@@ -296,8 +408,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninPr
 -                assert false : "Unexpected value for access point: " + accessPoint;
 -                return false;
 -        }
-+        // never show anything
-+        return true;
++         return false;
      }
  
      /**

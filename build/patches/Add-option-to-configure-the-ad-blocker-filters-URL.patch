@@ -8,6 +8,7 @@ Subject: Add option to configure the ad blocker filters URL
  chrome/android/java/res/values/values.xml     |  2 +
  .../java/res/xml/adblock_preferences.xml      | 25 +++++
  .../android/java/res/xml/main_preferences.xml |  5 +
+ .../browser/flags/FeatureUtilities.java       | 10 ++
  .../browser/settings/AdBlockEditor.java       | 92 +++++++++++++++++++
  .../browser/settings/AdBlockPreferences.java  | 56 +++++++++++
  chrome/app/generated_resources.grd            | 10 ++
@@ -19,7 +20,7 @@ Subject: Add option to configure the ad blocker filters URL
  chrome/common/pref_names.h                    |  1 +
  .../adblock_updater_service.cc                |  6 +-
  .../adblock_updater_service.h                 |  3 +-
- 16 files changed, 293 insertions(+), 5 deletions(-)
+ 17 files changed, 303 insertions(+), 5 deletions(-)
  create mode 100644 chrome/android/java/res/layout/adblock_editor.xml
  create mode 100644 chrome/android/java/res/xml/adblock_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
@@ -28,7 +29,7 @@ Subject: Add option to configure the ad blocker filters URL
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
-@@ -1277,6 +1277,8 @@ chrome_java_sources = [
+@@ -1296,6 +1296,8 @@ chrome_java_sources = [
    "java/src/org/chromium/chrome/browser/photo_picker/DecodeVideoTask.java",
    "java/src/org/chromium/chrome/browser/photo_picker/DecoderService.java",
    "java/src/org/chromium/chrome/browser/photo_picker/DecoderServiceHost.java",
@@ -66,7 +67,7 @@ new file mode 100644
 +            android:orientation="vertical"
 +            android:focusableInTouchMode="true" >
 +
-+            <org.chromium.chrome.browser.widget.ChromeTextInputLayout
++            <org.chromium.components.browser_ui.widget.text.ChromeTextInputLayout
 +                android:id="@+id/adblock_url"
 +                style="@style/PreferenceScreenLayout"
 +                android:layout_width="match_parent"
@@ -80,7 +81,7 @@ new file mode 100644
 +                    android:inputType="textUri"
 +                    android:singleLine="true"
 +                    android:hint="@string/options_adblock_edit_label" />
-+            </org.chromium.chrome.browser.widget.ChromeTextInputLayout>
++            </org.chromium.components.browser_ui.widget.text.ChromeTextInputLayout>
 +
 +            <Space style="@style/ButtonBarTopSpacer" />
 +            <View style="@style/ButtonBarTopDivider" />
@@ -104,7 +105,7 @@ new file mode 100644
 +        </LinearLayout>
 +    </ScrollView>
 +
-+    <include layout="@layout/preferences_action_bar_shadow"/>
++    <include layout="@layout/settings_action_bar_shadow"/>
 +
 +</FrameLayout>
 diff --git a/chrome/android/java/res/values/values.xml b/chrome/android/java/res/values/values.xml
@@ -152,9 +153,9 @@ new file mode 100644
 diff --git a/chrome/android/java/res/xml/main_preferences.xml b/chrome/android/java/res/xml/main_preferences.xml
 --- a/chrome/android/java/res/xml/main_preferences.xml
 +++ b/chrome/android/java/res/xml/main_preferences.xml
-@@ -60,6 +60,11 @@
+@@ -55,6 +55,11 @@
          android:key="privacy"
-         android:order="13"
+         android:order="12"
          android:title="@string/prefs_privacy"/>
 +    <Preference
 +        android:fragment="org.chromium.chrome.browser.settings.AdBlockPreferences"
@@ -164,6 +165,32 @@ diff --git a/chrome/android/java/res/xml/main_preferences.xml b/chrome/android/j
      <Preference
          android:fragment="org.chromium.chrome.browser.settings.accessibility.AccessibilitySettings"
          android:key="accessibility"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java b/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java
+@@ -238,6 +238,14 @@ public class FeatureUtilities {
+                 ChromeFeatureList.isEnabled(ChromeFeatureList.REACHED_CODE_PROFILER));
+     }
+ 
++     public static void setAdBlockFiltersURL(String url) {
++         FeatureUtilitiesJni.get().setAdBlockFiltersURL(url);
++     }
++
++     public static String getAdBlockFiltersURL() {
++         return FeatureUtilitiesJni.get().getAdBlockFiltersURL();
++     }
++
+     /**
+      * @return True if tab model merging for Android N+ is enabled.
+      */
+@@ -785,5 +793,7 @@ public class FeatureUtilities {
+     @NativeMethods
+     interface Natives {
+         boolean isNetworkServiceWarmUpEnabled();
++        void setAdBlockFiltersURL(String url);
++        String getAdBlockFiltersURL();
+     }
+ }
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
 new file mode 100644
 --- /dev/null
@@ -278,7 +305,7 @@ new file mode 100644
 +import org.chromium.chrome.browser.settings.ChromeSwitchPreference;
 +
 +import org.chromium.chrome.browser.settings.website.WebsitePreferenceBridge;
-+import org.chromium.chrome.browser.ContentSettingsType;
++import org.chromium.components.content_settings.ContentSettingsType;
 +import org.chromium.chrome.browser.settings.SettingsUtils;
 +import org.chromium.chrome.browser.flags.FeatureUtilities;
 +import androidx.annotation.VisibleForTesting;
@@ -325,7 +352,7 @@ new file mode 100644
 diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
-@@ -9734,6 +9734,16 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -9937,6 +9937,16 @@ Please help our engineers fix this problem. Tell us what happened right before y
        Never show this again.
      </message>
  
@@ -345,7 +372,7 @@ diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources
 diff --git a/chrome/browser/android/feature_utilities.cc b/chrome/browser/android/feature_utilities.cc
 --- a/chrome/browser/android/feature_utilities.cc
 +++ b/chrome/browser/android/feature_utilities.cc
-@@ -56,6 +56,14 @@ std::string GetReachedCodeProfilerTrialGroup() {
+@@ -32,6 +32,14 @@ std::string GetReachedCodeProfilerTrialGroup() {
  } // namespace android
  } // namespace chrome
  
@@ -357,13 +384,13 @@ diff --git a/chrome/browser/android/feature_utilities.cc b/chrome/browser/androi
 +  g_browser_process->local_state()->SetString(prefs::kAdBlockFiltersURL, base::android::ConvertJavaStringToUTF8(env, url));
 +}
 +
- static void JNI_FeatureUtilities_SetCustomTabVisible(
-     JNIEnv* env,
-     jboolean visible) {
+ static jboolean JNI_FeatureUtilities_IsNetworkServiceWarmUpEnabled(
+     JNIEnv* env) {
+   return content::IsOutOfProcessNetworkService() &&
 diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_process_impl.cc
 --- a/chrome/browser/browser_process_impl.cc
 +++ b/chrome/browser/browser_process_impl.cc
-@@ -1030,7 +1030,8 @@ BrowserProcessImpl::adblock_updater() {
+@@ -1035,7 +1035,8 @@ BrowserProcessImpl::adblock_updater() {
    adblock_updater_ = std::make_unique<adblock_updater::AdBlockUpdaterService>(
            g_browser_process->system_network_context_manager()->GetSharedURLLoaderFactory(),
            std::move(scheduler),
@@ -376,7 +403,7 @@ diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_pro
 diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/browser/net/system_network_context_manager.cc
 --- a/chrome/browser/net/system_network_context_manager.cc
 +++ b/chrome/browser/net/system_network_context_manager.cc
-@@ -409,6 +409,8 @@ SystemNetworkContextManager::SystemNetworkContextManager(
+@@ -358,6 +358,8 @@ SystemNetworkContextManager::SystemNetworkContextManager(
        ssl_config_service_manager_(
            SSLConfigServiceManager::CreateDefaultManager(local_state_)),
        proxy_config_monitor_(local_state_) {
@@ -385,9 +412,9 @@ diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/brows
  #if !defined(OS_ANDROID)
    // QuicAllowed was not part of Android policy.
    const base::Value* value =
-@@ -512,6 +514,7 @@ SystemNetworkContextManager::~SystemNetworkContextManager() {
- }
+@@ -462,6 +464,7 @@ SystemNetworkContextManager::~SystemNetworkContextManager() {
  
+ // static
  void SystemNetworkContextManager::RegisterPrefs(PrefRegistrySimple* registry) {
 +  registry->RegisterStringPref(prefs::kAdBlockFiltersURL, std::string());
    // Register the DnsClient and DoH preferences. The feature list has not been
@@ -396,7 +423,7 @@ diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/brows
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -893,6 +893,20 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -804,6 +804,20 @@ Your Google account may have other forms of browsing history like searches and a
          Captions
        </message>
  
@@ -420,7 +447,7 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
 diff --git a/chrome/common/pref_names.cc b/chrome/common/pref_names.cc
 --- a/chrome/common/pref_names.cc
 +++ b/chrome/common/pref_names.cc
-@@ -1974,6 +1974,9 @@ const char kAudioCaptureAllowed[] = "hardware.audio_capture_enabled";
+@@ -2002,6 +2002,9 @@ const char kAudioCaptureAllowed[] = "hardware.audio_capture_enabled";
  // capture devices without prompt.
  const char kAudioCaptureAllowedUrls[] = "hardware.audio_capture_allowed_urls";
  

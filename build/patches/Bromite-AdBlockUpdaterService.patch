@@ -7,7 +7,6 @@ Do not use experiments to enable/disable presets
 Always enable ad filtering
 Download filters by checking Last-Modified header first
 ---
- .../browser/flags/FeatureUtilities.java       |  10 +
  chrome/browser/after_startup_task_utils.cc    |   5 +
  chrome/browser/browser_process.h              |   7 +
  chrome/browser/browser_process_impl.cc        |  28 ++
@@ -28,38 +27,12 @@ Download filters by checking Last-Modified header first
  .../browser/subresource_filter_features.cc    | 113 +-------
  .../core/common/common_features.cc            |   2 +-
  .../frame_host/navigation_throttle_runner.cc  |  10 -
- 21 files changed, 818 insertions(+), 144 deletions(-)
+ 20 files changed, 808 insertions(+), 144 deletions(-)
  create mode 100644 components/component_updater/adblock_updater_service.cc
  create mode 100644 components/component_updater/adblock_updater_service.h
  create mode 100644 components/component_updater/download_filters_task.cc
  create mode 100644 components/component_updater/download_filters_task.h
 
-diff --git a/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java b/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java
---- a/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java
-+++ b/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java
-@@ -156,6 +156,14 @@ public class FeatureUtilities {
-         cacheServiceManagerForBackgroundPrefetch();
-     }
- 
-+     public static void setAdBlockFiltersURL(String url) {
-+         FeatureUtilitiesJni.get().setAdBlockFiltersURL(url);
-+     }
-+
-+     public static String getAdBlockFiltersURL() {
-+         return FeatureUtilitiesJni.get().getAdBlockFiltersURL();
-+     }
-+
-     /**
-      * @return True if tab model merging for Android N+ is enabled.
-      */
-@@ -729,5 +737,7 @@ public class FeatureUtilities {
-         void setActivityType(@ActivityType int type);
-         void setIsInMultiWindowMode(boolean isInMultiWindowMode);
-         boolean isNetworkServiceWarmUpEnabled();
-+        void setAdBlockFiltersURL(String url);
-+        String getAdBlockFiltersURL();
-     }
- }
 diff --git a/chrome/browser/after_startup_task_utils.cc b/chrome/browser/after_startup_task_utils.cc
 --- a/chrome/browser/after_startup_task_utils.cc
 +++ b/chrome/browser/after_startup_task_utils.cc
@@ -72,7 +45,7 @@ diff --git a/chrome/browser/after_startup_task_utils.cc b/chrome/browser/after_s
  using content::BrowserThread;
  using content::WebContents;
  using content::WebContentsObserver;
-@@ -136,6 +138,9 @@ void SetBrowserStartupIsComplete() {
+@@ -137,6 +139,9 @@ void SetBrowserStartupIsComplete() {
    g_after_startup_tasks.Get().clear();
    g_after_startup_tasks.Get().shrink_to_fit();
  
@@ -116,7 +89,7 @@ diff --git a/chrome/browser/browser_process.h b/chrome/browser/browser_process.h
 diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_process_impl.cc
 --- a/chrome/browser/browser_process_impl.cc
 +++ b/chrome/browser/browser_process_impl.cc
-@@ -1007,6 +1007,34 @@ BrowserProcessImpl::component_updater() {
+@@ -1012,6 +1012,34 @@ BrowserProcessImpl::component_updater() {
    return component_updater_.get();
  }
  
@@ -174,7 +147,7 @@ diff --git a/chrome/browser/browser_process_impl.h b/chrome/browser/browser_proc
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
-@@ -1727,9 +1727,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+@@ -1723,9 +1723,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
  
    PreBrowserStart();
  
@@ -191,23 +164,23 @@ diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_brows
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -63,7 +63,6 @@
- #include "chrome/browser/gpu/chrome_browser_main_extra_parts_gpu.h"
+@@ -65,7 +65,6 @@
  #include "chrome/browser/hid/chrome_hid_delegate.h"
+ #include "chrome/browser/interstitials/enterprise_util.h"
  #include "chrome/browser/lifetime/browser_shutdown.h"
 -#include "chrome/browser/lookalikes/lookalike_url_navigation_throttle.h"
  #include "chrome/browser/media/router/media_router_feature.h"
  #include "chrome/browser/media/router/presentation/presentation_service_delegate_impl.h"
  #include "chrome/browser/media/router/presentation/receiver_presentation_service_delegate_impl.h"
-@@ -208,7 +207,6 @@
- #include "components/nacl/common/buildflags.h"
- #include "components/nacl/common/nacl_constants.h"
+@@ -216,7 +215,6 @@
+ #include "components/language/core/browser/pref_names.h"
+ #include "components/metrics/client_info.h"
  #include "components/net_log/chrome_net_log.h"
 -#include "components/page_load_metrics/browser/metrics_navigation_throttle.h"
  #include "components/page_load_metrics/browser/metrics_web_contents_observer.h"
  #include "components/page_load_metrics/browser/page_load_metrics_util.h"
  #include "components/payments/content/payment_request_display_manager.h"
-@@ -3802,16 +3800,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
+@@ -3815,16 +3813,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
      content::NavigationHandle* handle) {
    std::vector<std::unique_ptr<content::NavigationThrottle>> throttles;
  
@@ -224,7 +197,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  #if BUILDFLAG(ENABLE_PLUGINS)
    MaybeAddThrottle(&throttles,
                     FlashDownloadInterception::MaybeCreateThrottleFor(handle));
-@@ -3926,10 +3914,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
+@@ -3939,10 +3927,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
                     safe_browsing::MaybeCreateNavigationThrottle(handle));
  #endif
  
@@ -972,7 +945,7 @@ new file mode 100644
 diff --git a/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc b/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc
 --- a/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc
 +++ b/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc
-@@ -306,6 +306,17 @@ ContentSubresourceFilterThrottleManager::
+@@ -310,6 +310,17 @@ ContentSubresourceFilterThrottleManager::
        throttle->NotifyPageActivationWithRuleset(EnsureRulesetHandle(),
                                                  ad_tagging_state);
      }

@@ -1,3 +1,9 @@
+# 81.0.4044.63
+* use upstream fix for SD card not found issue (fixes https://github.com/bromite/bromite/issues/485)
+* do not compile QR code sharing
+* remove obsolete patch for GCM experiment status
+* drop 2 patches for AImageReader crash fix (upstream has the same revert patches)
+
 # 80.0.3987.118
 * disable AImageReader for all ARM64 devices (fixes https://github.com/bromite/bromite/issues/497)
 * use upstream possible workaround for SD card not found issue (fixes https://github.com/bromite/bromite/issues/485)
