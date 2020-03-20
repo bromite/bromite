@@ -1,3 +1,6 @@
+# 81.0.4044.70
+* backport surface control fix (fixes https://github.com/bromite/bromite/issues/445)
+
 # 81.0.4044.63
 * use upstream fix for SD card not found issue (fixes https://github.com/bromite/bromite/issues/485)
 * do not compile QR code sharing
