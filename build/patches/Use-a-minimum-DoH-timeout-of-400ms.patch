@@ -1,0 +1,49 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Thu, 9 Jan 2020 19:59:08 +0100
+Subject: Use a minimum DoH timeout of 400ms
+
+---
+ net/dns/dns_session.cc | 7 ++++++-
+ net/dns/dns_session.h  | 1 +
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/net/dns/dns_session.cc b/net/dns/dns_session.cc
+--- a/net/dns/dns_session.cc
++++ b/net/dns/dns_session.cc
+@@ -118,6 +118,8 @@ DnsSession::DnsSession(const DnsConfig& config,
+   socket_pool_->Initialize(&config_.nameservers, net_log);
+   UMA_HISTOGRAM_CUSTOM_COUNTS("AsyncDNS.ServerCount",
+                               config_.nameservers.size(), 1, 10, 11);
++  // minimum timeout for all DoH requests
++  min_doh_timeout_ = base::TimeDelta::FromMilliseconds(400);
+   UpdateTimeouts(NetworkChangeNotifier::GetConnectionType());
+   InitializeServerStats();
+ }
+@@ -334,9 +336,12 @@ base::TimeDelta DnsSession::NextTimeout(unsigned server_index, int attempt) {
+ }
+ 
+ base::TimeDelta DnsSession::NextDohTimeout(unsigned doh_server_index) {
+-  return NextTimeoutHelper(
++  base::TimeDelta timeout = NextTimeoutHelper(
+       GetServerStats(doh_server_index, true /* is _doh_server */),
+       0 /* num_backoffs */);
++  if (timeout < min_doh_timeout_)
++     return min_doh_timeout_;
++  return timeout;
+ }
+ 
+ base::TimeDelta DnsSession::NextTimeoutHelper(ServerStats* server_stats,
+diff --git a/net/dns/dns_session.h b/net/dns/dns_session.h
+--- a/net/dns/dns_session.h
++++ b/net/dns/dns_session.h
+@@ -176,6 +176,7 @@ class NET_EXPORT_PRIVATE DnsSession : public base::RefCounted<DnsSession> {
+ 
+   base::TimeDelta initial_timeout_;
+   base::TimeDelta max_timeout_;
++  base::TimeDelta min_doh_timeout_;
+ 
+   // TODO(crbug.com/1022059): Move all handling of ServerStats (both for DoH and
+   // non-DoH) to ResolveContext.
+-- 
+2.17.1
+

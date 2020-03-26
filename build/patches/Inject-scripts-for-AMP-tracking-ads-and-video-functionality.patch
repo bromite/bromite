@@ -1,0 +1,180 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sat, 28 Oct 2017 10:09:41 +0200
+Subject: Inject scripts for AMP, tracking, ads and video functionality
+
+Remove AMP, tracking and ads from search/news results
+Break Page Visibility API and Fullscreen API for youtube.com and vimeo.com to allow playing videos in background (original Javascript code by timdream)
+Set proper injection script nonce
+Send a random key press to circumvent idle status detection
+---
+ third_party/blink/renderer/core/dom/BUILD.gn  |  2 +
+ .../blink/renderer/core/dom/document.cc       | 60 ++++++++++++++++++-
+ .../blink/renderer/core/dom/document.h        |  2 +
+ .../core/dom/extensions/anti_amp_cure.h       |  6 ++
+ .../core/dom/extensions/video_bg_play.h       |  6 ++
+ .../renderer/core/html/html_script_element.cc |  5 ++
+ .../renderer/core/html/html_script_element.h  |  1 +
+ 7 files changed, 81 insertions(+), 1 deletion(-)
+ create mode 100644 third_party/blink/renderer/core/dom/extensions/anti_amp_cure.h
+ create mode 100644 third_party/blink/renderer/core/dom/extensions/video_bg_play.h
+
+diff --git a/third_party/blink/renderer/core/dom/BUILD.gn b/third_party/blink/renderer/core/dom/BUILD.gn
+--- a/third_party/blink/renderer/core/dom/BUILD.gn
++++ b/third_party/blink/renderer/core/dom/BUILD.gn
+@@ -144,6 +144,8 @@ blink_core_sources("dom") {
+     "global_event_handlers.h",
+     "icon_url.cc",
+     "icon_url.h",
++    "extensions/anti_amp_cure.h",
++    "extensions/video_bg_play.h",
+     "id_target_observer.cc",
+     "id_target_observer.h",
+     "id_target_observer_registry.cc",
+diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
+--- a/third_party/blink/renderer/core/dom/document.cc
++++ b/third_party/blink/renderer/core/dom/document.cc
+@@ -261,6 +261,7 @@
+ #include "third_party/blink/renderer/core/page/scrolling/root_scroller_controller.h"
+ #include "third_party/blink/renderer/core/page/scrolling/scroll_state_callback.h"
+ #include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator.h"
++#include "extensions/video_bg_play.h"
+ #include "third_party/blink/renderer/core/page/scrolling/snap_coordinator.h"
+ #include "third_party/blink/renderer/core/page/scrolling/text_fragment_anchor.h"
+ #include "third_party/blink/renderer/core/page/scrolling/top_document_root_scroller_controller.h"
+@@ -323,6 +324,8 @@
+ #include "third_party/blink/renderer/platform/wtf/text/string_buffer.h"
+ #include "third_party/blink/renderer/platform/wtf/text/text_encoding_registry.h"
+ 
++#include "extensions/anti_amp_cure.h"
++
+ #ifndef NDEBUG
+ using WeakDocumentSet = blink::HeapHashSet<blink::WeakMember<blink::Document>>;
+ static WeakDocumentSet& liveDocumentSet();
+@@ -6418,8 +6421,63 @@ void Document::FinishedParsing() {
+   // Parser should have picked up all preloads by now
+   fetcher_->ClearPreloads(ResourceFetcher::kClearSpeculativeMarkupPreloads);
+ 
+-  if (IsPrefetchOnly())
++  if (IsPrefetchOnly()) {
+     WebPrerenderingSupport::Current()->PrefetchFinished();
++    return;
++  }
++
++  // determine whether this is a search results page
++  const WTF::String& host = url_.Host();
++  if ((host == nullptr) || host.IsEmpty())
++    return;
++
++  auto* bodyElement = body();
++  if (!bodyElement)
++    return;
++  int selected = 0;
++  size_t pos1 = host.Find("www.google."), pos2 = host.Find("news.google."), pos3 = url_.GetPath().Find("/search"), pos4 = host.Find("images.google.");
++  if (((pos1 == 0) && (pos3 == 0)) || (pos2 == 0) || (pos4 == 0)) {
++    LOG(INFO) << "injecting AMP removal Javascript payload, URL: " << url_.GetString();
++    selected = 1;
++    // check for eligibility of the video bg fix
++  } else if ((WTF::kNotFound != host.Find("youtube.com")) || (WTF::kNotFound != host.Find("vimeo.com"))) {
++    LOG(INFO) << "injecting video-bg-play Javascript payload, URL: " << url_.GetString();
++    selected = 2;
++  } else
++    return;
++
++  // find out which nonce to use
++  const AtomicString& nonce = findFirstScriptNonce();
++
++  HTMLScriptElement* e = MakeGarbageCollected<HTMLScriptElement>(*this, CreateElementFlags());
++  if (selected == 1)
++    e->setTextDirect(ANTI_AMP_CURE_JS);
++  else if (selected == 2)
++    e->setTextDirect(VIDEO_BG_PLAY_JS);
++  else
++    NOTREACHED();
++
++  if (nonce != g_null_atom)
++    e->setNonce(nonce);
++  else
++    LOG(WARNING) << "could not find script nonce to use";
++
++  bodyElement->AppendChild(e);
++}
++
++const AtomicString& Document::findFirstScriptNonce() {
++  HTMLCollection* s = scripts();
++  unsigned source_length = (unsigned)s->length();
++  // all scripts are likely to have the nonce, thus scan only first 10
++  if (source_length > 10)
++    source_length = 10;
++  for (unsigned i = 0; i < source_length; ++i) {
++    Element* element = s->item(i);
++    const AtomicString& nonce = element->nonce();
++    if ((nonce != g_null_atom) && !nonce.IsEmpty())
++      return nonce;
++  }
++  return g_null_atom;
+ }
+ 
+ void Document::ElementDataCacheClearTimerFired(TimerBase*) {
+diff --git a/third_party/blink/renderer/core/dom/document.h b/third_party/blink/renderer/core/dom/document.h
+--- a/third_party/blink/renderer/core/dom/document.h
++++ b/third_party/blink/renderer/core/dom/document.h
+@@ -1681,6 +1681,8 @@ class CORE_EXPORT Document : public ContainerNode,
+   void AddAXContext(AXContext*);
+   void RemoveAXContext(AXContext*);
+ 
++  const AtomicString& findFirstScriptNonce();
++
+   bool IsDocumentFragment() const =
+       delete;  // This will catch anyone doing an unnecessary check.
+   bool IsDocumentNode() const =
+diff --git a/third_party/blink/renderer/core/dom/extensions/anti_amp_cure.h b/third_party/blink/renderer/core/dom/extensions/anti_amp_cure.h
+new file mode 100644
+--- /dev/null
++++ b/third_party/blink/renderer/core/dom/extensions/anti_amp_cure.h
+@@ -0,0 +1,6 @@
++#ifndef anti_amp_cure_h
++#define anti_amp_cure_h
++
++#define ANTI_AMP_CURE_JS "/* Array of bytes to base64 string decoding */\n/*                                          */\nfunction b64ToUint6(nChr) {\n    return nChr > 64 && nChr < 91 ?\n        nChr - 65 :\n        nChr > 96 && nChr < 123 ?\n        nChr - 71 :\n        nChr > 47 && nChr < 58 ?\n        nChr + 4 :\n        nChr === 43 ?\n        62 :\n        nChr === 47 ?\n        63 :\n        0;\n}\n\n/* returns an Uint8Array with decoded bytes */\n/* from https://developer.mozilla.org/en-US/docs/Web/API/WindowBase64/Base64_encoding_and_decoding#Appendix.3A_Decode_a_Base64_string_to_Uint8Array_or_ArrayBuffer */\nfunction base64DecToArr(sBase64, nBlockSize) {\n    var\n        // URL encoding variant\n        sB64Enc = sBase64.replace('-', '+').replace('_', '/'),\n        nInLen = sB64Enc.length,\n        nOutLen = nBlockSize ? Math.ceil((nInLen * 3 + 1 >>> 2) / nBlockSize) * nBlockSize : nInLen * 3 + 1 >>> 2,\n        aBytes = new Uint8Array(nOutLen);\n\n    for (var nMod3, nMod4, nUint24 = 0, nOutIdx = 0, nInIdx = 0; nInIdx < nInLen; nInIdx++) {\n        nMod4 = nInIdx & 3;\n        nUint24 |= b64ToUint6(sB64Enc.charCodeAt(nInIdx)) << 18 - 6 * nMod4;\n        if (nMod4 === 3 || nInLen - nInIdx === 1) {\n            for (nMod3 = 0; nMod3 < 3 && nOutIdx < nOutLen; nMod3++, nOutIdx++) {\n                aBytes[nOutIdx] = nUint24 >>> (16 >>> nMod3 & 24) & 255;\n            }\n            nUint24 = 0;\n        }\n    }\n\n    return aBytes;\n}\n\nfunction replaceHyperlink(a, url) {\n    // create new A element - old one has event listeners attached\n    var newA = document.createElement('a');\n    newA.referrerPolicy = 'no-referrer';\n    // property set when hyperlink has been created by this script\n    newA.sane = true;\n    newA.href = url;\n    // copy CSS classes - news have only one\n    newA.className = a.className;\n    // scan child nodes for SVGs\n    // news nodes will only have a text node\n    a.childNodes.forEach(function(n) {\n        // remove icon from image result buttons\n        if (n.nodeName == 'DIV') {\n            var svgs = n.querySelectorAll('div svg');\n            if (svgs.length == 2)\n                n.removeChild(svgs[1]);\n        }\n    });\n    // use direct HTML as appending nodes skips some e.g. heading\n    newA.innerHTML = a.innerHTML;\n    // replace hyperlink\n    a.parentNode.replaceChild(newA, a);\n    return newA;\n}\n\nfunction getURLFromJsData(jsdata) {\n    if (!jsdata) return;\n\n    var res = jsdata.split(';');\n    if (res.length < 3) return;\n    // decode the payload\n    var data = base64DecToArr(res[1]);\n    // 08 = field 1, type Variant\n    if (data[0] != 0x08)\n        return;\n    // 13 = 19 (raw) or -10 (zigzag)\n    if (data[1] != 0x13) {\n        console.warn('could not decode:', res[1]);\n        return;\n    }\n    // 22 = field 4, type String\n    if (data[2] != 0x22)\n        return;\n    // usually 2 bytes varint e.g. 88-01 = length 136\n    res = proto_read_uint32(data, 3);\n    // extract slice with the URL\n    return new TextDecoder().decode(data.slice(res.pos, res.pos + res.value));\n}\n\nfunction recreateNewsHyperlink(a) {\n    var article = a.parentNode;\n    if (!article) return false;\n    // grab jsdata from parent\n    var url = getURLFromJsData(article.getAttribute('jsdata'));\n    // use the AMP (but external) URL as fallback\n    var obfuscated = false;\n    if (!url) {\n        url = a.href;\n        obfuscated = true;\n    }\n\n    // ready to replace the hyperlink\n    var newA = replaceHyperlink(a, url);\n    if (obfuscated)\n        newA.setAttribute(\"_target\", \"blank\");\n\n    // replace headline hyperlink\n    var h4a = article.querySelector('h4 a');\n    if (h4a) {\n        var newH4a = replaceHyperlink(h4a, url);\n        if (obfuscated)\n            newH4a.setAttribute(\"_target\", \"blank\");\n    }\n\n    // remove icon by finding the time sibling\n    var t = article.querySelector('time');\n    if (t) {\n        var found = false;\n        t.parentNode.childNodes.forEach(function(n) {\n            if (found) return;\n            if (n.innerText == \"amp\") {\n                t.parentNode.removeChild(n);\n                found = true;\n            }\n        });\n    }\n\n    // cleanup of the article\n    article.removeAttribute('jsmodel');\n    article.removeAttribute('jsaction');\n    article.removeAttribute('jscontroller');\n    article.removeAttribute('jsdata');\n\n    return true;\n}\n\n// from protobufjs\nfunction proto_read_uint32(buf, pos) {\n    var value = (buf[pos] & 127) >>> 0;\n    if (buf[pos++] < 128) return {\n        value: value,\n        pos: pos\n    };\n    value = (value | (buf[pos] & 127) << 7) >>> 0;\n    if (buf[pos++] < 128) return {\n        value: value,\n        pos: pos\n    };\n    value = (value | (buf[pos] & 127) << 14) >>> 0;\n    if (buf[pos++] < 128) return {\n        value: value,\n        pos: pos\n    };\n    value = (value | (buf[pos] & 127) << 21) >>> 0;\n    if (buf[pos++] < 128) return {\n        value: value,\n        pos: pos\n    };\n    value = (value | (buf[pos] & 15) << 28) >>> 0;\n    if (buf[pos++] < 128) return {\n        value: value,\n        pos: pos\n    };\n\n    if ((pos += 5) > buf.length)\n        throw RangeError('cannot read string length');\n\n    return {\n        value: value,\n        pos: pos\n    };\n}\n\nfunction recreateResultHyperlink(a) {\n    var url = a.href;\n    // remove AMP class, get actual page URL\n    var ampCur = a.getAttribute('data-amp-cur');\n    if (ampCur) {\n        url = ampCur;\n        a.classList.remove('amp_r');\n    } else {\n        var realLink = getRealLinkFromGoogleUrl(a);\n        if (realLink) {\n            url = realLink;\n        } else {\n            // might not be an actual hyperlink, ignore it\n            if (!a.href) {\n                return false;\n            }\n            // leave original href unchanged\n        }\n    }\n\n    // re-create with original CSS classes\n    replaceHyperlink(a, url);\n\n    return true;\n}\n\nfunction isResult(a) {\n    if (a.getAttribute('data-amp-cur'))\n        return true;\n    var inlineMousedown = a.getAttribute('onmousedown');\n    if (!inlineMousedown)\n        return false;\n    // return rwt(....); // E.g Google search results.\n    // return google.rwt(...); // E.g. sponsored search results\n    // return google.arwt(this); // E.g. sponsored search results (dec 2016).\n    return /\\ba?rwt\\(/.test(inlineMousedown) || /\\bctpacw\\b/.test(inlineMousedown);\n}\n\n/**\n * @returns {String} the real URL if the given link is a Google redirect URL.\n */\nfunction getRealLinkFromGoogleUrl(a) {\n    if ((a.hostname === location.hostname || a.hostname.indexOf('www.google.') == 0) &&\n        /^\\/(local_)?url$/.test(a.pathname)) {\n        // Google Maps / Dito (/local_url?q=<url>)\n        // Mobile (/url?q=<url>)\n        var url = /[?&](?:q|url)=((?:https?|ftp)[%:][^&]+)/.exec(a.search);\n        if (url)\n            return decodeURIComponent(url[1]);\n        // Help pages, e.g. safe browsing (/url?...&q=%2Fsupport%2Fanswer...)\n        url = /[?&](?:q|url)=((?:%2[Ff]|\\/)[^&]+)/.exec(a.search);\n        if (url)\n            return a.origin + decodeURIComponent(url[1]);\n    }\n}\n\nfunction sanitizeAds() {\n    // scan all divs\n    var div = document.getElementById('tads');\n    if (div) {\n        div.style.display = 'none';\n        return true;\n    }\n    return false;\n}\n\nfunction sanitizeCards(rootNode) {\n    var total = 0;\n    var sanitized = 0;\n\n    // fix cards\n    rootNode.querySelectorAll('g-inner-card a').forEach(function(a) {\n        total++;\n        if (!a.sane && recreateResultHyperlink(a))\n            sanitized++;\n    });\n    console.log(\"sanitized \", sanitized, \"/\", total, \" card hyperlinks\");\n}\n\nfunction hookMoreSearchResults() {\n    var cardsFn = function(e) {\n        var node = e.target;\n\n        if (node.nodeName == '#text' && node.parentNode && node.parentNode.nodeName == 'TITLE') {\n            // title is updated when page loading completes, thus trigger hyperlinks fixing afterwards\n            sanitizeCards(document);\n            document.removeEventListener('DOMNodeInserted', cardsFn);\n        }\n    }\n\n    // detect and sanitize cards\n    document.addEventListener('DOMNodeInserted', cardsFn);\n\n    var extrares = document.getElementById('extrares');\n    if (!extrares) {\n        console.warn(\"could not hook more results\");\n        return;\n    }\n    // mutation observers are great but they don't work\n    extrares.addEventListener(\"DOMNodeInserted\", function(e) {\n        var node = e.target;\n\n        if (node.id && node.id.startsWith(\"arc-srp\"))\n            sanitizeResultHyperlinks(node);\n    });\n}\n\nfunction setMlogoClick() {\n    // skip home page\n    if (document.getElementById('hplogo')) return;\n\n    var mlogo = document.getElementById('qslc');\n    if (mlogo && mlogo.children[0]) {\n        mlogo = mlogo.children[0];\n    } else {\n        mlogo = document.getElementById('mlogo');\n    }\n    if (mlogo) {\n        mlogo.removeAttribute(\"href\");\n        mlogo.setAttribute(\"onclick\", \"sanitizeAll()\");\n        console.log(\"logo link replaced\");\n    } else {\n        console.warn(\"could not replace logo link\");\n    }\n}\n\nfunction sanitizeResultHyperlinks(rootNode) {\n    var sanitized = 0,\n        total = 0;\n    // exclude translation hyperlink nodes\n    const exclude = rootNode.querySelectorAll('#tw-ob a');\n    // selector for results (doesn't work with news anymore)\n    rootNode.querySelectorAll('div[data-hveid]:not([data-hveid=\"\"]) a, div[data-ved]:not([data-ved=\"\"]) a').forEach(function(a) {\n        // exclude nodes which should not be processed\n        var excluded = false;\n        exclude.forEach(function(e) {\n            if (excluded) return;\n            if (e == a) {\n                excluded = true;\n            }\n        });\n        if (excluded) return;\n\n        total++;\n        if (!a.sane && recreateResultHyperlink(a))\n            sanitized++;\n    });\n    console.log(\"sanitized \", sanitized, \"/\", total, \" result hyperlinks\");\n}\n\nfunction sanitizeAllNews(rootNode) {\n    var sanitized = 0,\n        total = 0;\n    // pick all articles which have the associated data not yet wiped\n    rootNode.querySelectorAll('article[jsdata]:not([jsdata=\"\"]) a').forEach(function(a) {\n        total++;\n        if (!a.sane && recreateNewsHyperlink(a))\n            sanitized++;\n    });\n    console.log(\"sanitized \", sanitized, \"/\", total, \" news hyperlinks\");\n}\n\nfunction hookMoreNews(rootNode) {\n    var newsFn = function(e) {\n        var node = e.target;\n        // the real inserted node is 'C-WIZ', but we need to wait for loading to complete\n        if (node.nodeName == '#text' && node.parentNode && node.parentNode.nodeName == 'TITLE') {\n            // title is updated when page loading completes, thus trigger hyperlinks fixing afterwards\n            sanitizeAllNews(rootNode);\n            rootNode.removeEventListener('DOMNodeInserted', newsFn);\n        }\n    }\n    rootNode.addEventListener('DOMNodeInserted', newsFn);\n}\n\nfunction hookMoreImageResults() {\n    document.addEventListener(\"DOMNodeInserted\", function(e) {\n        var node = e.target;\n        // remove card and iframe, fix hyperlink\n        if (node.nodeName == \"DIV\" && node.hasAttribute(\"data-query\"))\n            sanitizeResultHyperlinks(node);\n        else if (node.nodeName == \"IFRAME\")\n            node.parentNode.removeChild(node);\n        else if (node.nodeName == \"C-WIZ\")\n            // replace instead of removing so that correlated image results will be displayed\n            node.parentNode.replaceChild(node, document.createTextNode(\"iframe replaced\"));\n    });\n}\n\nconsole.log('Bromite click-tracking and AMP removal v0.4.3');\n\nif (document.location.host.indexOf(\"news.google.\") === 0) {\n    sanitizeAllNews(document);\n    hookMoreNews(document);\n} else {\n    // avoid running cleanup on non-result pages\n    if (document.location.host.indexOf(\"accounts.google.\") == -1) {\n        console.log(\"ads removed: \", sanitizeAds());\n\n        if (document.location.search.match(/[?&]tbm=isch/)) {\n            // find main c-wiz\n            var cwizs = document.querySelectorAll('c-wiz[data-ssc=\"0\"]');\n            if (cwizs.length)\n              sanitizeResultHyperlinks(cwizs[0]);\n            else\n              console.warning('could not find main image results');\n            // image search results\n            hookMoreImageResults();\n        } else {\n            var main = document.getElementById('main');\n            if (main)\n                sanitizeResultHyperlinks(main);\n            else\n                console.warning('could not find main search results');\n            // regular search results\n            setMlogoClick();\n            hookMoreSearchResults();\n        }\n    }\n}\n"
++
++#endif  // anti_amp_cure_h
+diff --git a/third_party/blink/renderer/core/dom/extensions/video_bg_play.h b/third_party/blink/renderer/core/dom/extensions/video_bg_play.h
+new file mode 100644
+--- /dev/null
++++ b/third_party/blink/renderer/core/dom/extensions/video_bg_play.h
+@@ -0,0 +1,6 @@
++#ifndef video_bg_play_h
++#define video_bg_play_h
++
++#define VIDEO_BG_PLAY_JS "'use strict';\n\nconst IS_YOUTUBE = window.location.hostname.search(/(?:^|.+\\.)youtube.com/) > -1 ||\n                   window.location.hostname.search(/(?:^|.+\\.)youtube-nocookie.com/) > -1;\nconst IS_MOBILE_YOUTUBE = window.location.hostname == 'm.youtube.com';\nconst IS_VIMEO = window.location.hostname.search(/(?:^|.+\\.)vimeo.com/) > -1;\n\n/* video background play fix - based on https://github.com/mozilla/video-bg-play */\ndocument.wrappedJSObject = {};\n\n// Page Visibility API\nObject.defineProperties(document.wrappedJSObject,\n  { 'hidden': {value: false}, 'visibilityState': {value: 'visible'} });\n\nwindow.addEventListener(\n  'visibilitychange', evt => evt.stopImmediatePropagation(), true);\n\n// Fullscreen API\nif (IS_VIMEO) {\n  window.addEventListener(\n    'fullscreenchange', evt => evt.stopImmediatePropagation(), true);\n}\n\n// User activity tracking\nif (IS_YOUTUBE) {\n  const refreshInterval = 2 + 3 * 60 * 1000; // every 3 minutes\n  waitForYoutubeLactInit(() => refreshLact(), refreshInterval);\n}\n\nfunction waitForYoutubeLactInit(aCallback, aCallbackInterval, aDelay) {\n  let pageWin = document.wrappedJSObject;\n  if (pageWin.hasOwnProperty('_lact')) {\n    window.setInterval(aCallback, aCallbackInterval);\n  } else {\n    window.setTimeout(() => waitForYoutubeLactInit(aCallback,\n                                                   aCallbackInterval,\n                                                   aDelay * 2),\n                      aDelay);\n  }\n}\n\nfunction refreshLact() {\n  document.wrappedJSObject._lact = Date.now();\n}\n"
++
++#endif  // video_bg_play_h
+diff --git a/third_party/blink/renderer/core/html/html_script_element.cc b/third_party/blink/renderer/core/html/html_script_element.cc
+--- a/third_party/blink/renderer/core/html/html_script_element.cc
++++ b/third_party/blink/renderer/core/html/html_script_element.cc
+@@ -156,6 +156,11 @@ void HTMLScriptElement::setTextContent(
+   }
+ }
+ 
++void HTMLScriptElement::setTextDirect(
++    const char *s) {
++  Node::setTextContent(s);
++}
++
+ void HTMLScriptElement::setAsync(bool async) {
+   SetBooleanAttribute(html_names::kAsyncAttr, async);
+   loader_->HandleAsyncAttribute();
+diff --git a/third_party/blink/renderer/core/html/html_script_element.h b/third_party/blink/renderer/core/html/html_script_element.h
+--- a/third_party/blink/renderer/core/html/html_script_element.h
++++ b/third_party/blink/renderer/core/html/html_script_element.h
+@@ -52,6 +52,7 @@ class CORE_EXPORT HTMLScriptElement final : public HTMLElement,
+   void setText(const StringOrTrustedScript&, ExceptionState&);
+   void setInnerText(const StringOrTrustedScript&, ExceptionState&) override;
+   void setTextContent(const StringOrTrustedScript&, ExceptionState&) override;
++  void setTextDirect(const char*);
+ 
+   void setAsync(bool);
+   bool async() const;
+-- 
+2.17.1
+

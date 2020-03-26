@@ -1,0 +1,518 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sat, 23 Nov 2019 10:55:16 +0100
+Subject: Add user setting for DNS-over-HTTPS (DoH) custom URL
+
+---
+ chrome/android/chrome_java_sources.gni        |  2 +
+ chrome/android/java/res/layout/doh_editor.xml | 65 +++++++++++++
+ chrome/android/java/res/values/values.xml     |  2 +
+ .../android/java/res/xml/doh_preferences.xml  | 25 +++++
+ .../java/res/xml/privacy_preferences.xml      |  5 +
+ .../browser/flags/FeatureUtilities.java       | 24 +++++
+ .../chrome/browser/settings/DoHEditor.java    | 92 +++++++++++++++++++
+ .../browser/settings/DoHPreferences.java      | 54 +++++++++++
+ chrome/app/generated_resources.grd            |  6 ++
+ chrome/browser/android/feature_utilities.cc   | 23 +++++
+ .../net/system_network_context_manager.cc     | 41 ++-------
+ .../strings/android_chrome_strings.grd        | 11 +++
+ chrome/common/chrome_features.cc              |  4 +-
+ 13 files changed, 320 insertions(+), 34 deletions(-)
+ create mode 100644 chrome/android/java/res/layout/doh_editor.xml
+ create mode 100644 chrome/android/java/res/xml/doh_preferences.xml
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/DoHEditor.java
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/DoHPreferences.java
+
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -1335,6 +1335,8 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/searchwidget/SearchWidgetProvider.java",
+   "java/src/org/chromium/chrome/browser/send_tab_to_self/DevicePickerBottomSheetAdapter.java",
+   "java/src/org/chromium/chrome/browser/send_tab_to_self/DevicePickerBottomSheetContent.java",
++  "java/src/org/chromium/chrome/browser/settings/DoHEditor.java",
++  "java/src/org/chromium/chrome/browser/settings/DoHPreferences.java",
+   "java/src/org/chromium/chrome/browser/send_tab_to_self/NotificationManager.java",
+   "java/src/org/chromium/chrome/browser/send_tab_to_self/NotificationSharedPrefManager.java",
+   "java/src/org/chromium/chrome/browser/send_tab_to_self/SendTabToSelfAndroidBridge.java",
+diff --git a/chrome/android/java/res/layout/doh_editor.xml b/chrome/android/java/res/layout/doh_editor.xml
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/res/layout/doh_editor.xml
+@@ -0,0 +1,65 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright 2015 The Chromium Authors. All rights reserved.
++     Use of this source code is governed by a BSD-style license that can be
++     found in the LICENSE file. -->
++
++<FrameLayout
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    xmlns:tools="http://schemas.android.com/tools"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent" >
++
++    <ScrollView
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:id="@+id/scroll_view"
++        android:fillViewport="true" >
++
++        <LinearLayout
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:orientation="vertical"
++            android:focusableInTouchMode="true" >
++
++            <org.chromium.components.browser_ui.widget.text.ChromeTextInputLayout
++                android:id="@+id/doh_url"
++                style="@style/PreferenceScreenLayout"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content" >
++                <!-- TODO(crbug.com/900912): Fix and remove lint ignore -->
++                <EditText
++                    tools:ignore="Autofill"
++                    android:id="@+id/doh_url_edit"
++                    android:layout_width="match_parent"
++                    android:layout_height="wrap_content"
++                    android:inputType="textUri"
++                    android:singleLine="true"
++                    android:hint="@string/options_doh_edit_label" />
++            </org.chromium.components.browser_ui.widget.text.ChromeTextInputLayout>
++
++            <Space style="@style/ButtonBarTopSpacer" />
++            <View style="@style/ButtonBarTopDivider" />
++
++            <LinearLayout style="@style/ButtonBar" >
++                <org.chromium.ui.widget.ButtonCompat
++                    android:id="@+id/doh_reset"
++                    style="@style/ButtonBarButton"
++                    android:text="@string/reset" />
++
++                <org.chromium.ui.widget.ButtonCompat
++                    android:id="@+id/doh_cancel"
++                    style="@style/ButtonBarButton"
++                    android:text="@string/cancel" />
++
++                <org.chromium.ui.widget.ButtonCompat
++                    android:id="@+id/doh_save"
++                    style="@style/ButtonBarButton"
++                    android:text="@string/save" />
++            </LinearLayout>
++        </LinearLayout>
++    </ScrollView>
++
++    <include layout="@layout/settings_action_bar_shadow"/>
++
++</FrameLayout>
+diff --git a/chrome/android/java/res/values/values.xml b/chrome/android/java/res/values/values.xml
+--- a/chrome/android/java/res/values/values.xml
++++ b/chrome/android/java/res/values/values.xml
+@@ -86,6 +86,8 @@
+     <integer name="download_infobar_bar_fill_in_delay">400</integer>
+     <integer name="download_infobar_bar_fill_out_delay">200</integer>
+ 
++    <string name="doh_help_url">https://www.bromite.org/doh</string>
++
+     <!-- Bottom navigation bar styling. -->
+     <bool name="window_light_navigation_bar">true</bool>
+ 
+diff --git a/chrome/android/java/res/xml/doh_preferences.xml b/chrome/android/java/res/xml/doh_preferences.xml
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/res/xml/doh_preferences.xml
+@@ -0,0 +1,25 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright 2015 The Chromium Authors. All rights reserved.
++     Use of this source code is governed by a BSD-style license that can be
++     found in the LICENSE file. -->
++
++<PreferenceScreen
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto">
++
++    <org.chromium.chrome.browser.settings.ChromeSwitchPreference
++        android:key="doh_switch"
++        android:summaryOn="@string/text_on"
++        android:summaryOff="@string/text_off" />
++
++    <org.chromium.chrome.browser.settings.HyperlinkPreference
++        android:key="doh_help"
++        android:title="@string/doh_help"
++        app:url="@string/doh_help_url" />
++
++    <Preference
++        android:key="doh_edit"
++        android:title="@string/options_doh_edit_label"
++        android:fragment="org.chromium.chrome.browser.settings.DoHEditor" />
++
++</PreferenceScreen>
+diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
+--- a/chrome/android/java/res/xml/privacy_preferences.xml
++++ b/chrome/android/java/res/xml/privacy_preferences.xml
+@@ -19,6 +19,11 @@
+         android:key="can_make_payment"
+         android:title="@string/can_make_payment_title"
+         android:summary="@string/settings_can_make_payment_toggle_label" />
++    <Preference
++        android:fragment="org.chromium.chrome.browser.settings.DoHPreferences"
++        android:key="doh"
++        android:title="@string/options_doh_title"
++        android:summary="@string/options_doh_summary" />
+     <org.chromium.chrome.browser.settings.ChromeBaseCheckBoxPreference
+         android:key="preload_pages"
+         android:title="@string/preload_pages_title"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java b/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/flags/FeatureUtilities.java
+@@ -120,6 +120,26 @@ public class FeatureUtilities {
+     private static Boolean sEnabledTabThumbnailApsectRatioForTesting;
+     private static final String ALLOW_TO_REFETCH = "allow_to_refetch";
+ 
++     /**
++     * Records whether custom URL for DoH is enabled with native-side feature utilities.
++     * @param url Whether custom URL is enabled or not.
++     */
++     public static void setDoHEnabled(boolean enabled) {
++         FeatureUtilitiesJni.get().setDoHEnabled(enabled);
++     }
++
++     public static boolean getDoHEnabled() {
++         return FeatureUtilitiesJni.get().getDoHEnabled();
++     }
++
++     public static void setDoHTemplates(String t) {
++         FeatureUtilitiesJni.get().setDoHTemplates(t);
++     }
++
++     public static String getDoHTemplates() {
++         return FeatureUtilitiesJni.get().getDoHTemplates();
++     }
++
+     /**
+      * Checks if a cached feature flag is enabled.
+      *
+@@ -792,6 +812,10 @@ public class FeatureUtilities {
+ 
+     @NativeMethods
+     interface Natives {
++        void setDoHEnabled(boolean enabled);
++        boolean getDoHEnabled();
++        void setDoHTemplates(String templates);
++        String getDoHTemplates();
+         boolean isNetworkServiceWarmUpEnabled();
+         void setAdBlockFiltersURL(String url);
+         String getAdBlockFiltersURL();
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/DoHEditor.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/DoHEditor.java
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/DoHEditor.java
+@@ -0,0 +1,92 @@
++// Copyright 2015 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.settings;
++
++import android.os.Bundle;
++import android.support.v4.app.Fragment;
++import android.text.Editable;
++import android.text.TextWatcher;
++import android.view.LayoutInflater;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.Button;
++import android.widget.EditText;
++
++import org.chromium.chrome.browser.settings.SettingsUtils;
++import org.chromium.chrome.browser.flags.FeatureUtilities;
++import org.chromium.chrome.R;
++import org.chromium.components.url_formatter.UrlFormatter;
++
++/**
++ * Provides the Java-UI for editing the DNS-over-HTTPS (DoH) preference.
++ */
++public class DoHEditor extends Fragment implements TextWatcher {
++    private EditText mDoHUrlEdit;
++    private Button mSaveButton;
++    private Button mResetButton;
++
++    @Override
++    public View onCreateView(LayoutInflater inflater, ViewGroup container,
++            Bundle savedInstanceState) {
++        super.onCreate(savedInstanceState);
++        getActivity().setTitle(R.string.options_doh_edit_title);
++
++        View v = inflater.inflate(R.layout.doh_editor, container, false);
++        View scrollView = v.findViewById(R.id.scroll_view);
++        scrollView.getViewTreeObserver().addOnScrollChangedListener(
++                SettingsUtils.getShowShadowOnScrollListener(v, v.findViewById(R.id.shadow)));
++        mDoHUrlEdit = (EditText) v.findViewById(R.id.doh_url_edit);
++        mDoHUrlEdit.setText(FeatureUtilities.getDoHTemplates());
++        mDoHUrlEdit.addTextChangedListener(this);
++        mDoHUrlEdit.requestFocus();
++
++        initializeSaveCancelResetButtons(v);
++        return v;
++    }
++
++    @Override
++    public void beforeTextChanged(CharSequence s, int start, int count, int after) {
++    }
++
++    @Override
++    public void onTextChanged(CharSequence s, int start, int before, int count) {
++        mSaveButton.setEnabled(s.length() != 0);
++        mResetButton.setEnabled(true);
++    }
++
++    @Override
++    public void afterTextChanged(Editable s) {
++    }
++
++    private void initializeSaveCancelResetButtons(View v) {
++        mResetButton = (Button) v.findViewById(R.id.doh_reset);
++        mResetButton.setOnClickListener(new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                mDoHUrlEdit.setText(FeatureUtilities.getDoHTemplates());
++                getActivity().finish();
++            }
++        });
++
++        mSaveButton = (Button) v.findViewById(R.id.doh_save);
++        mSaveButton.setEnabled(false);
++        mSaveButton.setOnClickListener(new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                FeatureUtilities.setDoHTemplates(
++                        mDoHUrlEdit.getText().toString());
++                getActivity().finish();
++            }
++        });
++
++        Button button = (Button) v.findViewById(R.id.doh_cancel);
++        button.setOnClickListener(new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                getActivity().finish();
++            }
++        });
++    }
++}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/DoHPreferences.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/DoHPreferences.java
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/DoHPreferences.java
+@@ -0,0 +1,54 @@
++// Copyright 2015 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.settings;
++
++import android.os.Bundle;
++import android.support.v7.preference.Preference;
++import android.support.v7.preference.PreferenceFragmentCompat;
++import org.chromium.chrome.browser.settings.ChromeSwitchPreference;
++
++import org.chromium.chrome.browser.settings.SettingsUtils;
++import org.chromium.chrome.browser.flags.FeatureUtilities;
++import androidx.annotation.VisibleForTesting;
++import org.chromium.chrome.R;
++
++/**
++ * Fragment that allows the user to configure DoH related preferences.
++ */
++public class DoHPreferences extends PreferenceFragmentCompat {
++    @VisibleForTesting
++    public static final String PREF_DOH_SWITCH = "doh_switch";
++    private static final String PREF_DOH_EDIT = "doh_edit";
++
++    private Preference mDoHEdit;
++
++    @Override
++    public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
++        getActivity().setTitle(R.string.options_doh_title);
++        SettingsUtils.addPreferencesFromResource(this, R.xml.doh_preferences);
++
++        ChromeSwitchPreference mDoHSwitch =
++                (ChromeSwitchPreference) findPreference(PREF_DOH_SWITCH);
++        boolean isDoHEnabled = FeatureUtilities.getDoHEnabled();
++        mDoHSwitch.setChecked(isDoHEnabled);
++        mDoHSwitch.setOnPreferenceChangeListener((preference, newValue) -> {
++            FeatureUtilities.setDoHEnabled((boolean) newValue);
++            return true;
++        });
++
++        mDoHEdit = findPreference(PREF_DOH_EDIT);
++        updateCurrentDoHUrl();
++    }
++
++    private void updateCurrentDoHUrl() {
++        mDoHEdit.setSummary(FeatureUtilities.getDoHTemplates());
++    }
++
++    @Override
++    public void onResume() {
++        super.onResume();
++        updateCurrentDoHUrl();
++    }
++}
+diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -6848,6 +6848,12 @@ the Bookmarks menu.">
+         <message name="IDS_OPTIONS_HOMEPAGE_TITLE" desc="The title of the home page overlay on Android" formatter_data="android_java">
+           Home page
+         </message>
++        <message name="IDS_OPTIONS_DOH_TITLE" desc="The title of the DNS-over-HTTPS option on Android" formatter_data="android_java">
++          Secure DNS
++        </message>
++        <message name="IDS_OPTIONS_DOH_SUMMARY" desc="The title of the DNS-over-HTTPS summary on Android" formatter_data="android_java">
++          Configure DNS-over-HTTPS (DoH) secure DNS
++        </message>
+       </if>
+ 
+       <!-- Autofill dialog: field labels. -->
+diff --git a/chrome/browser/android/feature_utilities.cc b/chrome/browser/android/feature_utilities.cc
+--- a/chrome/browser/android/feature_utilities.cc
++++ b/chrome/browser/android/feature_utilities.cc
+@@ -7,6 +7,9 @@
+ #include "chrome/android/chrome_jni_headers/FeatureUtilities_jni.h"
+ 
+ #include "base/android/jni_string.h"
++#include "chrome/browser/browser_process.h"
++#include "components/prefs/pref_service.h"
++#include "chrome/common/pref_names.h"
+ #include "content/public/common/content_features.h"
+ #include "content/public/common/network_service_util.h"
+ 
+@@ -45,3 +48,23 @@ static jboolean JNI_FeatureUtilities_IsNetworkServiceWarmUpEnabled(
+   return content::IsOutOfProcessNetworkService() &&
+          base::FeatureList::IsEnabled(features::kWarmUpNetworkProcess);
+ }
++
++static jboolean JNI_FeatureUtilities_GetDoHEnabled(JNIEnv* env) {
++  std::string doh_mode = g_browser_process->local_state()->GetString(prefs::kDnsOverHttpsMode);
++  return ((doh_mode == "secure") || (doh_mode == "auto"));
++}
++
++static void JNI_FeatureUtilities_SetDoHEnabled(JNIEnv* env, jboolean enabled) {
++  if (enabled)
++    g_browser_process->local_state()->SetString(prefs::kDnsOverHttpsMode, "secure");
++  else
++    g_browser_process->local_state()->SetString(prefs::kDnsOverHttpsMode, "off");
++}
++
++static ScopedJavaLocalRef<jstring> JNI_FeatureUtilities_GetDoHTemplates(JNIEnv* env) {
++  return base::android::ConvertUTF8ToJavaString(env, g_browser_process->local_state()->GetString(prefs::kDnsOverHttpsTemplates));
++}
++
++static void JNI_FeatureUtilities_SetDoHTemplates(JNIEnv* env, const JavaParamRef<jstring>& templates) {
++  g_browser_process->local_state()->SetString(prefs::kDnsOverHttpsTemplates, base::android::ConvertJavaStringToUTF8(env, templates));
++}
+diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/browser/net/system_network_context_manager.cc
+--- a/chrome/browser/net/system_network_context_manager.cc
++++ b/chrome/browser/net/system_network_context_manager.cc
+@@ -379,40 +379,12 @@ SystemNetworkContextManager::SystemNetworkContextManager(
+   local_state_->SetDefaultPrefValue(prefs::kBuiltInDnsClientEnabled,
+                                     base::Value(ShouldEnableAsyncDns()));
+   std::string default_doh_mode = chrome_browser_net::kDnsOverHttpsModeOff;
+-  std::string default_doh_templates = "";
+-  if (base::FeatureList::IsEnabled(features::kDnsOverHttps)) {
+-    if (features::kDnsOverHttpsFallbackParam.Get()) {
+-      default_doh_mode = chrome_browser_net::kDnsOverHttpsModeAutomatic;
+-    } else {
+-      default_doh_mode = chrome_browser_net::kDnsOverHttpsModeSecure;
+-    }
+-    default_doh_templates = features::kDnsOverHttpsTemplatesParam.Get();
+-  }
++  std::string default_doh_templates = features::kDnsOverHttpsTemplatesParam.Get();
+   local_state_->SetDefaultPrefValue(prefs::kDnsOverHttpsMode,
+                                     base::Value(default_doh_mode));
+   local_state_->SetDefaultPrefValue(prefs::kDnsOverHttpsTemplates,
+                                     base::Value(default_doh_templates));
+ 
+-  // If the user has explicitly enabled or disabled the DoH experiment in
+-  // chrome://flags, store that choice in the user prefs so that it can be
+-  // persisted after the experiment ends. Also make sure to remove the stored
+-  // prefs value if the user has changed their chrome://flags selection to the
+-  // default.
+-  flags_ui::PrefServiceFlagsStorage flags_storage(local_state_);
+-  std::set<std::string> entries = flags_storage.GetFlags();
+-  if (entries.count("dns-over-https@1")) {
+-    // The user has "Enabled" selected.
+-    local_state_->SetString(prefs::kDnsOverHttpsMode,
+-                            chrome_browser_net::kDnsOverHttpsModeAutomatic);
+-  } else if (entries.count("dns-over-https@2")) {
+-    // The user has "Disabled" selected.
+-    local_state_->SetString(prefs::kDnsOverHttpsMode,
+-                            chrome_browser_net::kDnsOverHttpsModeOff);
+-  } else {
+-    // The user has "Default" selected.
+-    local_state_->ClearPref(prefs::kDnsOverHttpsMode);
+-  }
+-
+   PrefChangeRegistrar::NamedChangeCallback dns_pref_callback =
+       base::BindRepeating(&OnStubResolverConfigChanged,
+                           base::Unretained(local_state_));
+@@ -548,9 +520,14 @@ void SystemNetworkContextManager::GetStubResolverConfig(
+ 
+   std::string doh_templates =
+       local_state->GetString(prefs::kDnsOverHttpsTemplates);
+-  std::string server_method;
+-  if (!doh_templates.empty() &&
+-      *secure_dns_mode != net::DnsConfig::SecureDnsMode::OFF) {
++  if (doh_templates.empty()) {
++    *secure_dns_mode = net::DnsConfig::SecureDnsMode::OFF;
++    doh_mode = chrome_browser_net::kDnsOverHttpsModeOff;
++  }
++
++  LOG(INFO) << "DoH templates: '" << doh_templates << "' with mode " << doh_mode;
++  if (*secure_dns_mode != net::DnsConfig::SecureDnsMode::OFF) {
++    std::string server_method;
+     for (const std::string& server_template :
+          SplitString(doh_templates, " ", base::TRIM_WHITESPACE,
+                      base::SPLIT_WANT_NONEMPTY)) {
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -578,6 +578,17 @@ CHAR-LIMIT guidelines:
+         Chrome Passwords
+       </message>
+ 
++      <!-- DoH preferences -->
++      <message name="IDS_OPTIONS_DOH_EDIT_TITLE" desc="The title of the screen that allows users to change the URL that is used for DNS-over-HTTPS queries.">
++        Edit DoH template URLs
++      </message>
++      <message name="IDS_OPTIONS_DOH_EDIT_LABEL" desc="The label for the edit text field that allows the user to change the URL that is used for DNS-over-HTTPS queries.">
++        DoH template URLs
++      </message>
++      <message name="IDS_DOH_HELP" desc="The title of the hyperlink that allows users to visit the wiki page with instructions for DNS-over-HTTPS configuration.">
++        Visit help page
++      </message>
++
+       <!-- Homepage preferences -->
+       <message name="IDS_OPTIONS_HOMEPAGE_EDIT_TITLE" desc="The title of the screen that allows users to change the URL that opens when they tap on the home page button in the omnibox.">
+         Edit home page
+diff --git a/chrome/common/chrome_features.cc b/chrome/common/chrome_features.cc
+--- a/chrome/common/chrome_features.cc
++++ b/chrome/common/chrome_features.cc
+@@ -293,12 +293,12 @@ const char kDisallowUnsafeHttpDownloadsParamName[] = "MimeTypeList";
+ 
+ // Enable DNS over HTTPS (DoH).
+ const base::Feature kDnsOverHttps{"DnsOverHttps",
+-                                  base::FEATURE_DISABLED_BY_DEFAULT};
++                                  base::FEATURE_ENABLED_BY_DEFAULT};
+ 
+ // Set whether fallback to insecure DNS is allowed by default. This setting may
+ // be overridden for individual transactions.
+ const base::FeatureParam<bool> kDnsOverHttpsFallbackParam{&kDnsOverHttps,
+-                                                          "Fallback", true};
++                                                          "Fallback", false};
+ 
+ // Supply one or more space-separated DoH server URI templates to use when this
+ // feature is enabled. If no templates are specified, then a hardcoded mapping
+-- 
+2.17.1
+

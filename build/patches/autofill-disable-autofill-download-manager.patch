@@ -1,0 +1,145 @@
+From: Jan Engelhardt <jengelh@inai.de>
+Date: Thu, 11 Sep 2014 16:37:32 +0200
+Subject: autofill: disable autofill download manager
+
+Disables the autofill download manager (trk:158).
+---
+ .../core/browser/autofill_download_manager.cc | 60 +++----------------
+ .../autofill/core/browser/autofill_manager.cc | 18 ------
+ 2 files changed, 7 insertions(+), 71 deletions(-)
+
+diff --git a/components/autofill/core/browser/autofill_download_manager.cc b/components/autofill/core/browser/autofill_download_manager.cc
+--- a/components/autofill/core/browser/autofill_download_manager.cc
++++ b/components/autofill/core/browser/autofill_download_manager.cc
+@@ -66,7 +66,6 @@ constexpr std::pair<int, int> kAutofillExperimentRanges[] = {
+     {3314445, 3314448}, {3314854, 3314883},
+ };
+ 
+-const size_t kMaxQueryGetSize = 1400;  // 1.25 KiB
+ const size_t kAutofillDownloadManagerMaxFormCacheSize = 16;
+ const size_t kMaxFieldsPerQueryRequest = 100;
+ 
+@@ -522,35 +521,6 @@ bool GetUploadPayloadForApi(const AutofillUploadContents& upload,
+   return upload_request.SerializeToString(payload);
+ }
+ 
+-// Gets an API method URL given its type (query or upload), an optional
+-// resource ID, and the HTTP method to be used.
+-// Example usage:
+-// * GetAPIMethodUrl(REQUEST_QUERY, "1234", "GET") will return "/v1/pages/1234".
+-// * GetAPIMethodUrl(REQUEST_QUERY, "1234", "POST") will return "/v1/pages:get".
+-// * GetAPIMethodUrl(REQUEST_UPLOAD, "", "POST") will return "/v1/forms:vote".
+-std::string GetAPIMethodUrl(AutofillDownloadManager::RequestType type,
+-                            base::StringPiece resource_id,
+-                            base::StringPiece method) {
+-  const char* api_method_url;
+-  if (type == AutofillDownloadManager::REQUEST_QUERY) {
+-    if (method == "POST") {
+-      api_method_url = "/v1/pages:get";
+-    } else {
+-      api_method_url = "/v1/pages";
+-    }
+-  } else if (type == AutofillDownloadManager::REQUEST_UPLOAD) {
+-    api_method_url = "/v1/forms:vote";
+-  } else {
+-    // This should not be reached, but we never know.
+-    NOTREACHED() << "Request of type " << type << " is invalid";
+-    return "";
+-  }
+-  if (resource_id.empty()) {
+-    return std::string(api_method_url);
+-  }
+-  return base::StrCat({api_method_url, "/", resource_id});
+-}
+-
+ // Gets HTTP body payload for API POST request.
+ bool GetAPIBodyPayload(const std::string& payload,
+                        AutofillDownloadManager::RequestType type,
+@@ -774,6 +744,7 @@ size_t AutofillDownloadManager::GetPayloadLength(
+ 
+ std::tuple<GURL, std::string> AutofillDownloadManager::GetRequestURLAndMethod(
+     const FormRequestData& request_data) const {
++#if 0
+   std::string method("POST");
+   std::string query_str;
+ 
+@@ -796,35 +767,18 @@ std::tuple<GURL, std::string> AutofillDownloadManager::GetRequestURLAndMethod(
+   GURL url = autofill_server_url_
+                  .Resolve(RequestTypeToString(request_data.request_type))
+                  .ReplaceComponents(replacements);
++#else
++  std::string method("GET");
++  GURL url = GURL("about:blank");
++#endif
+   return std::make_tuple(std::move(url), std::move(method));
+ }
+ 
+ std::tuple<GURL, std::string>
+ AutofillDownloadManager::GetRequestURLAndMethodForApi(
+     const FormRequestData& request_data) const {
+-  // ID of the resource to add to the API request URL. Nothing will be added if
+-  // |resource_id| is empty.
+-  std::string resource_id;
+-  std::string method = "POST";
+-
+-  if (request_data.request_type == AutofillDownloadManager::REQUEST_QUERY) {
+-    if (GetPayloadLength(request_data.payload) <= kMaxAPIQueryGetSize) {
+-      resource_id = request_data.payload;
+-      method = "GET";
+-      UMA_HISTOGRAM_BOOLEAN("Autofill.Query.ApiUrlIsTooLong", false);
+-    } else {
+-      UMA_HISTOGRAM_BOOLEAN("Autofill.Query.ApiUrlIsTooLong", true);
+-    }
+-    UMA_HISTOGRAM_BOOLEAN("Autofill.Query.Method", (method == "GET") ? 0 : 1);
+-  }
+-
+-  // Make the canonical URL to query the API, e.g.,
+-  // https://autofill.googleapis.com/v1/forms/1234?alt=proto.
+-  GURL url = autofill_server_url_.Resolve(
+-      GetAPIMethodUrl(request_data.request_type, resource_id, method));
+-
+-  // Add the query parameter to set the response format to a serialized proto.
+-  url = net::AppendQueryParameter(url, "alt", "proto");
++  std::string method("GET");
++  GURL url = GURL("about:blank");
+ 
+   return std::make_tuple(std::move(url), std::move(method));
+ }
+diff --git a/components/autofill/core/browser/autofill_manager.cc b/components/autofill/core/browser/autofill_manager.cc
+--- a/components/autofill/core/browser/autofill_manager.cc
++++ b/components/autofill/core/browser/autofill_manager.cc
+@@ -185,19 +185,6 @@ void LogDeveloperEngagementUkm(ukm::UkmRecorder* ukm_recorder,
+   }
+ }
+ 
+-std::string GetAPIKeyForUrl(version_info::Channel channel) {
+-  // First look if we can get API key from command line flag.
+-  const base::CommandLine& command_line =
+-      *base::CommandLine::ForCurrentProcess();
+-  if (command_line.HasSwitch(switches::kAutofillAPIKey))
+-    return command_line.GetSwitchValueASCII(switches::kAutofillAPIKey);
+-
+-  // Get the API key from Chrome baked keys.
+-  if (channel == version_info::Channel::STABLE)
+-    return google_apis::GetAPIKey();
+-  return google_apis::GetNonStableAPIKey();
+-}
+-
+ ValuePatternsMetric GetValuePattern(const base::string16& value) {
+   if (IsUPIVirtualPaymentAddress(value))
+     return ValuePatternsMetric::kUpiVpa;
+@@ -1579,11 +1566,6 @@ AutofillManager::AutofillManager(
+                                     : std::make_unique<CreditCardAccessManager>(
+                                           driver, client_, personal_data_,
+                                           credit_card_form_event_logger_.get());
+-  if (enable_download_manager == ENABLE_AUTOFILL_DOWNLOAD_MANAGER) {
+-    version_info::Channel channel = client_->GetChannel();
+-    download_manager_.reset(new AutofillDownloadManager(
+-        driver, this, GetAPIKeyForUrl(channel), client_->GetLogManager()));
+-  }
+   CountryNames::SetLocaleString(app_locale_);
+ }
+ 
+-- 
+2.17.1
+

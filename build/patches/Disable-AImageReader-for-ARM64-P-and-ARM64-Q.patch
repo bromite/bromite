@@ -1,0 +1,102 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Thu, 20 Feb 2020 22:44:06 +0100
+Subject: Disable AImageReader for ARM64/P and ARM64/Q
+
+---
+ chrome/browser/android/chrome_startup_flags.cc | 9 +++++++++
+ gpu/config/gpu_finch_features.cc               | 4 ++++
+ gpu/config/gpu_util.cc                         | 8 ++++++++
+ media/base/media_switches.cc                   | 4 ++++
+ 4 files changed, 25 insertions(+)
+
+diff --git a/chrome/browser/android/chrome_startup_flags.cc b/chrome/browser/android/chrome_startup_flags.cc
+--- a/chrome/browser/android/chrome_startup_flags.cc
++++ b/chrome/browser/android/chrome_startup_flags.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "chrome/browser/android/chrome_startup_flags.h"
+ 
++#include "base/android/build_info.h"
+ #include "base/android/jni_android.h"
+ #include "base/android/jni_string.h"
+ #include "base/android/scoped_java_ref.h"
+@@ -16,6 +17,7 @@
+ #include "chrome/common/chrome_switches.h"
+ #include "components/browser_sync/browser_sync_switches.h"
+ #include "components/dom_distiller/core/dom_distiller_switches.h"
++#include "content/public/common/content_switches.h"
+ #include "media/base/media_switches.h"
+ 
+ namespace {
+@@ -40,6 +42,13 @@ void SetChromeSpecificCommandLineFlags() {
+   if (base::SysInfo::IsLowEndDevice())
+     SetCommandLineSwitchASCII(switches::kDisableSyncTypes, "Favicon Images");
+ 
++#ifdef ARCH_CPU_ARM64
++  // workaround for Android 9/10 crashes on ARM64 CPUs
++  if (base::android::BuildInfo::GetInstance()->sdk_int() >= base::android::SDK_VERSION_P) {
++    SetCommandLineSwitchASCII("disable_aimagereader", "1");
++  }
++#endif
++
+   // Enable DOM Distiller backend.
+   SetCommandLineSwitch(switches::kEnableDomDistiller);
+ }
+diff --git a/gpu/config/gpu_finch_features.cc b/gpu/config/gpu_finch_features.cc
+--- a/gpu/config/gpu_finch_features.cc
++++ b/gpu/config/gpu_finch_features.cc
+@@ -15,7 +15,11 @@ namespace features {
+ #if defined(OS_ANDROID)
+ // Use android AImageReader when playing videos with MediaPlayer.
+ const base::Feature kAImageReaderMediaPlayer{"AImageReaderMediaPlayer",
++#ifdef ARCH_CPU_ARM64
++                                             base::FEATURE_DISABLED_BY_DEFAULT};
++#else
+                                              base::FEATURE_ENABLED_BY_DEFAULT};
++#endif
+ 
+ // Used only by webview to disable SurfaceControl.
+ const base::Feature kDisableSurfaceControlForWebview{
+diff --git a/gpu/config/gpu_util.cc b/gpu/config/gpu_util.cc
+--- a/gpu/config/gpu_util.cc
++++ b/gpu/config/gpu_util.cc
+@@ -47,6 +47,9 @@ GpuFeatureStatus GetAndroidSurfaceControlFeatureStatus(
+ #if !defined(OS_ANDROID)
+   return kGpuFeatureStatusDisabled;
+ #else
++  if (blacklisted_features.count(GPU_FEATURE_TYPE_ANDROID_SURFACE_CONTROL))
++    return kGpuFeatureStatusBlacklisted;
++
+   if (!gpu_preferences.enable_android_surface_control)
+     return kGpuFeatureStatusDisabled;
+ 
+@@ -288,6 +291,11 @@ void AdjustGpuFeatureStatusToWorkarounds(GpuFeatureInfo* gpu_feature_info) {
+     gpu_feature_info->status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGL2] =
+         kGpuFeatureStatusBlacklisted;
+   }
++
++  if (gpu_feature_info->IsWorkaroundEnabled(DISABLE_AIMAGEREADER)) {
++    gpu_feature_info->status_values[GPU_FEATURE_TYPE_ANDROID_SURFACE_CONTROL] =
++        kGpuFeatureStatusBlacklisted;
++  }
+ }
+ 
+ GPUInfo* g_gpu_info_cache = nullptr;
+diff --git a/media/base/media_switches.cc b/media/base/media_switches.cc
+--- a/media/base/media_switches.cc
++++ b/media/base/media_switches.cc
+@@ -500,7 +500,11 @@ const base::Feature kMediaDrmPreprovisioningAtStartup{
+ 
+ // Enables the Android Image Reader path for Video decoding(for AVDA and MCVD)
+ const base::Feature kAImageReaderVideoOutput{"AImageReaderVideoOutput",
++#ifdef ARCH_CPU_ARM64
++                                             base::FEATURE_DISABLED_BY_DEFAULT};
++#else
+                                              base::FEATURE_ENABLED_BY_DEFAULT};
++#endif
+ 
+ // Prevents using SurfaceLayer for videos. This is meant to be used by embedders
+ // that cannot support SurfaceLayer at the moment.
+-- 
+2.17.1
+

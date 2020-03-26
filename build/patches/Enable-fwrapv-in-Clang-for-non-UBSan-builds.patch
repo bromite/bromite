@@ -1,0 +1,58 @@
+From: Daniel Micay <danielmicay@gmail.com>
+Date: Thu, 22 Dec 2016 07:15:34 -0500
+Subject: Enable -fwrapv in Clang for non-UBSan builds
+
+Using -fwrapv (notably only when not using signed integer overflow checking -
+since it will override it and result in not performing checks) is just common
+sense since it eliminates the chance of security vulnerabilities being
+introduced by optimizations based on signed overflow being undefined.
+That has happened before, and those optimizations don't even add up to a 0.1%
+performance increase for this kind of software. It's not worth having.
+The Linux kernel passes -fwrapv and also -fno-strict-aliasing to disable those
+dangerous optimizations (since there is so much incorrect code they can break).
+In fact, it is easy to point to dozens of known examples of invalid code that
+could potentially be broken by those optimizations.
+
+It is not acceptable for projects to be using optimizations that are known to
+be broken with a bunch of code in their tree.
+They put barely any effort into even fixing the known cases.
+Chromium has blacklists for UBSan for 'false positives' (none of which are
+actually false positives, but rather "undefined, but not a bug beyond
+potentially being broken by optimizations or even code generation without
+them") and also for components too full of these bugs for them to currently
+want to bother with it. That includes a bunch of signed overflow issues
+(there is sadly no detection for aliasing violations, which are fairly common,
+but not that common).
+
+Ideally, -fwrapv could be always passed, but unfortunately the way it is
+implemented has silly interactions with other switches.
+The reason it would still make sense to pass it is because due to their UBSan
+blacklists, they get far from full coverage with it, so -fwrapv would still
+be better than nothing where it's not being used.
+
+Since -fwrapv makes signed integer overflow well-defined, Clang will disable
+the UBSan checks for signed integer overflow, including in the
+production-oriented trapping mode used for hardening.
+
+Excerpt from https://github.com/bromite/bromite/issues/226
+---
+ build/config/compiler/BUILD.gn | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/build/config/compiler/BUILD.gn b/build/config/compiler/BUILD.gn
+--- a/build/config/compiler/BUILD.gn
++++ b/build/config/compiler/BUILD.gn
+@@ -292,6 +292,10 @@ config("compiler") {
+       }
+     }
+ 
++    if (is_clang && !is_ubsan && !is_ubsan_security) {
++      cflags += [ "-fwrapv" ]
++    }
++
+     # Linker warnings.
+     if (fatal_linker_warnings && !(is_chromeos && current_cpu == "arm") &&
+         !is_mac && !is_ios && current_os != "aix") {
+-- 
+2.17.1
+

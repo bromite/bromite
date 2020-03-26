@@ -1,0 +1,1537 @@
+From: Wengling Chen <feiyu2817@gmail.com>
+Date: Sat, 2 Nov 2019 08:00:04 +0100
+Subject: Remove dependency on com.google.android.gms.cast
+
+---
+ chrome/android/BUILD.gn                       |   6 -
+ chrome/android/features/media_router/BUILD.gn |   2 -
+ .../browser/media/router/CastSessionUtil.java |  35 ------
+ .../browser/media/router/MediaSink.java       |  44 +------
+ .../media/router/MediaStatusBridge.java       |  40 ++----
+ .../caf/BaseNotificationController.java       |  46 -------
+ .../router/caf/BaseSessionController.java     | 118 +-----------------
+ .../router/caf/CafBaseMediaRouteProvider.java | 103 +--------------
+ .../router/caf/CafMediaRouteProvider.java     |  16 ---
+ .../media/router/caf/CafMessageHandler.java   |  97 +-------------
+ .../media/router/caf/CastMediaSource.java     |  10 +-
+ .../media/router/caf/CastOptionsProvider.java |  22 +---
+ .../router/caf/CastSessionController.java     |  84 -------------
+ .../browser/media/router/caf/CastUtils.java   |   6 -
+ .../CafExpandedControllerActivity.java        |  24 +---
+ .../remoting/FlingingControllerAdapter.java   |  67 ----------
+ .../caf/remoting/RemotingMediaSource.java     |   8 +-
+ .../remoting/RemotingSessionController.java   |  21 ----
+ chrome/android/java/AndroidManifest.xml       |  28 -----
+ chrome/test/android/cast_emulator/BUILD.gn    |   1 -
+ third_party/android_deps/BUILD.gn             |  33 -----
+ 21 files changed, 27 insertions(+), 784 deletions(-)
+
+diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
+--- a/chrome/android/BUILD.gn
++++ b/chrome/android/BUILD.gn
+@@ -224,8 +224,6 @@ android_library("chrome_java") {
+     ":usage_stats_proto_java",
+     "$google_play_services_package:google_play_services_base_java",
+     "$google_play_services_package:google_play_services_basement_java",
+-    "$google_play_services_package:google_play_services_cast_framework_java",
+-    "$google_play_services_package:google_play_services_cast_java",
+     "$google_play_services_package:google_play_services_tasks_java",
+     "//base:base_java",
+     "//base:jni_java",
+@@ -626,8 +624,6 @@ junit_binary("chrome_junit_tests") {
+     ":partner_location_descriptor_proto_java",
+     "$google_play_services_package:google_play_services_base_java",
+     "$google_play_services_package:google_play_services_basement_java",
+-    "$google_play_services_package:google_play_services_cast_framework_java",
+-    "$google_play_services_package:google_play_services_cast_java",
+     "//base:base_java",
+     "//base:base_java_test_support",
+     "//base:base_junit_test_support",
+@@ -736,8 +732,6 @@ android_library("chrome_test_java") {
+     ":partner_location_descriptor_proto_java",
+     "$google_play_services_package:google_play_services_base_java",
+     "$google_play_services_package:google_play_services_basement_java",
+-    "$google_play_services_package:google_play_services_cast_framework_java",
+-    "$google_play_services_package:google_play_services_cast_java",
+     "$google_play_services_package:google_play_services_tasks_java",
+     "//base:base_java",
+     "//base:base_java_test_support",
+diff --git a/chrome/android/features/media_router/BUILD.gn b/chrome/android/features/media_router/BUILD.gn
+--- a/chrome/android/features/media_router/BUILD.gn
++++ b/chrome/android/features/media_router/BUILD.gn
+@@ -12,8 +12,6 @@ android_library("java") {
+     ":java_resources",
+     "$google_play_services_package:google_play_services_base_java",
+     "$google_play_services_package:google_play_services_basement_java",
+-    "$google_play_services_package:google_play_services_cast_framework_java",
+-    "$google_play_services_package:google_play_services_cast_java",
+     "//base:base_java",
+     "//base:jni_java",
+     "//chrome/android:chrome_java",
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/CastSessionUtil.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/CastSessionUtil.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/CastSessionUtil.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/CastSessionUtil.java
+@@ -4,9 +4,6 @@
+ 
+ package org.chromium.chrome.browser.media.router;
+ 
+-import com.google.android.gms.cast.CastDevice;
+-import com.google.android.gms.cast.RemoteMediaPlayer;
+-
+ import org.chromium.chrome.browser.media.ui.MediaNotificationInfo;
+ import org.chromium.services.media_session.MediaMetadata;
+ 
+@@ -18,36 +15,4 @@ public class CastSessionUtil {
+ 
+     // The value is borrowed from the Android Cast SDK code to match their behavior.
+     public static final double MIN_VOLUME_LEVEL_DELTA = 1e-7;
+-
+-    /**
+-     * Builds a MediaMetadata from the given CastDevice and MediaPlayer, and sets it on the builder
+-     */
+-    public static void setNotificationMetadata(MediaNotificationInfo.Builder builder,
+-            CastDevice castDevice, RemoteMediaPlayer mediaPlayer) {
+-        MediaMetadata notificationMetadata = new MediaMetadata("", "", "");
+-        builder.setMetadata(notificationMetadata);
+-
+-        if (castDevice != null) notificationMetadata.setTitle(castDevice.getFriendlyName());
+-
+-        if (mediaPlayer == null) return;
+-
+-        com.google.android.gms.cast.MediaInfo info = mediaPlayer.getMediaInfo();
+-        if (info == null) return;
+-
+-        com.google.android.gms.cast.MediaMetadata metadata = info.getMetadata();
+-        if (metadata == null) return;
+-
+-        String title = metadata.getString(com.google.android.gms.cast.MediaMetadata.KEY_TITLE);
+-        if (title != null) notificationMetadata.setTitle(title);
+-
+-        String artist = metadata.getString(com.google.android.gms.cast.MediaMetadata.KEY_ARTIST);
+-        if (artist == null) {
+-            artist = metadata.getString(com.google.android.gms.cast.MediaMetadata.KEY_ALBUM_ARTIST);
+-        }
+-        if (artist != null) notificationMetadata.setArtist(artist);
+-
+-        String album =
+-                metadata.getString(com.google.android.gms.cast.MediaMetadata.KEY_ALBUM_TITLE);
+-        if (album != null) notificationMetadata.setAlbum(album);
+-    }
+ }
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/MediaSink.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/MediaSink.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/MediaSink.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/MediaSink.java
+@@ -9,41 +9,24 @@ import android.support.v7.media.MediaRouter.RouteInfo;
+ 
+ import androidx.annotation.Nullable;
+ 
+-import com.google.android.gms.cast.CastDevice;
+-
+ /**
+  * A common descriptor of a device that can present some URI.
+  */
+ public class MediaSink {
+     private static final String CAST_SINK_URN_PREFIX = "urn:x-org.chromium:media:sink:cast-";
+-    private final String mId;
+-    private final String mName;
+-    private final CastDevice mDevice;
+-
+-    /**
+-     * Constructor.
+-     * @param id A unique identifier of the sink.
+-     * @param name A user friendly name of the sink.
+-     * @param device {@link CastDevice} corresponding to this sink.
+-     */
+-    public MediaSink(String id, String name, CastDevice device) {
+-        mId = id;
+-        mName = name;
+-        mDevice = device;
+-    }
+ 
+     /**
+      * @return The unique identifier of the sink.
+      */
+     public String getId() {
+-        return mId;
++        return "";
+     }
+ 
+     /**
+      * @return The user friendly name of the sink.
+      */
+     public String getName() {
+-        return mName;
++        return "";
+     }
+ 
+     /**
+@@ -53,17 +36,8 @@ public class MediaSink {
+         return CAST_SINK_URN_PREFIX + getId();
+     }
+ 
+-    public CastDevice getDevice() {
+-        return mDevice;
+-    }
+-
+     @Override
+     public boolean equals(Object o) {
+-        if (o == this) return true;
+-        if (o instanceof MediaSink) {
+-            MediaSink other = (MediaSink) o;
+-            return mId.equals(other.getId()) && mName.equals(other.getName());
+-        }
+         return false;
+     }
+ 
+@@ -71,23 +45,15 @@ public class MediaSink {
+     public int hashCode() {
+         final int prime = 31;
+         int result = 1;
+-        result = prime * result + ((mId == null) ? 0 : mId.hashCode());
+-        result = prime * result + ((mName == null) ? 0 : mName.hashCode());
+         return result;
+     }
+ 
+-    @Override
+-    public String toString() {
+-        return String.format("MediaSink: %s, %s", getId(), getName());
+-    }
+-
+     /**
+      * @param route The route information provided by Android.
+      * @return A new MediaSink instance corresponding to the specified {@link RouteInfo}.
+      */
+     public static MediaSink fromRoute(MediaRouter.RouteInfo route) {
+-        return new MediaSink(
+-                route.getId(), route.getName(), CastDevice.getFromBundle(route.getExtras()));
++        return null;
+     }
+ 
+     /**
+@@ -98,10 +64,6 @@ public class MediaSink {
+      */
+     @Nullable
+     public static MediaSink fromSinkId(String sinkId, MediaRouter router) {
+-        for (MediaRouter.RouteInfo route : router.getRoutes()) {
+-            MediaSink sink = MediaSink.fromRoute(route);
+-            if (sink.getId().equals(sinkId)) return sink;
+-        }
+         return null;
+     }
+ }
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/MediaStatusBridge.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/MediaStatusBridge.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/MediaStatusBridge.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/MediaStatusBridge.java
+@@ -4,10 +4,6 @@
+ 
+ package org.chromium.chrome.browser.media.router;
+ 
+-import com.google.android.gms.cast.MediaInfo;
+-import com.google.android.gms.cast.MediaMetadata;
+-import com.google.android.gms.cast.MediaStatus;
+-
+ import org.chromium.base.annotations.CalledByNative;
+ import org.chromium.base.annotations.JNINamespace;
+ 
+@@ -17,11 +13,6 @@ import org.chromium.base.annotations.JNINamespace;
+  */
+ @JNINamespace("media_router")
+ public class MediaStatusBridge {
+-    private MediaStatus mStatus;
+-
+-    public MediaStatusBridge(MediaStatus status) {
+-        mStatus = status;
+-    }
+ 
+     /**
+      * Gets the play state of the stream. Return values are defined as such:
+@@ -34,7 +25,7 @@ public class MediaStatusBridge {
+      */
+     @CalledByNative
+     public int playerState() {
+-        return mStatus.getPlayerState();
++        return 0;
+     }
+ 
+     /**
+@@ -48,7 +39,7 @@ public class MediaStatusBridge {
+      */
+     @CalledByNative
+     public int idleReason() {
+-        return mStatus.getIdleReason();
++        return 0;
+     }
+ 
+     /**
+@@ -57,13 +48,7 @@ public class MediaStatusBridge {
+      */
+     @CalledByNative
+     public String title() {
+-        MediaInfo info = mStatus.getMediaInfo();
+-        if (info == null) return "";
+-
+-        MediaMetadata metadata = info.getMetadata();
+-        if (metadata == null) return "";
+-
+-        return metadata.getString(MediaMetadata.KEY_TITLE);
++        return "";
+     }
+ 
+     /**
+@@ -71,7 +56,7 @@ public class MediaStatusBridge {
+      */
+     @CalledByNative
+     public boolean canPlayPause() {
+-        return mStatus.isMediaCommandSupported(MediaStatus.COMMAND_PAUSE);
++        return false;
+     }
+ 
+     /**
+@@ -79,7 +64,7 @@ public class MediaStatusBridge {
+      */
+     @CalledByNative
+     public boolean canMute() {
+-        return mStatus.isMediaCommandSupported(MediaStatus.COMMAND_TOGGLE_MUTE);
++        return false;
+     }
+ 
+     /**
+@@ -87,7 +72,7 @@ public class MediaStatusBridge {
+      */
+     @CalledByNative
+     public boolean canSetVolume() {
+-        return mStatus.isMediaCommandSupported(MediaStatus.COMMAND_SET_VOLUME);
++        return false;
+     }
+ 
+     /**
+@@ -95,7 +80,7 @@ public class MediaStatusBridge {
+      */
+     @CalledByNative
+     public boolean canSeek() {
+-        return mStatus.isMediaCommandSupported(MediaStatus.COMMAND_SEEK);
++        return false;
+     }
+ 
+     /**
+@@ -103,7 +88,7 @@ public class MediaStatusBridge {
+      */
+     @CalledByNative
+     public boolean isMuted() {
+-        return mStatus.isMute();
++        return false;
+     }
+ 
+     /**
+@@ -113,7 +98,7 @@ public class MediaStatusBridge {
+      */
+     @CalledByNative
+     public double volume() {
+-        return mStatus.getStreamVolume();
++        return 0.0;
+     }
+ 
+     /**
+@@ -122,10 +107,7 @@ public class MediaStatusBridge {
+      */
+     @CalledByNative
+     public long duration() {
+-        MediaInfo info = mStatus.getMediaInfo();
+-        if (info == null) return 0;
+-
+-        return info.getStreamDuration();
++        return 0;
+     }
+ 
+     /**
+@@ -133,6 +115,6 @@ public class MediaStatusBridge {
+      */
+     @CalledByNative
+     public long currentTime() {
+-        return mStatus.getStreamPosition();
++        return 0;
+     }
+ }
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/BaseNotificationController.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/BaseNotificationController.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/BaseNotificationController.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/BaseNotificationController.java
+@@ -6,10 +6,6 @@ package org.chromium.chrome.browser.media.router.caf;
+ 
+ import android.content.Intent;
+ 
+-import com.google.android.gms.cast.CastDevice;
+-import com.google.android.gms.cast.MediaStatus;
+-import com.google.android.gms.cast.framework.media.RemoteMediaClient;
+-
+ import org.chromium.chrome.browser.media.ui.MediaNotificationInfo;
+ import org.chromium.chrome.browser.media.ui.MediaNotificationListener;
+ import org.chromium.chrome.browser.media.ui.MediaNotificationManager;
+@@ -59,20 +55,6 @@ public abstract class BaseNotificationController
+     public void onStatusUpdated() {
+         if (mNotificationBuilder == null) return;
+         if (!mSessionController.isConnected()) return;
+-
+-        MediaStatus mediaStatus = mSessionController.getRemoteMediaClient().getMediaStatus();
+-        if (mediaStatus == null) return;
+-
+-        int playerState = mediaStatus.getPlayerState();
+-        if (playerState == MediaStatus.PLAYER_STATE_PAUSED
+-                || playerState == MediaStatus.PLAYER_STATE_PLAYING) {
+-            mNotificationBuilder.setPaused(playerState != MediaStatus.PLAYER_STATE_PLAYING);
+-            mNotificationBuilder.setActions(
+-                    MediaNotificationInfo.ACTION_STOP | MediaNotificationInfo.ACTION_PLAY_PAUSE);
+-        } else {
+-            mNotificationBuilder.setActions(MediaNotificationInfo.ACTION_STOP);
+-        }
+-        MediaNotificationManager.show(mNotificationBuilder.build());
+     }
+ 
+     /** Called when media metadata updated. */
+@@ -88,30 +70,6 @@ public abstract class BaseNotificationController
+         mNotificationBuilder.setMetadata(notificationMetadata);
+ 
+         if (!mSessionController.isConnected()) return;
+-
+-        CastDevice castDevice = mSessionController.getSession().getCastDevice();
+-        if (castDevice != null) notificationMetadata.setTitle(castDevice.getFriendlyName());
+-
+-        RemoteMediaClient remoteMediaClient = mSessionController.getRemoteMediaClient();
+-
+-        com.google.android.gms.cast.MediaInfo info = remoteMediaClient.getMediaInfo();
+-        if (info == null) return;
+-
+-        com.google.android.gms.cast.MediaMetadata metadata = info.getMetadata();
+-        if (metadata == null) return;
+-
+-        String title = metadata.getString(com.google.android.gms.cast.MediaMetadata.KEY_TITLE);
+-        if (title != null) notificationMetadata.setTitle(title);
+-
+-        String artist = metadata.getString(com.google.android.gms.cast.MediaMetadata.KEY_ARTIST);
+-        if (artist == null) {
+-            artist = metadata.getString(com.google.android.gms.cast.MediaMetadata.KEY_ALBUM_ARTIST);
+-        }
+-        if (artist != null) notificationMetadata.setArtist(artist);
+-
+-        String album =
+-                metadata.getString(com.google.android.gms.cast.MediaMetadata.KEY_ALBUM_TITLE);
+-        if (album != null) notificationMetadata.setAlbum(album);
+     }
+ 
+     /////////////////////////////////////////////////////////////////////////////////////////////
+@@ -120,15 +78,11 @@ public abstract class BaseNotificationController
+     @Override
+     public void onPlay(int actionSource) {
+         if (!mSessionController.isConnected()) return;
+-
+-        mSessionController.getRemoteMediaClient().play();
+     }
+ 
+     @Override
+     public void onPause(int actionSource) {
+         if (!mSessionController.isConnected()) return;
+-
+-        mSessionController.getRemoteMediaClient().pause();
+     }
+ 
+     @Override
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/BaseSessionController.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/BaseSessionController.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/BaseSessionController.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/BaseSessionController.java
+@@ -6,18 +6,11 @@ package org.chromium.chrome.browser.media.router.caf;
+ 
+ import androidx.annotation.Nullable;
+ 
+-import com.google.android.gms.cast.CastDevice;
+-import com.google.android.gms.cast.framework.CastSession;
+-import com.google.android.gms.cast.framework.media.RemoteMediaClient;
+-import com.google.android.gms.common.api.PendingResult;
+-import com.google.android.gms.common.api.Status;
+-
+ import org.json.JSONArray;
+ import org.json.JSONException;
+ import org.json.JSONObject;
+ 
+ import org.chromium.base.Log;
+-import org.chromium.chrome.browser.media.router.CastSessionUtil;
+ import org.chromium.chrome.browser.media.router.FlingingController;
+ import org.chromium.chrome.browser.media.router.MediaSink;
+ import org.chromium.chrome.browser.media.router.MediaSource;
+@@ -50,17 +43,14 @@ public abstract class BaseSessionController {
+     }
+ 
+     private final Random mRequestIdGenerator = new Random();
+-    private CastSession mCastSession;
+     private int mLatestMediaSessionId;
+     private final CafBaseMediaRouteProvider mProvider;
+     private CreateRouteRequestInfo mRouteCreationInfo;
+-    private final RemoteMediaClient.Callback mRemoteMediaClientCallback;
+     private final List<Callback> mCallbacks = new ArrayList<>();
+ 
+     public BaseSessionController(CafBaseMediaRouteProvider provider) {
+         mProvider = provider;
+-        mRemoteMediaClientCallback = new RemoteMediaClientCallback();
+-    }
++            }
+ 
+     public void addCallback(Callback callback) {
+         mCallbacks.add(callback);
+@@ -72,9 +62,6 @@ public abstract class BaseSessionController {
+ 
+     public void requestSessionLaunch() {
+         mRouteCreationInfo = mProvider.getPendingCreateRouteRequestInfo();
+-        CastUtils.getCastContext().setReceiverApplicationId(
+-                mRouteCreationInfo.source.getApplicationId());
+-
+         // When the user clicks a route on the MediaRouteChooserDialog, we intercept the click event
+         // and do not select the route. Instead the route selection is postponed to here. This will
+         // trigger CAF to launch the session.
+@@ -93,60 +80,18 @@ public abstract class BaseSessionController {
+         return mRouteCreationInfo;
+     }
+ 
+-    public CastSession getSession() {
+-        return mCastSession;
+-    }
+-
+-    public RemoteMediaClient getRemoteMediaClient() {
+-        return isConnected() ? mCastSession.getRemoteMediaClient() : null;
+-    }
+-
+     public abstract BaseNotificationController getNotificationController();
+ 
+     public void endSession() {
+-        CastUtils.getCastContext().getSessionManager().endCurrentSession(/* stopCasting= */ true);
+-        CastUtils.getCastContext().setReceiverApplicationId(null);
+     }
+ 
+     public List<String> getCapabilities() {
+         List<String> capabilities = new ArrayList<>();
+-        if (mCastSession == null || !mCastSession.isConnected()) return capabilities;
+-        CastDevice device = mCastSession.getCastDevice();
+-        if (device.hasCapability(CastDevice.CAPABILITY_AUDIO_IN)) {
+-            capabilities.add("audio_in");
+-        }
+-        if (device.hasCapability(CastDevice.CAPABILITY_AUDIO_OUT)) {
+-            capabilities.add("audio_out");
+-        }
+-        if (device.hasCapability(CastDevice.CAPABILITY_VIDEO_IN)) {
+-            capabilities.add("video_in");
+-        }
+-        if (device.hasCapability(CastDevice.CAPABILITY_VIDEO_OUT)) {
+-            capabilities.add("video_out");
+-        }
+         return capabilities;
+     }
+ 
+     public boolean isConnected() {
+-        return mCastSession != null && mCastSession.isConnected();
+-    }
+-
+-    /**
+-     * Safely seek to a position. This is an workaround for an IllegalStateException in
+-     * RemoteMediaClient when a seek command times out. The code should be replaced by a normal
+-     * seek() call when the Google Play services SDK gets updated.
+-     */
+-    public PendingResult<Status> safelySeek(long position) {
+-        JSONObject json = new JSONObject();
+-        try {
+-            json.put("requestId", mRequestIdGenerator.nextInt(10000));
+-            json.put("mediaSessionId", mLatestMediaSessionId);
+-            json.put("type", "SEEK");
+-            json.put("currentTime", position / 1000.0);
+-        } catch (JSONException e) {
+-            // Ignore.
+-        }
+-        return getSession().sendMessage(CastSessionUtil.MEDIA_NAMESPACE, json.toString());
++        return false;
+     }
+ 
+     private void updateMediaSessionId(String message) {
+@@ -171,29 +116,6 @@ public abstract class BaseSessionController {
+ 
+     private void updateRemoteMediaClient(String message) {
+         if (!isConnected()) return;
+-
+-        mCastSession.getRemoteMediaClient().onMessageReceived(
+-                mCastSession.getCastDevice(), CastSessionUtil.MEDIA_NAMESPACE, message);
+-    }
+-
+-    /** Attaches the controller to the current {@link CastSession}. */
+-    public void attachToCastSession(CastSession session) {
+-        mCastSession = session;
+-        RemoteMediaClient uncheckedRemoteMediaClient = mCastSession.getRemoteMediaClient();
+-        if (uncheckedRemoteMediaClient != null) {
+-            uncheckedRemoteMediaClient.registerCallback(mRemoteMediaClientCallback);
+-        }
+-    }
+-
+-    /** Detaches the controller from any {@link CastSession}. */
+-    public void detachFromCastSession() {
+-        if (mCastSession == null) return;
+-
+-        RemoteMediaClient uncheckedRemoteMediaClient = mCastSession.getRemoteMediaClient();
+-        if (uncheckedRemoteMediaClient != null) {
+-            uncheckedRemoteMediaClient.unregisterCallback(mRemoteMediaClientCallback);
+-        }
+-        mCastSession = null;
+     }
+ 
+     /** Called when session started. */
+@@ -210,40 +132,6 @@ public abstract class BaseSessionController {
+         return mProvider;
+     }
+ 
+-    /**
+-     * All sub-classes need to register this method to listen to messages of the namespaces they are
+-     * interested in.
+-     */
+-    protected void onMessageReceived(CastDevice castDevice, String namespace, String message) {
+-        Log.d(TAG,
+-                "Received message from Cast device: namespace=\"" + namespace + "\" message=\""
+-                        + message + "\"");
+-        if (CastSessionUtil.MEDIA_NAMESPACE.equals(namespace)) {
+-            updateMediaSessionId(message);
+-            updateRemoteMediaClient(message);
+-        }
+-    }
+-
+-    private class RemoteMediaClientCallback extends RemoteMediaClient.Callback {
+-        @Override
+-        public void onStatusUpdated() {
+-            BaseSessionController.this.onStatusUpdated();
+-        }
+-
+-        @Override
+-        public void onMetadataUpdated() {
+-            BaseSessionController.this.onMetadataUpdated();
+-        }
+-    }
+-
+-    protected void onStatusUpdated() {
+-        notifyCallback((Callback callback) -> callback.onStatusUpdated());
+-    }
+-
+-    protected void onMetadataUpdated() {
+-        notifyCallback((Callback callback) -> callback.onMetadataUpdated());
+-    }
+-
+     @Nullable
+     public FlingingController getFlingingController() {
+         return null;
+@@ -254,7 +142,7 @@ public abstract class BaseSessionController {
+      * {@link CastSession#getSessionId()} is final.
+      */
+     public String getSessionId() {
+-        return isConnected() ? getSession().getSessionId() : null;
++        return null;
+     }
+ 
+     private void notifyCallback(NotifyCallbackAction action) {
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CafBaseMediaRouteProvider.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CafBaseMediaRouteProvider.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CafBaseMediaRouteProvider.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CafBaseMediaRouteProvider.java
+@@ -12,9 +12,6 @@ import androidx.annotation.NonNull;
+ import androidx.annotation.Nullable;
+ import androidx.annotation.VisibleForTesting;
+ 
+-import com.google.android.gms.cast.framework.CastSession;
+-import com.google.android.gms.cast.framework.SessionManagerListener;
+-
+ import org.chromium.base.Log;
+ import org.chromium.chrome.browser.media.router.DiscoveryCallback;
+ import org.chromium.chrome.browser.media.router.DiscoveryDelegate;
+@@ -37,7 +34,7 @@ import java.util.Set;
+  * A base provider containing common implementation for CAF-based {@link MediaRouteProvider}s.
+  */
+ public abstract class CafBaseMediaRouteProvider
+-        implements MediaRouteProvider, DiscoveryDelegate, SessionManagerListener<CastSession> {
++        implements MediaRouteProvider, DiscoveryDelegate {
+     private static final String TAG = "CafMR";
+ 
+     protected static final List<MediaSink> NO_SINKS = Collections.emptyList();
+@@ -154,7 +151,6 @@ public abstract class CafBaseMediaRouteProvider
+             // current session and clean up the routes (can't wait for session ending as the signal
+             // might be delayed).
+             sessionController().endSession();
+-            handleSessionEnd();
+         }
+         if (mPendingCreateRouteRequestInfo != null) {
+             cancelPendingRequest("Request replaced");
+@@ -183,9 +179,6 @@ public abstract class CafBaseMediaRouteProvider
+             mManager.onRouteRequestError("The sink does not exist", nativeRequestId);
+         }
+ 
+-        CastUtils.getCastContext().getSessionManager().addSessionManagerListener(
+-                this, CastSession.class);
+-
+         mPendingCreateRouteRequestInfo = new CreateRouteRequestInfo(source, sink, presentationId,
+                 origin, tabId, isIncognito, nativeRequestId, targetRouteInfo);
+ 
+@@ -212,100 +205,6 @@ public abstract class CafBaseMediaRouteProvider
+         removeRoute(routeId, /* error= */ null);
+     }
+ 
+-    ///////////////////////////////////////////////////////
+-    // SessionManagerListener implementation begin
+-    ///////////////////////////////////////////////////////
+-
+-    @Override
+-    public final void onSessionStarting(CastSession session) {
+-        // The session is not connected yet at this point so this is no-op.
+-    }
+-
+-    @Override
+-    public void onSessionStartFailed(CastSession session, int error) {
+-        removeAllRoutes("Launch error");
+-        cancelPendingRequest("Launch error");
+-    }
+-
+-    @Override
+-    public void onSessionStarted(CastSession session, String sessionId) {
+-        Log.d(TAG, "onSessionStarted");
+-
+-        if (session != CastUtils.getCastContext().getSessionManager().getCurrentCastSession()) {
+-            // Sometimes the session start signal might come in for an earlier launch request, which
+-            // should be ignored.
+-            return;
+-        }
+-
+-        if (session == sessionController().getSession() || mPendingCreateRouteRequestInfo == null) {
+-            // Early return for any possible case that the session start signal comes in twice for
+-            // the same session.
+-            return;
+-        }
+-        handleSessionStart(session, sessionId);
+-    }
+-
+-    @Override
+-    public final void onSessionResumed(CastSession session, boolean wasSuspended) {
+-        sessionController().attachToCastSession(session);
+-    }
+-
+-    @Override
+-    public final void onSessionResuming(CastSession session, String sessionId) {}
+-
+-    @Override
+-    public final void onSessionResumeFailed(CastSession session, int error) {}
+-
+-    @Override
+-    public final void onSessionEnding(CastSession session) {
+-        handleSessionEnd();
+-    }
+-
+-    @Override
+-    public final void onSessionEnded(CastSession session, int error) {
+-        Log.d(TAG, "Session ended with error code " + error);
+-        handleSessionEnd();
+-    }
+-
+-    @Override
+-    public final void onSessionSuspended(CastSession session, int reason) {
+-        sessionController().detachFromCastSession();
+-    }
+-
+-    ///////////////////////////////////////////////////////
+-    // SessionManagerListener implementation end
+-    ///////////////////////////////////////////////////////
+-
+-    protected void handleSessionStart(CastSession session, String sessionId) {
+-        sessionController().attachToCastSession(session);
+-        sessionController().onSessionStarted();
+-
+-        MediaSink sink = mPendingCreateRouteRequestInfo.sink;
+-        MediaSource source = mPendingCreateRouteRequestInfo.source;
+-        MediaRoute route = new MediaRoute(
+-                sink.getId(), source.getSourceId(), mPendingCreateRouteRequestInfo.presentationId);
+-        addRoute(route, mPendingCreateRouteRequestInfo.origin, mPendingCreateRouteRequestInfo.tabId,
+-                mPendingCreateRouteRequestInfo.nativeRequestId, /* wasLaunched= */ true);
+-
+-        mPendingCreateRouteRequestInfo = null;
+-    }
+-
+-    private void handleSessionEnd() {
+-        if (mPendingCreateRouteRequestInfo != null) {
+-            // The Cast SDK notifies about session ending when a route is unselected, even when
+-            // there's no current session. Because CastSessionController unselects the route to set
+-            // the receiver app ID, this needs to be guarded by a pending request null check to make
+-            // sure the listener is not unregistered during a session relaunch.
+-            return;
+-        }
+-        sessionController().onSessionEnded();
+-        sessionController().detachFromCastSession();
+-        getAndroidMediaRouter().selectRoute(getAndroidMediaRouter().getDefaultRoute());
+-        terminateAllRoutes();
+-        CastUtils.getCastContext().getSessionManager().removeSessionManagerListener(
+-                this, CastSession.class);
+-    }
+-
+     private void cancelPendingRequest(String error) {
+         if (mPendingCreateRouteRequestInfo == null) return;
+ 
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CafMediaRouteProvider.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CafMediaRouteProvider.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CafMediaRouteProvider.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CafMediaRouteProvider.java
+@@ -12,8 +12,6 @@ import androidx.annotation.NonNull;
+ import androidx.annotation.Nullable;
+ import androidx.annotation.VisibleForTesting;
+ 
+-import com.google.android.gms.cast.framework.CastSession;
+-
+ import org.chromium.base.Log;
+ import org.chromium.chrome.browser.media.router.ChromeMediaRouter;
+ import org.chromium.chrome.browser.media.router.ClientRecord;
+@@ -148,20 +146,6 @@ public class CafMediaRouteProvider extends CafBaseMediaRouteProvider {
+         return mMessageHandler;
+     }
+ 
+-    @Override
+-    protected void handleSessionStart(CastSession session, String sessionId) {
+-        super.handleSessionStart(session, sessionId);
+-
+-        for (ClientRecord clientRecord : mClientIdToRecords.values()) {
+-            // Should be exactly one instance of MediaRoute/ClientRecord at this moment.
+-            mMessageHandler.sendReceiverActionToClient(clientRecord.routeId,
+-                    sessionController().getSink(), clientRecord.clientId, "cast");
+-        }
+-
+-        mMessageHandler.onSessionStarted();
+-        sessionController().getSession().getRemoteMediaClient().requestStatus();
+-    }
+-
+     @Override
+     protected void addRoute(
+             MediaRoute route, String origin, int tabId, int nativeRequestId, boolean wasLaunched) {
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CafMessageHandler.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CafMessageHandler.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CafMessageHandler.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CafMessageHandler.java
+@@ -13,10 +13,6 @@ import android.util.SparseArray;
+ 
+ import androidx.annotation.VisibleForTesting;
+ 
+-import com.google.android.gms.cast.ApplicationMetadata;
+-import com.google.android.gms.common.api.PendingResult;
+-import com.google.android.gms.common.api.Status;
+-
+ import org.json.JSONArray;
+ import org.json.JSONException;
+ import org.json.JSONObject;
+@@ -345,49 +341,7 @@ public class CafMessageHandler {
+             final int sequenceNumber) throws JSONException {
+         if (volumeMessage == null) return false;
+         if (!mSessionController.isConnected()) return false;
+-        boolean shouldWaitForVolumeChange = false;
+-        try {
+-            if (!volumeMessage.isNull("muted")) {
+-                boolean newMuted = volumeMessage.getBoolean("muted");
+-                if (mSessionController.getSession().isMute() != newMuted) {
+-                    mSessionController.getSession().setMute(newMuted);
+-                    shouldWaitForVolumeChange = true;
+-                }
+-            }
+-            if (!volumeMessage.isNull("level")) {
+-                double newLevel = volumeMessage.getDouble("level");
+-                double currentLevel = mSessionController.getSession().getVolume();
+-                if (!Double.isNaN(currentLevel)
+-                        && Math.abs(currentLevel - newLevel)
+-                                > CastSessionUtil.MIN_VOLUME_LEVEL_DELTA) {
+-                    mSessionController.getSession().setVolume(newLevel);
+-                    shouldWaitForVolumeChange = true;
+-                }
+-            }
+-        } catch (IOException | IllegalStateException e) {
+-            Log.e(TAG, "Failed to send volume command: " + e);
+-            return false;
+-        }
+-
+-        // For each successful volume message we need to respond with an empty "v2_message" so the
+-        // Cast Web SDK can call the success callback of the page. If we expect the volume to change
+-        // as the result of the command, we're relying on {@link Cast.CastListener#onVolumeChanged}
+-        // to get called by the Android Cast SDK when the receiver status is updated. We keep the
+-        // sequence number until then. If the volume doesn't change as the result of the command, we
+-        // won't get notified by the Android SDK
+-        if (shouldWaitForVolumeChange) {
+-            mVolumeRequests.add(new RequestRecord(clientId, sequenceNumber));
+-        } else {
+-            // It's usually bad to have request and response on the same call stack so post the
+-            // response to the Android message loop.
+-            mHandler.post(new Runnable() {
+-                @Override
+-                public void run() {
+-                    onVolumeChanged(clientId, sequenceNumber);
+-                }
+-            });
+-        }
+-        return true;
++        return false;
+     }
+ 
+     @VisibleForTesting
+@@ -675,19 +629,11 @@ public class CafMessageHandler {
+         try {
+             // "volume" is a part of "receiver" initialized below.
+             JSONObject jsonVolume = new JSONObject();
+-            jsonVolume.put("level", mSessionController.getSession().getVolume());
+-            jsonVolume.put("muted", mSessionController.getSession().isMute());
+ 
+             // "receiver" is a part of "message" initialized below.
+             JSONObject jsonReceiver = new JSONObject();
+-            jsonReceiver.put(
+-                    "label", mSessionController.getSession().getCastDevice().getDeviceId());
+-            jsonReceiver.put("friendlyName",
+-                    mSessionController.getSession().getCastDevice().getFriendlyName());
+             jsonReceiver.put("capabilities", toJSONArray(mSessionController.getCapabilities()));
+             jsonReceiver.put("volume", jsonVolume);
+-            jsonReceiver.put(
+-                    "isActiveInput", mSessionController.getSession().getActiveInputState());
+             jsonReceiver.put("displayStatus", null);
+             jsonReceiver.put("receiverType", "cast");
+ 
+@@ -700,23 +646,14 @@ public class CafMessageHandler {
+ 
+             JSONObject jsonMessage = new JSONObject();
+             jsonMessage.put("sessionId", mSessionController.getSessionId());
+-            jsonMessage.put("statusText", mSessionController.getSession().getApplicationStatus());
+             jsonMessage.put("receiver", jsonReceiver);
+             jsonMessage.put("namespaces", jsonNamespaces);
+             jsonMessage.put("media", toJSONArray(new ArrayList<>()));
+             jsonMessage.put("status", "connected");
+             jsonMessage.put("transportId", "web-4");
+ 
+-            ApplicationMetadata applicationMetadata =
+-                    mSessionController.getSession().getApplicationMetadata();
+-            if (applicationMetadata != null) {
+-                jsonMessage.put("appId", applicationMetadata.getApplicationId());
+-            } else {
+-                jsonMessage.put("appId",
+-                        mSessionController.getRouteCreationInfo().source.getApplicationId());
+-            }
+-            jsonMessage.put("displayName",
+-                    mSessionController.getSession().getCastDevice().getFriendlyName());
++            jsonMessage.put("appId",
++                    mSessionController.getRouteCreationInfo().source.getApplicationId());
+ 
+             return jsonMessage.toString();
+         } catch (JSONException e) {
+@@ -797,32 +734,6 @@ public class CafMessageHandler {
+     boolean sendStringCastMessage(
+             String message, String namespace, String clientId, int sequenceNumber) {
+         if (!mSessionController.isConnected()) return false;
+-
+-        PendingResult<Status> pendingResult =
+-                mSessionController.getSession().sendMessage(namespace, message);
+-        if (!TextUtils.equals(namespace, CastSessionUtil.MEDIA_NAMESPACE)) {
+-            // Media commands wait for the media status update as a result.
+-            pendingResult.setResultCallback(
+-                    (Status result) -> onSendAppMessageResult(result, clientId, sequenceNumber));
+-        }
+-        return true;
+-    }
+-
+-    /**
+-     * Notifies a client that an app message has been sent.
+-     * @param clientId The client id the message is sent from.
+-     * @param sequenceNumber The sequence number of the message.
+-     */
+-    void onSendAppMessageResult(Status result, String clientId, int sequenceNumber) {
+-        if (!result.isSuccess()) {
+-            // TODO(avayvod): should actually report back to the page.
+-            // See https://crbug.com/550445.
+-            Log.e(TAG, "Failed to send the message: " + result);
+-            return;
+-        }
+-
+-        // App messages wait for the empty message with the sequence
+-        // number.
+-        sendEnclosedMessageToClient(clientId, "app_message", null, sequenceNumber);
++        return false;
+     }
+ }
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastMediaSource.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastMediaSource.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastMediaSource.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastMediaSource.java
+@@ -9,8 +9,6 @@ import android.support.v7.media.MediaRouteSelector;
+ 
+ import androidx.annotation.Nullable;
+ 
+-import com.google.android.gms.cast.CastMediaControlIntent;
+-
+ import org.chromium.chrome.browser.media.router.MediaSource;
+ 
+ import java.util.Arrays;
+@@ -106,13 +104,7 @@ public class CastMediaSource implements MediaSource {
+      */
+     @Override
+     public MediaRouteSelector buildRouteSelector() {
+-        try {
+-            return new MediaRouteSelector.Builder()
+-                    .addControlCategory(CastMediaControlIntent.categoryForCast(mApplicationId))
+-                    .build();
+-        } catch (IllegalArgumentException e) {
+-            return null;
+-        }
++        return null;
+     }
+ 
+     /**
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastOptionsProvider.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastOptionsProvider.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastOptionsProvider.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastOptionsProvider.java
+@@ -6,28 +6,8 @@ package org.chromium.chrome.browser.media.router.caf;
+ 
+ import android.content.Context;
+ 
+-import com.google.android.gms.cast.LaunchOptions;
+-import com.google.android.gms.cast.framework.CastOptions;
+-import com.google.android.gms.cast.framework.OptionsProvider;
+-import com.google.android.gms.cast.framework.SessionProvider;
+-
+ import java.util.List;
+ 
+ /** {@link OptionsProvider} implementation for Chrome MR. */
+-public class CastOptionsProvider implements OptionsProvider {
+-    @Override
+-    public CastOptions getCastOptions(Context context) {
+-        return new CastOptions.Builder()
+-                .setCastMediaOptions(null)
+-                .setEnableReconnectionService(false)
+-                .setLaunchOptions(new LaunchOptions.Builder().setRelaunchIfRunning(true).build())
+-                .setResumeSavedSession(false)
+-                .setStopReceiverApplicationWhenEndingSession(true)
+-                .build();
+-    }
+-
+-    @Override
+-    public List<SessionProvider> getAdditionalSessionProviders(Context context) {
+-        return null;
+-    }
++public class CastOptionsProvider {
+ }
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastSessionController.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastSessionController.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastSessionController.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastSessionController.java
+@@ -7,11 +7,6 @@ package org.chromium.chrome.browser.media.router.caf;
+ import androidx.annotation.NonNull;
+ import androidx.annotation.VisibleForTesting;
+ 
+-import com.google.android.gms.cast.ApplicationMetadata;
+-import com.google.android.gms.cast.Cast;
+-import com.google.android.gms.cast.CastDevice;
+-import com.google.android.gms.cast.framework.CastSession;
+-
+ import org.chromium.base.Log;
+ 
+ import java.util.ArrayList;
+@@ -24,12 +19,10 @@ public class CastSessionController extends BaseSessionController {
+     private static final String TAG = "CafSessionCtrl";
+ 
+     private List<String> mNamespaces = new ArrayList<String>();
+-    private CastListener mCastListener;
+     private CafNotificationController mNotificationController;
+ 
+     public CastSessionController(CafBaseMediaRouteProvider provider) {
+         super(provider);
+-        mCastListener = new CastListener();
+         mNotificationController = new CafNotificationController(this);
+     }
+ 
+@@ -37,30 +30,6 @@ public class CastSessionController extends BaseSessionController {
+         return mNamespaces;
+     }
+ 
+-    /**
+-     * Init nested fields for testing. The reason is that nested classes are bound to the original
+-     * instance instead of the spyed instance.
+-     */
+-    void initNestedFieldsForTesting() {
+-        mCastListener = new CastListener();
+-    }
+-
+-    @Override
+-    public void attachToCastSession(CastSession session) {
+-        super.attachToCastSession(session);
+-        getSession().addCastListener(mCastListener);
+-        updateNamespaces();
+-    }
+-
+-    @Override
+-    public void detachFromCastSession() {
+-        if (getSession() == null) return;
+-
+-        mNamespaces.clear();
+-        getSession().removeCastListener(mCastListener);
+-        super.detachFromCastSession();
+-    }
+-
+     @Override
+     public void onSessionEnded() {
+         getMessageHandler().onSessionEnded();
+@@ -72,24 +41,6 @@ public class CastSessionController extends BaseSessionController {
+         return mNotificationController;
+     }
+ 
+-    private class CastListener extends Cast.Listener {
+-        @Override
+-        public void onApplicationStatusChanged() {
+-            CastSessionController.this.onApplicationStatusChanged();
+-        }
+-
+-        @Override
+-        public void onApplicationMetadataChanged(ApplicationMetadata metadata) {
+-            CastSessionController.this.onApplicationStatusChanged();
+-        }
+-
+-        @Override
+-        public void onVolumeChanged() {
+-            CastSessionController.this.onApplicationStatusChanged();
+-            getMessageHandler().onVolumeChanged();
+-        }
+-    }
+-
+     private void onApplicationStatusChanged() {
+         updateNamespaces();
+ 
+@@ -100,53 +51,18 @@ public class CastSessionController extends BaseSessionController {
+     @VisibleForTesting
+     void updateNamespaces() {
+         if (!isConnected()) return;
+-
+-        if (getSession().getApplicationMetadata() == null
+-                || getSession().getApplicationMetadata().getSupportedNamespaces() == null) {
+-            return;
+-        }
+-
+-        Set<String> namespacesToAdd =
+-                new HashSet<>(getSession().getApplicationMetadata().getSupportedNamespaces());
+-        Set<String> namespacesToRemove = new HashSet<String>(mNamespaces);
+-
+-        namespacesToRemove.removeAll(namespacesToAdd);
+-        namespacesToAdd.removeAll(mNamespaces);
+-
+-        for (String namespace : namespacesToRemove) unregisterNamespace(namespace);
+-        for (String namespace : namespacesToAdd) registerNamespace(namespace);
+     }
+ 
+     private void registerNamespace(String namespace) {
+         assert !mNamespaces.contains(namespace);
+ 
+         if (!isConnected()) return;
+-
+-        try {
+-            getSession().setMessageReceivedCallbacks(namespace, this::onMessageReceived);
+-            mNamespaces.add(namespace);
+-        } catch (Exception e) {
+-            Log.e(TAG, "Failed to register namespace listener for %s", namespace, e);
+-        }
+     }
+ 
+     private void unregisterNamespace(String namespace) {
+         assert mNamespaces.contains(namespace);
+ 
+         if (!isConnected()) return;
+-
+-        try {
+-            getSession().removeMessageReceivedCallbacks(namespace);
+-            mNamespaces.remove(namespace);
+-        } catch (Exception e) {
+-            Log.e(TAG, "Failed to remove the namespace listener for %s", namespace, e);
+-        }
+-    }
+-
+-    @Override
+-    protected void onMessageReceived(CastDevice castDevice, String namespace, String message) {
+-        super.onMessageReceived(castDevice, namespace, message);
+-        getMessageHandler().onMessageReceived(namespace, message);
+     }
+ 
+     @NonNull
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastUtils.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastUtils.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastUtils.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/CastUtils.java
+@@ -4,16 +4,10 @@
+ 
+ package org.chromium.chrome.browser.media.router.caf;
+ 
+-import com.google.android.gms.cast.framework.CastContext;
+-
+ import org.chromium.base.ContextUtils;
+ 
+ /** Utility methods for Cast. */
+ public class CastUtils {
+-    /** Helper method to return the {@link CastContext} instance. */
+-    public static CastContext getCastContext() {
+-        return CastContext.getSharedInstance(ContextUtils.getApplicationContext());
+-    }
+ 
+     /**
+      * Compares two origins. Empty origin strings correspond to unique origins in
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/CafExpandedControllerActivity.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/CafExpandedControllerActivity.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/CafExpandedControllerActivity.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/CafExpandedControllerActivity.java
+@@ -44,15 +44,11 @@ public class CafExpandedControllerActivity
+         @Override
+         public void play() {
+             if (!mSessionController.isConnected()) return;
+-
+-            mSessionController.getSession().getRemoteMediaClient().play();
+         }
+ 
+         @Override
+         public void pause() {
+             if (!mSessionController.isConnected()) return;
+-
+-            mSessionController.getSession().getRemoteMediaClient().pause();
+         }
+ 
+         @Override
+@@ -70,27 +66,19 @@ public class CafExpandedControllerActivity
+         @Override
+         public void seekTo(long pos) {
+             if (!mSessionController.isConnected()) return;
+-
+-            mSessionController.safelySeek(pos);
+         }
+ 
+         @Override
+         public boolean isPlaying() {
+             if (!mSessionController.isConnected()) return false;
+ 
+-            return mSessionController.getSession().getRemoteMediaClient().isPlaying();
++            return false;
+         }
+ 
+         @Override
+         public long getActionFlags() {
+             long flags =
+                     PlaybackStateCompat.ACTION_REWIND | PlaybackStateCompat.ACTION_FAST_FORWARD;
+-            if (mSessionController.isConnected()
+-                    && mSessionController.getSession().getRemoteMediaClient().isPlaying()) {
+-                flags |= PlaybackStateCompat.ACTION_PAUSE;
+-            } else {
+-                flags |= PlaybackStateCompat.ACTION_PLAY;
+-            }
+             return flags;
+         }
+     };
+@@ -179,20 +167,10 @@ public class CafExpandedControllerActivity
+     private void updateUi() {
+         if (!mSessionController.isConnected()) return;
+ 
+-        String deviceName = mSessionController.getSession().getCastDevice().getFriendlyName();
+-        String titleText = "";
+-        if (deviceName != null) {
+-            titleText = getResources().getString(R.string.cast_casting_video, deviceName);
+-        }
+-        mTitleView.setText(titleText);
+-
+         mMediaController.refresh();
+         mMediaController.updateProgress();
+ 
+         cancelProgressUpdateTask();
+-        if (mSessionController.getSession().getRemoteMediaClient().isPlaying()) {
+-            scheduleProgressUpdateTask();
+-        }
+     }
+ 
+     private void scheduleProgressUpdateTask() {
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/FlingingControllerAdapter.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/FlingingControllerAdapter.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/FlingingControllerAdapter.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/FlingingControllerAdapter.java
+@@ -4,11 +4,6 @@
+ 
+ package org.chromium.chrome.browser.media.router.caf.remoting;
+ 
+-import com.google.android.gms.cast.MediaInfo;
+-import com.google.android.gms.cast.MediaStatus;
+-import com.google.android.gms.cast.framework.media.RemoteMediaClient;
+-import com.google.android.gms.common.api.Result;
+-
+ import org.chromium.base.Log;
+ import org.chromium.chrome.browser.media.router.FlingingController;
+ import org.chromium.chrome.browser.media.router.MediaController;
+@@ -69,14 +64,6 @@ public class FlingingControllerAdapter implements FlingingController, MediaContr
+     /** Starts loading the media URL, from the given position. */
+     public void load(long position) {
+         if (!mSessionController.isConnected()) return;
+-
+-        mLoaded = true;
+-
+-        MediaInfo mediaInfo = new MediaInfo.Builder(mMediaUrl)
+-                                      .setContentType("*/*")
+-                                      .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+-                                      .build();
+-        mSessionController.getRemoteMediaClient().load(mediaInfo, /* autoplay= */ true, position);
+     }
+ 
+     ////////////////////////////////////////////
+@@ -91,30 +78,21 @@ public class FlingingControllerAdapter implements FlingingController, MediaContr
+             load(/* position= */ 0);
+             return;
+         }
+-
+-        mSessionController.getRemoteMediaClient().play().setResultCallback(
+-                this::onMediaCommandResult);
+     }
+ 
+     @Override
+     public void pause() {
+         if (!mSessionController.isConnected()) return;
+-        mSessionController.getRemoteMediaClient().pause().setResultCallback(
+-                this::onMediaCommandResult);
+     }
+ 
+     @Override
+     public void setMute(boolean mute) {
+         if (!mSessionController.isConnected()) return;
+-        mSessionController.getRemoteMediaClient().setStreamMute(mute).setResultCallback(
+-                this::onMediaCommandResult);
+     }
+ 
+     @Override
+     public void setVolume(double volume) {
+         if (!mSessionController.isConnected()) return;
+-        mSessionController.getRemoteMediaClient().setStreamVolume(volume).setResultCallback(
+-                this::onMediaCommandResult);
+     }
+ 
+     @Override
+@@ -125,54 +103,9 @@ public class FlingingControllerAdapter implements FlingingController, MediaContr
+             load(position);
+             return;
+         }
+-
+-        mSessionController.safelySeek(position).setResultCallback(this::onMediaCommandResult);
+-        mStreamPositionExtrapolator.onSeek(position);
+     }
+ 
+     ////////////////////////////////////////////
+     // MediaController implementation end
+     ////////////////////////////////////////////
+-
+-    public void onStatusUpdated() {
+-        if (mMediaStatusObserver == null) return;
+-
+-        RemoteMediaClient remoteMediaClient = mSessionController.getRemoteMediaClient();
+-
+-        MediaStatus mediaStatus = remoteMediaClient.getMediaStatus();
+-        if (mediaStatus != null) {
+-            mHasEverReceivedValidMediaSession = true;
+-            if (mediaStatus.getPlayerState() == MediaStatus.PLAYER_STATE_IDLE
+-                    && mediaStatus.getIdleReason() == MediaStatus.IDLE_REASON_FINISHED) {
+-                mLoaded = false;
+-                mStreamPositionExtrapolator.onFinish();
+-            } else {
+-                mStreamPositionExtrapolator.update(remoteMediaClient.getStreamDuration(),
+-                        remoteMediaClient.getApproximateStreamPosition(),
+-                        remoteMediaClient.isPlaying(), mediaStatus.getPlaybackRate());
+-            }
+-
+-            mMediaStatusObserver.onMediaStatusUpdate(new MediaStatusBridge(mediaStatus));
+-
+-        } else if (mHasEverReceivedValidMediaSession) {
+-            // We can receive a null |mediaStatus| while we are in the process of loading the video.
+-            // We should wait until we receive one valid media status before considering the video
+-            // unloaded. Otherwise, the first call to seek or play will reload the video.
+-            // See b/144325733.
+-            mLoaded = false;
+-            mStreamPositionExtrapolator.clear();
+-        }
+-    }
+-
+-    private void onMediaCommandResult(Result result) {
+-        // When multiple API calls are made in quick succession, "Results have already been set"
+-        // IllegalStateExceptions might be thrown from GMS code. We prefer to catch the exception
+-        // and noop it, than to crash. This might lead to some API calls never getting their
+-        // onResult() called, so we should not rely on onResult() being called for every API call.
+-        // See https://crbug.com/853923.
+-        if (!result.getStatus().isSuccess()) {
+-            Log.e(TAG, "Error when sending command. Status code: %d",
+-                    result.getStatus().getStatusCode());
+-        }
+-    }
+ }
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/RemotingMediaSource.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/RemotingMediaSource.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/RemotingMediaSource.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/RemotingMediaSource.java
+@@ -12,8 +12,6 @@ import android.util.Base64;
+ 
+ import androidx.annotation.Nullable;
+ 
+-import com.google.android.gms.cast.CastMediaControlIntent;
+-
+ import org.chromium.base.ContextUtils;
+ import org.chromium.base.Log;
+ import org.chromium.chrome.browser.media.router.MediaSource;
+@@ -79,9 +77,7 @@ public class RemotingMediaSource implements MediaSource {
+      */
+     @Override
+     public MediaRouteSelector buildRouteSelector() {
+-        return new MediaRouteSelector.Builder()
+-                .addControlCategory(CastMediaControlIntent.categoryForCast(getApplicationId()))
+-                .build();
++        return null;
+     }
+ 
+     /**
+@@ -108,7 +104,7 @@ public class RemotingMediaSource implements MediaSource {
+ 
+             sApplicationId = (customAppId != null && !customAppId.isEmpty())
+                     ? customAppId
+-                    : CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID;
++                    :  "CC1AD845"; /*DEFAULT_MEDIA_RECEIVER_APPLICATION_ID*/
+         }
+ 
+         return sApplicationId;
+diff --git a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/RemotingSessionController.java b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/RemotingSessionController.java
+--- a/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/RemotingSessionController.java
++++ b/chrome/android/features/media_router/java/src/org/chromium/chrome/browser/media/router/caf/remoting/RemotingSessionController.java
+@@ -4,8 +4,6 @@
+ 
+ package org.chromium.chrome.browser.media.router.caf.remoting;
+ 
+-import com.google.android.gms.cast.framework.CastSession;
+-
+ import org.chromium.base.Log;
+ import org.chromium.chrome.browser.media.router.CastSessionUtil;
+ import org.chromium.chrome.browser.media.router.caf.BaseNotificationController;
+@@ -33,19 +31,6 @@ public class RemotingSessionController extends BaseSessionController {
+         sInstance = new WeakReference<>(this);
+     }
+ 
+-    @Override
+-    public void attachToCastSession(CastSession session) {
+-        super.attachToCastSession(session);
+-
+-        try {
+-            getSession().setMessageReceivedCallbacks(
+-                    CastSessionUtil.MEDIA_NAMESPACE, this::onMessageReceived);
+-        } catch (Exception e) {
+-            Log.e(TAG, "Failed to register namespace listener for %s",
+-                    CastSessionUtil.MEDIA_NAMESPACE, e);
+-        }
+-    }
+-
+     @Override
+     public void onSessionStarted() {
+         super.onSessionStarted();
+@@ -53,12 +38,6 @@ public class RemotingSessionController extends BaseSessionController {
+         mFlingingControllerAdapter = new FlingingControllerAdapter(this, source.getMediaUrl());
+     }
+ 
+-    @Override
+-    protected void onStatusUpdated() {
+-        mFlingingControllerAdapter.onStatusUpdated();
+-        super.onStatusUpdated();
+-    }
+-
+     @Override
+     public FlingingControllerAdapter getFlingingController() {
+         return mFlingingControllerAdapter;
+diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/AndroidManifest.xml
+--- a/chrome/android/java/AndroidManifest.xml
++++ b/chrome/android/java/AndroidManifest.xml
+@@ -163,12 +163,6 @@ by a child template that "extends" this file.
+         <meta-data android:name="com.google.ar.core" android:value="optional" />
+         {% endif %}
+ 
+-        <!-- Cast support -->
+-        <meta-data
+-            android:name=
+-            "com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+-            android:value="org.chromium.chrome.browser.media.router.caf.CastOptionsProvider"/>
+-
+         <!-- Note: All activities directly or indirectly derived from ChromeActivity
+              must specify android:hardwareAccelerated="false".
+ 
+@@ -767,16 +761,6 @@ by a child template that "extends" this file.
+             </intent-filter>
+         </activity>
+ 
+-        <activity android:name="org.chromium.chrome.browser.media.router.caf.remoting.CafExpandedControllerActivity"
+-            android:theme="@style/Theme.Chromium.Activity"
+-            android:label="Chrome.CafExpandedControllerActivity"
+-            android:hardwareAccelerated="true"
+-            android:launchMode="singleTask"
+-            android:noHistory="true"
+-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|mcc|mnc|screenLayout|smallestScreenSize"
+-            android:excludeFromRecents="true">
+-        </activity>
+-
+         <!-- This activity is used to restart the main Chrome process.  Should never be exported. -->
+         <activity android:name="org.chromium.chrome.browser.BrowserRestartActivity"
+             android:launchMode="singleInstance"
+@@ -1204,18 +1188,6 @@ android:value="true" />
+         {% endif %}
+ 
+         {% block extra_application_definitions %}
+-
+-        <!-- Media route controllers to use for remote playback (cast).
+-             This is here, rather than in code, since it varies between upstream and downstream,
+-             yet we need this list of classes in the notification service, which belongs upstream
+-             and doesn't run the downstream startup code. The Cast code will, for each media element,
+-             choose the first MediaRouteController that can play it, so the order of the list can be important.
+-             The most specific MediaRouteControllers should be listed first, followed by more generic ones.
+-             The downstream manifest replaces this block, and hence replaces the list of media route
+-             controllers with its own list. -->
+-        <meta-data android:name="org.chromium.content.browser.REMOTE_MEDIA_PLAYERS"
+-            android:value="org.chromium.chrome.browser.media.remote.DefaultMediaRouteController"/>
+-
+         {% endblock %}
+         {% block extra_application_definitions_for_test %}
+         {% endblock %}
+diff --git a/chrome/test/android/cast_emulator/BUILD.gn b/chrome/test/android/cast_emulator/BUILD.gn
+--- a/chrome/test/android/cast_emulator/BUILD.gn
++++ b/chrome/test/android/cast_emulator/BUILD.gn
+@@ -20,7 +20,6 @@ android_library("cast_emulator_java") {
+     "src/org/chromium/chrome/browser/media/router/DummyRoutePublisher.java",
+   ]
+   deps = [
+-    "$google_play_services_package:google_play_services_cast_java",
+     "//base:base_java",
+     "//third_party/android_deps:android_support_v7_appcompat_java",
+     "//third_party/android_deps:com_android_support_mediarouter_v7_java",
+diff --git a/third_party/android_deps/BUILD.gn b/third_party/android_deps/BUILD.gn
+--- a/third_party/android_deps/BUILD.gn
++++ b/third_party/android_deps/BUILD.gn
+@@ -874,39 +874,6 @@ android_aar_prebuilt("google_play_services_basement_java") {
+   input_jars_paths = [ "$android_sdk/optional/org.apache.http.legacy.jar" ]
+ }
+ 
+-# This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+-android_aar_prebuilt("google_play_services_cast_java") {
+-  aar_path = "libs/com_google_android_gms_play_services_cast/play-services-cast-16.0.1.aar"
+-  info_path = "libs/com_google_android_gms_play_services_cast/com_google_android_gms_play_services_cast.info"
+-  deps = [
+-    ":com_android_support_mediarouter_v7_java",
+-    ":google_play_services_base_java",
+-    ":google_play_services_basement_java",
+-    ":google_play_services_flags_java",
+-    ":google_play_services_tasks_java",
+-  ]
+-
+-  # Removing drawables from GMS .aars as they are unused bloat.
+-  strip_drawables = true
+-}
+-
+-# This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+-android_aar_prebuilt("google_play_services_cast_framework_java") {
+-  aar_path = "libs/com_google_android_gms_play_services_cast_framework/play-services-cast-framework-16.0.1.aar"
+-  info_path = "libs/com_google_android_gms_play_services_cast_framework/com_google_android_gms_play_services_cast_framework.info"
+-  deps = [
+-    ":com_android_support_mediarouter_v7_java",
+-    ":com_android_support_recyclerview_v7_java",
+-    ":google_play_services_base_java",
+-    ":google_play_services_basement_java",
+-    ":google_play_services_cast_java",
+-  ]
+-
+-  # Removing all resources from cast framework as they are unused bloat.
+-  # Can only safely remove them when R8 will strip the path that accesses them.
+-  strip_resources = !is_java_debug
+-}
+-
+ # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+ android_aar_prebuilt("google_play_services_tasks_java") {
+   aar_path = "libs/com_google_android_gms_play_services_tasks/play-services-tasks-15.0.1.aar"
+-- 
+2.17.1
+

@@ -1,0 +1,879 @@
+From: thermatk <thermatk@thermatk.com>
+Date: Fri, 22 Jun 2018 17:11:38 +0200
+Subject: kill GCM
+
+---
+ chrome/android/BUILD.gn                       |   1 -
+ chrome/android/chrome_java_sources.gni        |   6 -
+ chrome/android/java/AndroidManifest.xml       |  62 ------
+ .../ChromeBackgroundTaskFactory.java          |   3 -
+ .../ntp/snippets/SnippetsLauncher.java        |  43 ----
+ .../services/gcm/GCMBackgroundTask.java       |   2 +-
+ .../gcm/InvalidationGcmUpstreamSender.java    |  18 --
+ components/background_task_scheduler/BUILD.gn |   1 -
+ ...kgroundTaskSchedulerGcmNetworkManager.java | 206 +-----------------
+ components/gcm_driver/android/BUILD.gn        |   1 -
+ .../gcm_driver/instance_id/android/BUILD.gn   |   1 -
+ .../instance_id/InstanceIDBridge.java         |  49 +----
+ components/sync/android/BUILD.gn              |   1 -
+ third_party/cacheinvalidation/BUILD.gn        |   6 -
+ .../contrib/MultiplexingGcmListener.java      |  91 +-------
+ .../channel/AndroidNetworkChannel.java        |   6 +-
+ 16 files changed, 9 insertions(+), 488 deletions(-)
+
+diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
+--- a/chrome/android/BUILD.gn
++++ b/chrome/android/BUILD.gn
+@@ -355,7 +355,6 @@ android_library("chrome_java") {
+     "//third_party/android_deps:com_google_protobuf_protobuf_lite_java",
+     "//third_party/android_deps:javax_inject_javax_inject_java",
+     "//third_party/android_media:android_media_java",
+-    "//third_party/android_sdk:android_gcm_java",
+     "//third_party/android_sdk/androidx_browser:androidx_browser_java",
+     "//third_party/android_swipe_refresh:android_swipe_refresh_java",
+     "//third_party/blink/public:blink_headers_java",
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -17,7 +17,6 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/ChromeActivity.java",
+   "java/src/org/chromium/chrome/browser/ChromeActivitySessionTracker.java",
+   "java/src/org/chromium/chrome/browser/ChromeApplication.java",
+-  "java/src/org/chromium/chrome/browser/ChromeBackgroundService.java",
+   "java/src/org/chromium/chrome/browser/ChromeBackupAgent.java",
+   "java/src/org/chromium/chrome/browser/ChromeBackupWatcher.java",
+   "java/src/org/chromium/chrome/browser/ChromeBaseAppCompatActivity.java",
+@@ -1361,11 +1360,6 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/services/AndroidEduAndChildAccountHelper.java",
+   "java/src/org/chromium/chrome/browser/services/AndroidEduOwnerCheckCallback.java",
+   "java/src/org/chromium/chrome/browser/services/GoogleServicesManager.java",
+-  "java/src/org/chromium/chrome/browser/services/gcm/ChromeGcmListenerService.java",
+-  "java/src/org/chromium/chrome/browser/services/gcm/GCMBackgroundService.java",
+-  "java/src/org/chromium/chrome/browser/services/gcm/GCMBackgroundTask.java",
+-  "java/src/org/chromium/chrome/browser/services/gcm/GcmUma.java",
+-  "java/src/org/chromium/chrome/browser/services/gcm/InvalidationGcmUpstreamSender.java",
+   "java/src/org/chromium/chrome/browser/settings/HyperlinkPreference.java",
+   "java/src/org/chromium/chrome/browser/settings/LearnMorePreference.java",
+   "java/src/org/chromium/chrome/browser/settings/MainSettings.java",
+diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/AndroidManifest.xml
+--- a/chrome/android/java/AndroidManifest.xml
++++ b/chrome/android/java/AndroidManifest.xml
+@@ -74,22 +74,17 @@ by a child template that "extends" this file.
+     <permission android:name="{{ manifest_package }}.permission.CHILD_SERVICE" android:protectionLevel="signature" />
+     <permission android:name="{{ manifest_package }}.permission.READ_WRITE_BOOKMARK_FOLDERS" android:protectionLevel="signatureOrSystem" />
+     <permission android:name="{{ manifest_package }}.TOS_ACKED" android:protectionLevel="signatureOrSystem" />
+-    <!-- Only chrome can receive the messages and registration result -->
+-    <permission android:name="{{ manifest_package }}.permission.C2D_MESSAGE"
+-        android:protectionLevel="signature" />
+     <permission android:name="{{ manifest_package }}.permission.DEBUG"
+                 android:label="Debug web pages"
+                 android:permissionGroup="android.permission-group.DEVELOPMENT_TOOLS"
+                 android:protectionLevel="signature" />
+ 
+-    <uses-permission android:name="{{ manifest_package }}.permission.C2D_MESSAGE" />
+     <uses-permission android:name="{{ manifest_package }}.permission.READ_WRITE_BOOKMARK_FOLDERS" />
+     <uses-permission android:name="{{ manifest_package }}.TOS_ACKED" />
+ 
+     <uses-permission android:name="com.chrome.permission.DEVICE_EXTRAS" />
+     <uses-permission android:name="com.android.browser.permission.READ_HISTORY_BOOKMARKS"/>
+     <uses-permission android:name="com.android.browser.permission.WRITE_HISTORY_BOOKMARKS"/>
+-    <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
+     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT"/>
+ 
+     {% block extra_uses_permissions %}
+@@ -1020,45 +1015,6 @@ by a child template that "extends" this file.
+             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|mcc|mnc|screenLayout|smallestScreenSize"
+             android:hardwareAccelerated="false" />
+ 
+-        <!-- Receiver for GCM messages. -->
+-        <receiver android:name="com.google.android.gms.gcm.GcmReceiver"
+-            android:exported="true"
+-            android:permission="com.google.android.c2dm.permission.SEND">
+-            <intent-filter>
+-                <action android:name="com.google.android.c2dm.intent.RECEIVE" />
+-                <action android:name="com.google.android.c2dm.intent.REGISTRATION" />
+-               <category android:name="{{ manifest_package }}"/>
+-            </intent-filter>
+-        </receiver>
+-        <!-- GcmTaskService for registration for Invalidations. -->
+-        <service android:name="com.google.ipc.invalidation.ticl.android2.channel.GcmRegistrationTaskService"
+-            android:exported="true"
+-            android:permission="com.google.android.gms.permission.BIND_NETWORK_TASK_SERVICE" >
+-            <intent-filter>
+-                <action android:name="com.google.android.gms.gcm.ACTION_TASK_READY"/>
+-            </intent-filter>
+-        </service>
+-        <!-- InstanceIDListenerService for token refresh events from GCM. -->
+-        <service android:name="com.google.ipc.invalidation.ticl.android2.channel.AndroidInstanceIDListenerService"
+-            android:exported="false">
+-            <intent-filter>
+-                <action android:name="com.google.android.gms.iid.InstanceID"/>
+-            </intent-filter>
+-        </service>
+-        <!-- GcmListenerService for messages from GCM. -->
+-        <service android:name="org.chromium.chrome.browser.services.gcm.ChromeGcmListenerService"
+-            android:exported="false" >
+-            <intent-filter>
+-              <action android:name="com.google.android.c2dm.intent.RECEIVE" />
+-            </intent-filter>
+-        </service>
+-        <service android:name="org.chromium.chrome.browser.services.gcm.GCMBackgroundService"
+-            android:exported="false"/>
+-        <meta-data android:name="ipc.invalidation.ticl.gcm_upstream_service_class"
+-            android:value="org.chromium.chrome.browser.services.gcm.InvalidationGcmUpstreamSender" />
+-        <service android:name="org.chromium.chrome.browser.services.gcm.InvalidationGcmUpstreamSender"
+-            android:exported="false"/>
+-
+         <!-- Android Notification service listener -->
+         <service android:name="org.chromium.chrome.browser.notifications.NotificationService"
+             android:exported="false"/>
+@@ -1080,28 +1036,10 @@ by a child template that "extends" this file.
+             android:exported="false"
+             android:permission="android.permission.BIND_JOB_SERVICE"/>
+ 
+-        <!-- Background Task Scheduler GCM task service -->
+-        <service android:name="org.chromium.components.background_task_scheduler.BackgroundTaskGcmTaskService"
+-            android:permission="com.google.android.gms.permission.BIND_NETWORK_TASK_SERVICE"
+-            android:exported="true">
+-            <intent-filter>
+-                <action android:name="com.google.android.gms.gcm.ACTION_TASK_READY" />
+-            </intent-filter>
+-        </service>
+-
+         <!-- Background Task Scheduler alarm receiver -->
+         <receiver android:name="org.chromium.components.background_task_scheduler.BackgroundTaskBroadcastReceiver"
+             android:exported="false" />
+ 
+-        <!-- GcmTaskService implementation to wake Chrome on scheduled events -->
+-        <service android:name="org.chromium.chrome.browser.ChromeBackgroundService"
+-            android:permission="com.google.android.gms.permission.BIND_NETWORK_TASK_SERVICE"
+-            android:exported="true">
+-            <intent-filter>
+-                <action android:name="com.google.android.gms.gcm.ACTION_TASK_READY" />
+-            </intent-filter>
+-        </service>
+-
+         <service android:name="org.chromium.chrome.browser.prerender.ChromePrerenderService"
+             android:exported="true"
+             tools:ignore="ExportedService" />
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/background_task_scheduler/ChromeBackgroundTaskFactory.java b/chrome/android/java/src/org/chromium/chrome/browser/background_task_scheduler/ChromeBackgroundTaskFactory.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/background_task_scheduler/ChromeBackgroundTaskFactory.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/background_task_scheduler/ChromeBackgroundTaskFactory.java
+@@ -19,7 +19,6 @@ import org.chromium.chrome.browser.offlinepages.OfflineBackgroundTask;
+ import org.chromium.chrome.browser.offlinepages.prefetch.OfflineNotificationBackgroundTask;
+ import org.chromium.chrome.browser.offlinepages.prefetch.PrefetchBackgroundTask;
+ import org.chromium.chrome.browser.omaha.OmahaService;
+-import org.chromium.chrome.browser.services.gcm.GCMBackgroundTask;
+ import org.chromium.chrome.browser.webapps.WebApkUpdateTask;
+ import org.chromium.components.background_task_scheduler.BackgroundTask;
+ import org.chromium.components.background_task_scheduler.BackgroundTaskFactory;
+@@ -48,8 +47,6 @@ public class ChromeBackgroundTaskFactory implements BackgroundTaskFactory {
+         switch (taskId) {
+             case TaskIds.OMAHA_JOB_ID:
+                 return new OmahaService();
+-            case TaskIds.GCM_BACKGROUND_TASK_JOB_ID:
+-                return new GCMBackgroundTask();
+             case TaskIds.OFFLINE_PAGES_BACKGROUND_JOB_ID:
+                 return new OfflineBackgroundTask();
+             case TaskIds.OFFLINE_PAGES_PREFETCH_JOB_ID:
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/snippets/SnippetsLauncher.java b/chrome/android/java/src/org/chromium/chrome/browser/ntp/snippets/SnippetsLauncher.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ntp/snippets/SnippetsLauncher.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ntp/snippets/SnippetsLauncher.java
+@@ -9,14 +9,9 @@ import android.net.ConnectivityManager;
+ 
+ import androidx.annotation.VisibleForTesting;
+ 
+-import com.google.android.gms.gcm.GcmNetworkManager;
+-import com.google.android.gms.gcm.PeriodicTask;
+-import com.google.android.gms.gcm.Task;
+-
+ import org.chromium.base.ContextUtils;
+ import org.chromium.base.Log;
+ import org.chromium.base.annotations.CalledByNative;
+-import org.chromium.chrome.browser.ChromeBackgroundService;
+ import org.chromium.chrome.browser.externalauth.ExternalAuthUtils;
+ import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
+ import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
+@@ -40,8 +35,6 @@ public class SnippetsLauncher {
+     // If it is non-null then the browser is running.
+     private static SnippetsLauncher sInstance;
+ 
+-    private GcmNetworkManager mScheduler;
+-
+     private boolean mGCMEnabled = true;
+ 
+     /**
+@@ -78,7 +71,6 @@ public class SnippetsLauncher {
+ 
+     protected SnippetsLauncher() {
+         checkGCM();
+-        mScheduler = GcmNetworkManager.getInstance(ContextUtils.getApplicationContext());
+     }
+ 
+     private void checkGCM() {
+@@ -89,32 +81,7 @@ public class SnippetsLauncher {
+         }
+     }
+ 
+-    private static PeriodicTask buildFetchTask(
+-            String tag, long periodSeconds, int requiredNetwork) {
+-        // Add a bit of "flex" around the target period. This achieves the following:
+-        // - It makes sure the task doesn't run (significantly) before its initial period has
+-        //   elapsed. In practice, the scheduler seems to behave like that anyway, but it doesn't
+-        //   guarantee that, so we shouldn't rely on it.
+-        // - It gives the scheduler a bit of room to optimize for battery life.
+-        long effectivePeriodSeconds = (long) (periodSeconds * (1.0 + FLEX_FACTOR));
+-        long flexSeconds = (long) (periodSeconds * (2.0 * FLEX_FACTOR));
+-        return new PeriodicTask.Builder()
+-                .setService(ChromeBackgroundService.class)
+-                .setTag(tag)
+-                .setPeriod(effectivePeriodSeconds)
+-                .setFlex(flexSeconds)
+-                .setRequiredNetwork(requiredNetwork)
+-                .setPersisted(true)
+-                .setUpdateCurrent(true)
+-                .build();
+-    }
+-
+     private void scheduleOrCancelFetchTask(String taskTag, long period, int requiredNetwork) {
+-        if (period > 0) {
+-            mScheduler.schedule(buildFetchTask(taskTag, period, requiredNetwork));
+-        } else {
+-            mScheduler.cancelTask(taskTag, ChromeBackgroundService.class);
+-        }
+     }
+ 
+     @CalledByNative
+@@ -126,14 +93,6 @@ public class SnippetsLauncher {
+         SharedPreferencesManager.getInstance().writeBoolean(
+                 ChromePreferenceKeys.NTP_SNIPPETS_IS_SCHEDULED, isScheduled);
+ 
+-        // Google Play Services may not be up to date, if the application was not installed through
+-        // the Play Store. In this case, scheduling the task will fail silently.
+-        try {
+-            scheduleOrCancelFetchTask(
+-                    TASK_TAG_WIFI, periodWifiSeconds, Task.NETWORK_STATE_UNMETERED);
+-            scheduleOrCancelFetchTask(
+-                    TASK_TAG_FALLBACK, periodFallbackSeconds, Task.NETWORK_STATE_CONNECTED);
+-        } catch (IllegalArgumentException e) {
+             // Disable GCM for the remainder of this session.
+             mGCMEnabled = false;
+ 
+@@ -141,8 +100,6 @@ public class SnippetsLauncher {
+                     ChromePreferenceKeys.NTP_SNIPPETS_IS_SCHEDULED);
+             // Return false so that the failure will be logged.
+             return false;
+-        }
+-        return true;
+     }
+ 
+     @CalledByNative
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/services/gcm/GCMBackgroundTask.java b/chrome/android/java/src/org/chromium/chrome/browser/services/gcm/GCMBackgroundTask.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/services/gcm/GCMBackgroundTask.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/services/gcm/GCMBackgroundTask.java
+@@ -42,7 +42,7 @@ public class GCMBackgroundTask implements BackgroundTask {
+             return false;
+         }
+ 
+-        ChromeGcmListenerService.dispatchMessageToDriver(message);
++        //ChromeGcmListenerService.dispatchMessageToDriver(message);
+         return false;
+     }
+ 
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/services/gcm/InvalidationGcmUpstreamSender.java b/chrome/android/java/src/org/chromium/chrome/browser/services/gcm/InvalidationGcmUpstreamSender.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/services/gcm/InvalidationGcmUpstreamSender.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/services/gcm/InvalidationGcmUpstreamSender.java
+@@ -14,7 +14,6 @@ import android.util.Log;
+ import androidx.annotation.MainThread;
+ import androidx.annotation.Nullable;
+ 
+-import com.google.android.gms.gcm.GoogleCloudMessaging;
+ import com.google.ipc.invalidation.ticl.android2.channel.GcmUpstreamSenderService;
+ 
+ import org.chromium.base.ContextUtils;
+@@ -28,9 +27,6 @@ import org.chromium.components.signin.identitymanager.IdentityManager;
+ import org.chromium.components.sync.SyncConstants;
+ import org.chromium.content_public.browser.UiThreadTaskTraits;
+ 
+-import java.io.IOException;
+-import java.util.UUID;
+-
+ /**
+  * Sends Upstream messages for Invalidations using GCM.
+  */
+@@ -92,20 +88,6 @@ public class InvalidationGcmUpstreamSender extends GcmUpstreamSenderService {
+      * This function runs on a thread pool executor thread.
+      */
+     private void sendUpstreamMessage(String to, Bundle data, String token, Context context) {
+-        // Add the OAuth2 token to the bundle. The token should have the prefix Bearer added to it.
+-        data.putString("Authorization", "Bearer " + token);
+-        if (!isMessageWithinLimit(data)) {
+-            GcmUma.recordGcmUpstreamHistogram(context, GcmUma.UMA_UPSTREAM_SIZE_LIMIT_EXCEEDED);
+-            return;
+-        }
+-        String msgId = UUID.randomUUID().toString();
+-        try {
+-            GoogleCloudMessaging.getInstance(ContextUtils.getApplicationContext())
+-                    .send(to, msgId, 1, data);
+-        } catch (IOException | IllegalArgumentException exception) {
+-            Log.w(TAG, "Send message failed");
+-            GcmUma.recordGcmUpstreamHistogram(context, GcmUma.UMA_UPSTREAM_SEND_FAILED);
+-        }
+     }
+ 
+     private boolean isMessageWithinLimit(Bundle data) {
+diff --git a/components/background_task_scheduler/BUILD.gn b/components/background_task_scheduler/BUILD.gn
+--- a/components/background_task_scheduler/BUILD.gn
++++ b/components/background_task_scheduler/BUILD.gn
+@@ -32,7 +32,6 @@ if (is_android) {
+       "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTask.java",
+       "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskBroadcastReceiver.java",
+       "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskFactory.java",
+-      "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskGcmTaskService.java",
+       "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskJobService.java",
+       "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskScheduler.java",
+       "android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskSchedulerAlarmManager.java",
+diff --git a/components/background_task_scheduler/android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskSchedulerGcmNetworkManager.java b/components/background_task_scheduler/android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskSchedulerGcmNetworkManager.java
+--- a/components/background_task_scheduler/android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskSchedulerGcmNetworkManager.java
++++ b/components/background_task_scheduler/android/java/src/org/chromium/components/background_task_scheduler/BackgroundTaskSchedulerGcmNetworkManager.java
+@@ -10,14 +10,6 @@ import android.os.Bundle;
+ import androidx.annotation.NonNull;
+ import androidx.annotation.VisibleForTesting;
+ 
+-import com.google.android.gms.common.ConnectionResult;
+-import com.google.android.gms.common.GoogleApiAvailability;
+-import com.google.android.gms.gcm.GcmNetworkManager;
+-import com.google.android.gms.gcm.OneoffTask;
+-import com.google.android.gms.gcm.PeriodicTask;
+-import com.google.android.gms.gcm.Task;
+-import com.google.android.gms.gcm.TaskParams;
+-
+ import org.chromium.base.Log;
+ import org.chromium.base.ThreadUtils;
+ 
+@@ -43,212 +35,16 @@ class BackgroundTaskSchedulerGcmNetworkManager implements BackgroundTaskSchedule
+         sClock = clock;
+     }
+ 
+-    /**
+-     * Checks if a task expired, based on the current time of the service.
+-     *
+-     * @param taskParams parameters sent to the service, which contain the scheduling information
+-     * regarding expiration.
+-     * @param currentTimeMs the current time of the service.
+-     * @return true if the task expired and false otherwise.
+-     */
+-    static boolean didTaskExpire(TaskParams taskParams, long currentTimeMs) {
+-        Bundle extras = taskParams.getExtras();
+-        if (extras == null || !extras.containsKey(BACKGROUND_TASK_SCHEDULE_TIME_KEY)) {
+-            return false;
+-        }
+-
+-        long scheduleTimeMs = extras.getLong(BACKGROUND_TASK_SCHEDULE_TIME_KEY);
+-        if (extras.containsKey(BACKGROUND_TASK_END_TIME_KEY)) {
+-            long endTimeMs =
+-                    extras.getLong(BackgroundTaskSchedulerDelegate.BACKGROUND_TASK_END_TIME_KEY);
+-            return TaskInfo.OneOffInfo.getExpirationStatus(
+-                    scheduleTimeMs, endTimeMs, currentTimeMs);
+-        } else {
+-            long intervalTimeMs = extras.getLong(BACKGROUND_TASK_INTERVAL_TIME_KEY);
+-
+-            // If flex is never set, it is given a default value of 10% of the period time, as
+-            // per the GcmNetworkManager behaviour. This default value is set in
+-            // https://developers.google.com/android/reference/com/google/android/gms/gcm/PeriodicTask.
+-            double defaultFlexAsFractionOfInterval = 0.1f;
+-
+-            long flexTimeMs = extras.getLong(BACKGROUND_TASK_FLEX_TIME_KEY,
+-                    /*defaultValue=*/(long) (defaultFlexAsFractionOfInterval * intervalTimeMs));
+-
+-            return TaskInfo.PeriodicInfo.getExpirationStatus(
+-                    scheduleTimeMs, intervalTimeMs, flexTimeMs, currentTimeMs);
+-        }
+-    }
+-
+-    /**
+-     * Retrieves the {@link TaskParameters} from the {@link TaskParams}, which are passed as
+-     * one of the keys. Only values valid for {@link android.os.BaseBundle} are supported, and other
+-     * values are stripped at the time when the task is scheduled.
+-     *
+-     * @param taskParams the {@link TaskParams} to extract the {@link TaskParameters} from.
+-     * @return the {@link TaskParameters} for the current job.
+-     */
+-    static TaskParameters getTaskParametersFromTaskParams(@NonNull TaskParams taskParams) {
+-        int taskId;
+-        try {
+-            taskId = Integer.parseInt(taskParams.getTag());
+-        } catch (NumberFormatException e) {
+-            Log.e(TAG, "Cound not parse task ID from task tag: " + taskParams.getTag());
+-            return null;
+-        }
+-
+-        TaskParameters.Builder builder = TaskParameters.create(taskId);
+-
+-        Bundle extras = taskParams.getExtras();
+-        Bundle taskExtras = extras.getBundle(BACKGROUND_TASK_EXTRAS_KEY);
+-        builder.addExtras(taskExtras);
+-
+-        return builder.build();
+-    }
+-
+-    @VisibleForTesting
+-    static Task createTaskFromTaskInfo(@NonNull TaskInfo taskInfo) {
+-        Bundle taskExtras = new Bundle();
+-        taskExtras.putBundle(BACKGROUND_TASK_EXTRAS_KEY, taskInfo.getExtras());
+-
+-        TaskBuilderVisitor taskBuilderVisitor = new TaskBuilderVisitor(taskExtras);
+-        taskInfo.getTimingInfo().accept(taskBuilderVisitor);
+-        Task.Builder builder = taskBuilderVisitor.getBuilder();
+-
+-        builder.setPersisted(taskInfo.isPersisted())
+-                .setRequiredNetwork(getGcmNetworkManagerNetworkTypeFromTypeFromTaskNetworkType(
+-                        taskInfo.getRequiredNetworkType()))
+-                .setRequiresCharging(taskInfo.requiresCharging())
+-                .setService(BackgroundTaskGcmTaskService.class)
+-                .setTag(taskIdToTaskTag(taskInfo.getTaskId()))
+-                .setUpdateCurrent(taskInfo.shouldUpdateCurrent());
+-
+-        return builder.build();
+-    }
+-
+-    private static class TaskBuilderVisitor implements TaskInfo.TimingInfoVisitor {
+-        private Task.Builder mBuilder;
+-        private final Bundle mTaskExtras;
+-
+-        TaskBuilderVisitor(Bundle taskExtras) {
+-            mTaskExtras = taskExtras;
+-        }
+-
+-        // Only valid after a TimingInfo object was visited.
+-        Task.Builder getBuilder() {
+-            return mBuilder;
+-        }
+-
+-        @Override
+-        public void visit(TaskInfo.OneOffInfo oneOffInfo) {
+-            if (oneOffInfo.expiresAfterWindowEndTime()) {
+-                mTaskExtras.putLong(BACKGROUND_TASK_SCHEDULE_TIME_KEY, sClock.currentTimeMillis());
+-                mTaskExtras.putLong(BACKGROUND_TASK_END_TIME_KEY, oneOffInfo.getWindowEndTimeMs());
+-            }
+-
+-            OneoffTask.Builder builder = new OneoffTask.Builder();
+-            long windowStartSeconds = oneOffInfo.hasWindowStartTimeConstraint()
+-                    ? TimeUnit.MILLISECONDS.toSeconds(oneOffInfo.getWindowStartTimeMs())
+-                    : 0;
+-            long windowEndTimeMs = oneOffInfo.getWindowEndTimeMs();
+-            if (oneOffInfo.expiresAfterWindowEndTime()) {
+-                windowEndTimeMs += DEADLINE_DELTA_MS;
+-            }
+-            builder.setExecutionWindow(
+-                    windowStartSeconds, TimeUnit.MILLISECONDS.toSeconds(windowEndTimeMs));
+-            builder.setExtras(mTaskExtras);
+-            mBuilder = builder;
+-        }
+-
+-        @Override
+-        public void visit(TaskInfo.PeriodicInfo periodicInfo) {
+-            if (periodicInfo.expiresAfterWindowEndTime()) {
+-                mTaskExtras.putLong(BACKGROUND_TASK_SCHEDULE_TIME_KEY, sClock.currentTimeMillis());
+-                mTaskExtras.putLong(
+-                        BACKGROUND_TASK_INTERVAL_TIME_KEY, periodicInfo.getIntervalMs());
+-                if (periodicInfo.hasFlex()) {
+-                    mTaskExtras.putLong(BACKGROUND_TASK_FLEX_TIME_KEY, periodicInfo.getFlexMs());
+-                }
+-            }
+-
+-            PeriodicTask.Builder builder = new PeriodicTask.Builder();
+-            builder.setPeriod(TimeUnit.MILLISECONDS.toSeconds(periodicInfo.getIntervalMs()));
+-            if (periodicInfo.hasFlex()) {
+-                builder.setFlex(TimeUnit.MILLISECONDS.toSeconds(periodicInfo.getFlexMs()));
+-            }
+-            builder.setExtras(mTaskExtras);
+-            mBuilder = builder;
+-        }
+-
+-        @Override
+-        public void visit(TaskInfo.ExactInfo exactInfo) {
+-            throw new RuntimeException("Exact tasks should not be scheduled with "
+-                    + "GcmNetworkManager.");
+-        }
+-    }
+-
+-    private static int getGcmNetworkManagerNetworkTypeFromTypeFromTaskNetworkType(
+-            @TaskInfo.NetworkType int networkType) {
+-        switch (networkType) {
+-            // This is correct: GcmNM ANY means no network is guaranteed.
+-            case TaskInfo.NetworkType.NONE:
+-                return Task.NETWORK_STATE_ANY;
+-            case TaskInfo.NetworkType.ANY:
+-                return Task.NETWORK_STATE_CONNECTED;
+-            case TaskInfo.NetworkType.UNMETERED:
+-                return Task.NETWORK_STATE_UNMETERED;
+-            default:
+-                assert false;
+-        }
+-        return Task.NETWORK_STATE_ANY;
+-    }
+-
+     @Override
+     public boolean schedule(Context context, @NonNull TaskInfo taskInfo) {
+         ThreadUtils.assertOnUiThread();
+ 
+-        GcmNetworkManager gcmNetworkManager = getGcmNetworkManager(context);
+-        if (gcmNetworkManager == null) {
+-            Log.e(TAG, "GcmNetworkManager is not available.");
+-            return false;
+-        }
+-
+-        try {
+-            Task task = createTaskFromTaskInfo(taskInfo);
+-            gcmNetworkManager.schedule(task);
+-        } catch (IllegalArgumentException e) {
+-            String gcmErrorMessage = e.getMessage() == null ? "null." : e.getMessage();
+-            Log.e(TAG,
+-                    "GcmNetworkManager failed to schedule task, gcm message: " + gcmErrorMessage);
+-            return false;
+-        }
+-
+-        return true;
++        return false;
+     }
+ 
+     @Override
+     public void cancel(Context context, int taskId) {
+         ThreadUtils.assertOnUiThread();
+-
+-        GcmNetworkManager gcmNetworkManager = getGcmNetworkManager(context);
+-        if (gcmNetworkManager == null) {
+-            Log.e(TAG, "GcmNetworkManager is not available.");
+-            return;
+-        }
+-
+-        try {
+-            gcmNetworkManager.cancelTask(
+-                    taskIdToTaskTag(taskId), BackgroundTaskGcmTaskService.class);
+-        } catch (IllegalArgumentException e) {
+-            Log.e(TAG, "GcmNetworkManager failed to cancel task.");
+-        }
+-    }
+-
+-    private GcmNetworkManager getGcmNetworkManager(Context context) {
+-        if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context)
+-                == ConnectionResult.SUCCESS) {
+-            return GcmNetworkManager.getInstance(context);
+-        }
+-        return null;
+     }
+ 
+     private static String taskIdToTaskTag(int taskId) {
+diff --git a/components/gcm_driver/android/BUILD.gn b/components/gcm_driver/android/BUILD.gn
+--- a/components/gcm_driver/android/BUILD.gn
++++ b/components/gcm_driver/android/BUILD.gn
+@@ -13,7 +13,6 @@ android_library("gcm_driver_java") {
+     "//base:base_java",
+     "//base:jni_java",
+     "//content/public/android:content_java",
+-    "//third_party/android_sdk:android_gcm_java",
+     "//third_party/jsr-305:jsr_305_javalib",
+   ]
+   annotation_processor_deps = [ "//base/android/jni_generator:jni_processor" ]
+diff --git a/components/gcm_driver/instance_id/android/BUILD.gn b/components/gcm_driver/instance_id/android/BUILD.gn
+--- a/components/gcm_driver/instance_id/android/BUILD.gn
++++ b/components/gcm_driver/instance_id/android/BUILD.gn
+@@ -27,7 +27,6 @@ android_library("instance_id_driver_java") {
+ 
+   sources = [
+     "java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDBridge.java",
+-    "java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDWithSubtype.java",
+   ]
+ }
+ 
+diff --git a/components/gcm_driver/instance_id/android/java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDBridge.java b/components/gcm_driver/instance_id/android/java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDBridge.java
+--- a/components/gcm_driver/instance_id/android/java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDBridge.java
++++ b/components/gcm_driver/instance_id/android/java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDBridge.java
+@@ -29,7 +29,6 @@ public class InstanceIDBridge {
+      * Underlying InstanceIDWithSubtype. May be shared by multiple InstanceIDBridges. Must be
+      * initialized on a background thread.
+      */
+-    private InstanceIDWithSubtype mInstanceID;
+ 
+     private static boolean sBlockOnAsyncTasksForTesting;
+ 
+@@ -74,7 +73,7 @@ public class InstanceIDBridge {
+         new BridgeAsyncTask<String>() {
+             @Override
+             protected String doBackgroundWork() {
+-                return mInstanceID.getId();
++                return "";
+             }
+             @Override
+             protected void sendResultToNative(String id) {
+@@ -90,7 +89,7 @@ public class InstanceIDBridge {
+         new BridgeAsyncTask<Long>() {
+             @Override
+             protected Long doBackgroundWork() {
+-                return mInstanceID.getCreationTime();
++                return 0L;
+             }
+             @Override
+             protected void sendResultToNative(Long creationTime) {
+@@ -116,21 +115,7 @@ public class InstanceIDBridge {
+         new BridgeAsyncTask<String>() {
+             @Override
+             protected String doBackgroundWork() {
+-                try {
+-                    // TODO(knollr): Migrate stored LazySubscriptionsManager data to
+-                    // SubscriptionFlagManager.
+-                    LazySubscriptionsManager.storeLazinessInformation(
+-                            LazySubscriptionsManager.buildSubscriptionUniqueId(
+-                                    mSubtype, authorizedEntity),
+-                            (flags & InstanceIDFlags.IS_LAZY) == InstanceIDFlags.IS_LAZY);
+-                    SubscriptionFlagManager.setFlags(
+-                            SubscriptionFlagManager.buildSubscriptionUniqueId(
+-                                    mSubtype, authorizedEntity),
+-                            flags);
+-                    return mInstanceID.getToken(authorizedEntity, scope, extras);
+-                } catch (IOException ex) {
+-                    return "";
+-                }
++                return "";
+             }
+             @Override
+             protected void sendResultToNative(String token) {
+@@ -147,21 +132,7 @@ public class InstanceIDBridge {
+         new BridgeAsyncTask<Boolean>() {
+             @Override
+             protected Boolean doBackgroundWork() {
+-                try {
+-                    mInstanceID.deleteToken(authorizedEntity, scope);
+-                    String subscriptionId = LazySubscriptionsManager.buildSubscriptionUniqueId(
+-                            mSubtype, authorizedEntity);
+-                    if (LazySubscriptionsManager.isSubscriptionLazy(subscriptionId)) {
+-                        LazySubscriptionsManager.deletePersistedMessagesForSubscriptionId(
+-                                subscriptionId);
+-                    }
+-                    SubscriptionFlagManager.clearFlags(
+-                            SubscriptionFlagManager.buildSubscriptionUniqueId(
+-                                    mSubtype, authorizedEntity));
+-                    return true;
+-                } catch (IOException ex) {
+-                    return false;
+-                }
++                return false;
+             }
+             @Override
+             protected void sendResultToNative(Boolean success) {
+@@ -177,12 +148,7 @@ public class InstanceIDBridge {
+         new BridgeAsyncTask<Boolean>() {
+             @Override
+             protected Boolean doBackgroundWork() {
+-                try {
+-                    mInstanceID.deleteInstanceID();
+-                    return true;
+-                } catch (IOException ex) {
+-                    return false;
+-                }
++                return true;
+             }
+             @Override
+             protected void sendResultToNative(Boolean success) {
+@@ -212,11 +178,6 @@ public class InstanceIDBridge {
+                 @Override
+                 @SuppressWarnings("NoSynchronizedThisCheck") // Only used/accessible by native.
+                 protected Result doInBackground() {
+-                    synchronized (InstanceIDBridge.this) {
+-                        if (mInstanceID == null) {
+-                            mInstanceID = InstanceIDWithSubtype.getInstance(mSubtype);
+-                        }
+-                    }
+                     return doBackgroundWork();
+                 }
+                 @Override
+diff --git a/components/sync/android/BUILD.gn b/components/sync/android/BUILD.gn
+--- a/components/sync/android/BUILD.gn
++++ b/components/sync/android/BUILD.gn
+@@ -12,7 +12,6 @@ android_library("sync_java") {
+     "//components/signin/core/browser/android:java",
+     "//net/android:net_java",
+     "//third_party/android_deps:androidx_annotation_annotation_java",
+-    "//third_party/android_sdk:android_gcm_java",
+     "//third_party/cacheinvalidation:cacheinvalidation_javalib",
+     "//third_party/cacheinvalidation:cacheinvalidation_proto_java",
+     "//third_party/jsr-305:jsr_305_javalib",
+diff --git a/third_party/cacheinvalidation/BUILD.gn b/third_party/cacheinvalidation/BUILD.gn
+--- a/third_party/cacheinvalidation/BUILD.gn
++++ b/third_party/cacheinvalidation/BUILD.gn
+@@ -138,7 +138,6 @@ if (is_android) {
+       "$google_play_services_package:google_play_services_tasks_java",
+       "//base:base_java",
+       "//third_party/android_protobuf:protobuf_nano_javalib",
+-      "//third_party/android_sdk:android_gcm_java",
+     ]
+ 
+     sources = [
+@@ -204,13 +203,8 @@ if (is_android) {
+       "src/java/com/google/ipc/invalidation/ticl/android2/WakeLockManager.java",
+       "src/java/com/google/ipc/invalidation/ticl/android2/channel/AndroidChannelConstants.java",
+       "src/java/com/google/ipc/invalidation/ticl/android2/channel/AndroidChannelPreferences.java",
+-      "src/java/com/google/ipc/invalidation/ticl/android2/channel/AndroidGcmController.java",
+-      "src/java/com/google/ipc/invalidation/ticl/android2/channel/AndroidInstanceIDListenerService.java",
+-      "src/java/com/google/ipc/invalidation/ticl/android2/channel/AndroidMessageReceiverService.java",
+-      "src/java/com/google/ipc/invalidation/ticl/android2/channel/AndroidMessageSenderService.java",
+       "src/java/com/google/ipc/invalidation/ticl/android2/channel/AndroidNetworkChannel.java",
+       "src/java/com/google/ipc/invalidation/ticl/android2/channel/CommonUtils.java",
+-      "src/java/com/google/ipc/invalidation/ticl/android2/channel/GcmRegistrationTaskService.java",
+       "src/java/com/google/ipc/invalidation/ticl/android2/channel/GcmUpstreamSenderService.java",
+       "src/java/com/google/ipc/invalidation/ticl/proto/AndroidChannel.java",
+       "src/java/com/google/ipc/invalidation/ticl/proto/AndroidListenerProtocol.java",
+diff --git a/third_party/cacheinvalidation/src/java/com/google/ipc/invalidation/external/client/contrib/MultiplexingGcmListener.java b/third_party/cacheinvalidation/src/java/com/google/ipc/invalidation/external/client/contrib/MultiplexingGcmListener.java
+--- a/third_party/cacheinvalidation/src/java/com/google/ipc/invalidation/external/client/contrib/MultiplexingGcmListener.java
++++ b/third_party/cacheinvalidation/src/java/com/google/ipc/invalidation/external/client/contrib/MultiplexingGcmListener.java
+@@ -16,9 +16,6 @@
+ 
+ package com.google.ipc.invalidation.external.client.contrib;
+ 
+-import com.google.android.gcm.GCMBaseIntentService;
+-import com.google.android.gcm.GCMBroadcastReceiver;
+-import com.google.android.gcm.GCMRegistrar;
+ import com.google.ipc.invalidation.external.client.SystemResources.Logger;
+ import com.google.ipc.invalidation.external.client.android.service.AndroidLogger;
+ import com.google.ipc.invalidation.ticl.android2.WakeLockManager;
+@@ -69,7 +66,7 @@ import android.content.pm.ServiceInfo;
+  * there is nothing to do except log an error (which this class does).
+  *
+  */
+-public class MultiplexingGcmListener extends GCMBaseIntentService {
++public class MultiplexingGcmListener {
+   /* This class is public so that it can be instantiated by the Android runtime. */
+ 
+   /** Constants used in broadcast Intents. */
+@@ -105,18 +102,6 @@ public class MultiplexingGcmListener extends GCMBaseIntentService {
+     public static final String EXTRA_DATA_NUM_DELETED_MSGS = PREFIX + "NUM_DELETED_MSGS";
+   }
+ 
+-  /**
+-   * {@link GCMBroadcastReceiver} that forwards GCM intents to the {@code MultiplexingGcmListener}
+-   * class.
+-   */
+-  public static class GCMReceiver extends GCMBroadcastReceiver {
+-    /* This class is public so that it can be instantiated by the Android runtime. */
+-    @Override
+-    protected String getGCMIntentServiceClassName(Context context) {
+-      return MultiplexingGcmListener.class.getName();
+-    }
+-  }
+-
+   /**
+    * Convenience base class for client implementations. It provides base classes for a broadcast
+    * receiver and an intent service that work together to handle events from the
+@@ -260,80 +245,6 @@ public class MultiplexingGcmListener extends GCMBaseIntentService {
+   /** Logger. */
+   private static final Logger logger = AndroidLogger.forTag("MplexGcmListener");
+ 
+-  // All onYYY methods work by constructing an appropriate Intent and broadcasting it.
+-
+-  @Override
+-  protected void onMessage(Context context, Intent intent) {
+-    Intent newIntent = new Intent();
+-    newIntent.putExtra(Intents.EXTRA_OP_MESSAGE, true);
+-    newIntent.putExtras(intent);
+-    rebroadcast(newIntent);
+-  }
+-
+-  @Override
+-  protected void onRegistered(Context context, String registrationId) {
+-    Intent intent = new Intent();
+-    intent.putExtra(Intents.EXTRA_OP_REGISTERED, true);
+-    intent.putExtra(Intents.EXTRA_DATA_REG_ID, registrationId);
+-    rebroadcast(intent);
+-  }
+-
+-  @Override
+-  protected void onUnregistered(Context context, String registrationId) {
+-    Intent intent = new Intent();
+-    intent.putExtra(Intents.EXTRA_OP_UNREGISTERED, true);
+-    intent.putExtra(Intents.EXTRA_DATA_REG_ID, registrationId);
+-    rebroadcast(intent);
+-  }
+-
+-  @Override
+-  protected void onDeletedMessages(Context context, int total) {
+-    Intent intent = new Intent();
+-    intent.putExtra(Intents.EXTRA_OP_DELETED_MESSAGES, true);
+-    intent.putExtra(Intents.EXTRA_DATA_NUM_DELETED_MSGS, total);
+-    rebroadcast(intent);
+-  }
+-
+-  @Override
+-  protected void onError(Context context, String errorId) {
+-    // This is called for unrecoverable errors, so just log a warning.
+-    logger.warning("GCM error: %s", errorId);
+-  }
+-
+-  @Override
+-  protected String[] getSenderIds(Context context) {
+-    return readSenderIdsFromManifestOrDie(this);
+-  }
+-
+-  /**
+-   * Broadcasts {@code intent} with the action set to {@link Intents#ACTION} and the package name
+-   * set to the package name of this service.
+-   */
+-  private void rebroadcast(Intent intent) {
+-    intent.setAction(Intents.ACTION);
+-    intent.setPackage(getPackageName());
+-    sendBroadcast(intent);
+-  }
+-
+-  /**
+-   * Registers with GCM if not already registered. Also verifies that the device supports GCM
+-   * and that the manifest is correctly configured. Returns the existing registration id, if one
+-   * exists, or the empty string if one does not.
+-   *
+-   * @throws UnsupportedOperationException if the device does not have all GCM dependencies
+-   * @throws IllegalStateException if the manifest is not correctly configured
+-   */
+-  public static String initializeGcm(Context context) {
+-      AndroidChannelPreferences.setGcmChannelType(GcmChannelType.DEFAULT);
+-      GCMRegistrar.checkDevice(context);
+-      GCMRegistrar.checkManifest(context);
+-      final String regId = GCMRegistrar.getRegistrationId(context);
+-      if (regId.isEmpty()) {
+-          GCMRegistrar.register(context, readSenderIdsFromManifestOrDie(context));
+-      }
+-    return regId;
+-  }
+-
+   /**
+    * Returns the GCM sender ids from {@link #GCM_SENDER_IDS_METADATA_KEY} or throws a
+    * {@code RuntimeException} if they are not defined.
+diff --git a/third_party/cacheinvalidation/src/java/com/google/ipc/invalidation/ticl/android2/channel/AndroidNetworkChannel.java b/third_party/cacheinvalidation/src/java/com/google/ipc/invalidation/ticl/android2/channel/AndroidNetworkChannel.java
+--- a/third_party/cacheinvalidation/src/java/com/google/ipc/invalidation/ticl/android2/channel/AndroidNetworkChannel.java
++++ b/third_party/cacheinvalidation/src/java/com/google/ipc/invalidation/ticl/android2/channel/AndroidNetworkChannel.java
+@@ -48,16 +48,12 @@ public class AndroidNetworkChannel implements TestableNetworkChannel {
+     Intent intent = ProtocolIntents.newOutboundMessageIntent(outgoingMessage);
+ 
+     // Select the sender service to use for upstream message.
+-    if (AndroidChannelPreferences.getGcmChannelType() == GcmChannelType.GCM_UPSTREAM) {
+         String upstreamServiceClass = new AndroidTiclManifest(context).getGcmUpstreamServiceClass();
+         if (upstreamServiceClass == null || upstreamServiceClass.isEmpty()) {
+             logger.warning("GcmUpstreamSenderService class not found.");
+             return;
+         }
+         intent.setClassName(context, upstreamServiceClass);
+-    } else {
+-        intent.setClassName(context, AndroidMessageSenderService.class.getName());
+-    }
+     try {
+       context.startService(intent);
+     } catch (IllegalStateException exception) {
+@@ -77,6 +73,6 @@ public class AndroidNetworkChannel implements TestableNetworkChannel {
+ 
+   @Override
+   public NetworkEndpointId getNetworkIdForTest() {
+-    return AndroidMessageSenderService.getNetworkEndpointId(context, resources.getLogger());
++    return null;
+   }
+ }
+-- 
+2.17.1
+

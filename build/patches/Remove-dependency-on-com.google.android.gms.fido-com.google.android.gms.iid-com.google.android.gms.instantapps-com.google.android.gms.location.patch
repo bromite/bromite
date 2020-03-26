@@ -1,0 +1,548 @@
+From: Wengling Chen <feiyu2817@gmail.com>
+Date: Sat, 2 Nov 2019 07:58:48 +0100
+Subject: Remove dependency on com.google.android.gms.fido,
+ com.google.android.gms.iid, com.google.android.gms.instantapps,
+ com.google.android.gms.location
+
+---
+ chrome/android/BUILD.gn                       |   5 -
+ .../ExternalNavigationHandler.java            |   4 -
+ .../instantapps/InstantAppsHandler.java       |  59 +---------
+ .../gcm_driver/instance_id/android/BUILD.gn   |   2 -
+ .../instance_id/InstanceIDWithSubtype.java    |  28 +----
+ device/BUILD.gn                               |   1 -
+ services/device/geolocation/BUILD.gn          |   1 -
+ .../geolocation/LocationProviderGmsCore.java  | 103 +-----------------
+ third_party/android_deps/BUILD.gn             |  58 ----------
+ third_party/cacheinvalidation/BUILD.gn        |   1 -
+ .../android2/AndroidManifestUpdatedGcm.xml    |   3 -
+ 11 files changed, 9 insertions(+), 256 deletions(-)
+
+diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
+--- a/chrome/android/BUILD.gn
++++ b/chrome/android/BUILD.gn
+@@ -226,8 +226,6 @@ android_library("chrome_java") {
+     "$google_play_services_package:google_play_services_basement_java",
+     "$google_play_services_package:google_play_services_cast_framework_java",
+     "$google_play_services_package:google_play_services_cast_java",
+-    "$google_play_services_package:google_play_services_fido_java",
+-    "$google_play_services_package:google_play_services_iid_java",
+     "$google_play_services_package:google_play_services_tasks_java",
+     "//base:base_java",
+     "//base:jni_java",
+@@ -630,7 +628,6 @@ junit_binary("chrome_junit_tests") {
+     "$google_play_services_package:google_play_services_basement_java",
+     "$google_play_services_package:google_play_services_cast_framework_java",
+     "$google_play_services_package:google_play_services_cast_java",
+-    "$google_play_services_package:google_play_services_fido_java",
+     "//base:base_java",
+     "//base:base_java_test_support",
+     "//base:base_junit_test_support",
+@@ -741,8 +738,6 @@ android_library("chrome_test_java") {
+     "$google_play_services_package:google_play_services_basement_java",
+     "$google_play_services_package:google_play_services_cast_framework_java",
+     "$google_play_services_package:google_play_services_cast_java",
+-    "$google_play_services_package:google_play_services_fido_java",
+-    "$google_play_services_package:google_play_services_iid_java",
+     "$google_play_services_package:google_play_services_tasks_java",
+     "//base:base_java",
+     "//base:base_java_test_support",
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/externalnav/ExternalNavigationHandler.java b/chrome/android/java/src/org/chromium/chrome/browser/externalnav/ExternalNavigationHandler.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/externalnav/ExternalNavigationHandler.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/externalnav/ExternalNavigationHandler.java
+@@ -679,10 +679,6 @@ public class ExternalNavigationHandler {
+         if (shouldProxyForInstantApps) {
+             RecordHistogram.recordEnumeratedHistogram("Android.InstantApps.DirectInstantAppsIntent",
+                     AiaIntent.SERP, AiaIntent.NUM_ENTRIES);
+-            targetIntent.putExtra(InstantAppsHandler.IS_GOOGLE_SEARCH_REFERRER, true);
+-        } else {
+-            // Make sure this extra is not sent unless we've done the verification.
+-            targetIntent.removeExtra(InstantAppsHandler.IS_GOOGLE_SEARCH_REFERRER);
+         }
+ 
+         // The intent can be used to launch Chrome itself, record the user
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/instantapps/InstantAppsHandler.java b/chrome/android/java/src/org/chromium/chrome/browser/instantapps/InstantAppsHandler.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/instantapps/InstantAppsHandler.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/instantapps/InstantAppsHandler.java
+@@ -44,36 +44,6 @@ public class InstantAppsHandler {
+     // TODO(mariakhomenko): Use system once we roll to O SDK.
+     private static final int FLAG_DO_NOT_LAUNCH = 0x00000200;
+ 
+-    // TODO(mariakhomenko): Depend directly on the constants once we roll to v8 libraries.
+-    private static final String DO_NOT_LAUNCH_EXTRA =
+-            "com.google.android.gms.instantapps.DO_NOT_LAUNCH_INSTANT_APP";
+-
+-    protected static final String IS_REFERRER_TRUSTED_EXTRA =
+-            "com.google.android.gms.instantapps.IS_REFERRER_TRUSTED";
+-
+-    protected static final String IS_USER_CONFIRMED_LAUNCH_EXTRA =
+-            "com.google.android.gms.instantapps.IS_USER_CONFIRMED_LAUNCH";
+-
+-    protected static final String TRUSTED_REFERRER_PKG_EXTRA =
+-            "com.google.android.gms.instantapps.TRUSTED_REFERRER_PKG";
+-
+-    public static final String IS_GOOGLE_SEARCH_REFERRER =
+-            "com.google.android.gms.instantapps.IS_GOOGLE_SEARCH_REFERRER";
+-
+-    private static final String BROWSER_LAUNCH_REASON =
+-            "com.google.android.gms.instantapps.BROWSER_LAUNCH_REASON";
+-
+-    private static final String SUPERVISOR_PKG = "com.google.android.instantapps.supervisor";
+-
+-    private static final String[] SUPERVISOR_START_ACTIONS = {
+-            "com.google.android.instantapps.START", "com.google.android.instantapps.nmr1.INSTALL",
+-            "com.google.android.instantapps.nmr1.VIEW"};
+-
+-    // Instant Apps system resolver activity on N-MR1+.
+-    @VisibleForTesting
+-    public static final String EPHEMERAL_INSTALLER_CLASS =
+-            "com.google.android.gms.instantapps.routing.EphemeralInstallerActivity";
+-
+     /** Finch experiment name. */
+     private static final String INSTANT_APPS_EXPERIMENT_NAME = "InstantApps";
+ 
+@@ -125,14 +95,6 @@ public class InstantAppsHandler {
+      * @return Whether the given intent is going to open an Instant App.
+      */
+     public static boolean isIntentToInstantApp(Intent intent) {
+-        if (SUPERVISOR_PKG.equals(intent.getPackage())) return true;
+-
+-        String intentAction = intent.getAction();
+-        for (String action : SUPERVISOR_START_ACTIONS) {
+-            if (action.equals(intentAction)) {
+-                return true;
+-            }
+-        }
+         return false;
+     }
+ 
+@@ -169,13 +131,7 @@ public class InstantAppsHandler {
+             sFallbackIntentTimes.record(SystemClock.elapsedRealtime() - startTime);
+             intent.removeExtra(INSTANT_APP_START_TIME_EXTRA);
+         }
+-        int callSource = IntentUtils.safeGetIntExtra(intent, BROWSER_LAUNCH_REASON, 0);
+-        if (callSource > 0 && callSource < SOURCE_BOUNDARY) {
+-            sFallbackCallSource.record(callSource);
+-            intent.removeExtra(BROWSER_LAUNCH_REASON);
+-        } else if (callSource >= SOURCE_BOUNDARY) {
+-            Log.e(TAG, "Unexpected call source constant for Instant Apps: " + callSource);
+-        }
++        Log.e(TAG, "Unexpected call source constant for Instant Apps");
+     }
+ 
+     /**
+@@ -210,14 +166,6 @@ public class InstantAppsHandler {
+             return false;
+         }
+ 
+-        if (IntentUtils.safeGetBooleanExtra(intent, DO_NOT_LAUNCH_EXTRA, false)
+-                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+-                           && (intent.getFlags() & FLAG_DO_NOT_LAUNCH) != 0)) {
+-            maybeRecordFallbackStats(intent);
+-            Log.i(TAG, "Not handling with Instant Apps (DO_NOT_LAUNCH_EXTRA)");
+-            return false;
+-        }
+-
+         if (IntentUtils.safeGetBooleanExtra(
+                 intent, IntentHandler.EXTRA_OPEN_NEW_INCOGNITO_TAB, false)
+                 || IntentUtils.safeHasExtra(intent, ShortcutHelper.EXTRA_SOURCE)
+@@ -242,7 +190,6 @@ public class InstantAppsHandler {
+         }
+ 
+         Intent callbackIntent = new Intent(intent);
+-        callbackIntent.putExtra(DO_NOT_LAUNCH_EXTRA, true);
+         callbackIntent.putExtra(INSTANT_APP_START_TIME_EXTRA, startTime);
+ 
+         return tryLaunchingInstantApp(context, intent, isCustomTabsIntent, callbackIntent);
+@@ -345,12 +292,9 @@ public class InstantAppsHandler {
+         Intent iaIntent = data.getIntent();
+         if (data.getReferrer() != null) {
+             iaIntent.putExtra(Intent.EXTRA_REFERRER, data.getReferrer());
+-            iaIntent.putExtra(IS_REFERRER_TRUSTED_EXTRA, true);
+         }
+ 
+         Context appContext = ContextUtils.getApplicationContext();
+-        iaIntent.putExtra(TRUSTED_REFERRER_PKG_EXTRA, appContext.getPackageName());
+-        iaIntent.putExtra(IS_USER_CONFIRMED_LAUNCH_EXTRA, true);
+ 
+         try {
+             appContext.startActivity(iaIntent);
+@@ -396,7 +340,6 @@ public class InstantAppsHandler {
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+             return info.isInstantAppAvailable;
+         } else if (info.activityInfo != null) {
+-            return EPHEMERAL_INSTALLER_CLASS.equals(info.activityInfo.name);
+         }
+ 
+         return false;
+diff --git a/components/gcm_driver/instance_id/android/BUILD.gn b/components/gcm_driver/instance_id/android/BUILD.gn
+--- a/components/gcm_driver/instance_id/android/BUILD.gn
++++ b/components/gcm_driver/instance_id/android/BUILD.gn
+@@ -15,7 +15,6 @@ generate_jni("test_support_jni_headers") {
+ 
+ android_library("instance_id_driver_java") {
+   deps = [
+-    "$google_play_services_package:google_play_services_iid_java",
+     "//base:base_java",
+     "//base:jni_java",
+     "//components/gcm_driver/android:gcm_driver_java",
+@@ -33,7 +32,6 @@ android_library("instance_id_driver_java") {
+ android_library("instance_id_driver_test_support_java") {
+   deps = [
+     ":instance_id_driver_java",
+-    "$google_play_services_package:google_play_services_iid_java",
+     "//base:base_java",
+   ]
+ 
+diff --git a/components/gcm_driver/instance_id/android/java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDWithSubtype.java b/components/gcm_driver/instance_id/android/java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDWithSubtype.java
+--- a/components/gcm_driver/instance_id/android/java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDWithSubtype.java
++++ b/components/gcm_driver/instance_id/android/java/src/org/chromium/components/gcm_driver/instance_id/InstanceIDWithSubtype.java
+@@ -10,8 +10,6 @@ import android.text.TextUtils;
+ 
+ import androidx.annotation.VisibleForTesting;
+ 
+-import com.google.android.gms.iid.InstanceID;
+-
+ import org.chromium.base.ContextUtils;
+ 
+ import java.io.IOException;
+@@ -26,8 +24,6 @@ public class InstanceIDWithSubtype {
+     // Must match the private InstanceID.OPTION_SUBTYPE, which is guaranteed to not change.
+     private static final String OPTION_SUBTYPE = "subtype";
+ 
+-    private final InstanceID mInstanceID;
+-
+     /**
+      * Cached instances. May be accessed from multiple threads; synchronize on sSubtypeInstancesLock
+      */
+@@ -39,10 +35,6 @@ public class InstanceIDWithSubtype {
+     @VisibleForTesting
+     protected static FakeFactory sFakeFactoryForTesting;
+ 
+-    protected InstanceIDWithSubtype(InstanceID instanceID) {
+-        mInstanceID = instanceID;
+-    }
+-
+     /**
+      * Returns an instance of this class. Unlike {@link InstanceID#getInstance(Context)}, it is not
+      * a singleton, but instead a different instance will be returned for each {@code subtype}.
+@@ -58,11 +50,6 @@ public class InstanceIDWithSubtype {
+                 if (sFakeFactoryForTesting != null) {
+                     existing = sFakeFactoryForTesting.create(subtype);
+                 } else {
+-                    Bundle options = new Bundle();
+-                    options.putCharSequence(OPTION_SUBTYPE, subtype);
+-                    InstanceID instanceID =
+-                            InstanceID.getInstance(ContextUtils.getApplicationContext(), options);
+-                    existing = new InstanceIDWithSubtype(instanceID);
+                 }
+                 sSubtypeInstances.put(subtype, existing);
+             }
+@@ -71,35 +58,30 @@ public class InstanceIDWithSubtype {
+     }
+ 
+     public String getSubtype() {
+-        return mInstanceID.getSubtype();
++        return "";
+     }
+ 
+     public String getId() {
+-        return mInstanceID.getId();
++        return "";
+     }
+ 
+     public long getCreationTime() {
+-        return mInstanceID.getCreationTime();
++        return 0;
+     }
+ 
+     public void deleteInstanceID() throws IOException {
+-        synchronized (sSubtypeInstancesLock) {
+-            sSubtypeInstances.remove(mInstanceID.getSubtype());
+-            mInstanceID.deleteInstanceID();
+-        }
+     }
+ 
+     public void deleteToken(String authorizedEntity, String scope) throws IOException {
+-        mInstanceID.deleteToken(authorizedEntity, scope);
+     }
+ 
+     public String getToken(String authorizedEntity, String scope) throws IOException {
+-        return mInstanceID.getToken(authorizedEntity, scope);
++        return "";
+     }
+ 
+     public String getToken(String authorizedEntity, String scope, Bundle extras)
+             throws IOException {
+-        return mInstanceID.getToken(authorizedEntity, scope, extras);
++        return "";
+     }
+ 
+     /** Fake subclasses can set {@link #sFakeFactoryForTesting} to an implementation of this. */
+diff --git a/device/BUILD.gn b/device/BUILD.gn
+--- a/device/BUILD.gn
++++ b/device/BUILD.gn
+@@ -390,7 +390,6 @@ if (is_android) {
+     deps = [
+       "$google_play_services_package:google_play_services_base_java",
+       "$google_play_services_package:google_play_services_basement_java",
+-      "$google_play_services_package:google_play_services_location_java",
+       "//base:base_java",
+       "//base:base_java_test_support",
+       "//base:base_junit_test_support",
+diff --git a/services/device/geolocation/BUILD.gn b/services/device/geolocation/BUILD.gn
+--- a/services/device/geolocation/BUILD.gn
++++ b/services/device/geolocation/BUILD.gn
+@@ -151,7 +151,6 @@ if (is_android) {
+       ":geolocation_jni_headers",
+       "$google_play_services_package:google_play_services_base_java",
+       "$google_play_services_package:google_play_services_basement_java",
+-      "$google_play_services_package:google_play_services_location_java",
+       "//base:base_java",
+       "//base:jni_java",
+       "//components/location/android:location_java",
+diff --git a/services/device/geolocation/android/java/src/org/chromium/device/geolocation/LocationProviderGmsCore.java b/services/device/geolocation/android/java/src/org/chromium/device/geolocation/LocationProviderGmsCore.java
+--- a/services/device/geolocation/android/java/src/org/chromium/device/geolocation/LocationProviderGmsCore.java
++++ b/services/device/geolocation/android/java/src/org/chromium/device/geolocation/LocationProviderGmsCore.java
+@@ -8,16 +8,6 @@ import android.content.Context;
+ import android.location.Location;
+ import android.os.Bundle;
+ 
+-import com.google.android.gms.common.ConnectionResult;
+-import com.google.android.gms.common.GoogleApiAvailability;
+-import com.google.android.gms.common.api.GoogleApiClient;
+-import com.google.android.gms.common.api.GoogleApiClient.ConnectionCallbacks;
+-import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListener;
+-import com.google.android.gms.location.FusedLocationProviderApi;
+-import com.google.android.gms.location.LocationListener;
+-import com.google.android.gms.location.LocationRequest;
+-import com.google.android.gms.location.LocationServices;
+-
+ import org.chromium.base.Log;
+ import org.chromium.base.ThreadUtils;
+ import org.chromium.components.location.LocationUtils;
+@@ -27,126 +17,39 @@ import org.chromium.components.location.LocationUtils;
+  *
+  * https://developers.google.com/android/reference/com/google/android/gms/location/package-summary
+  */
+-public class LocationProviderGmsCore implements ConnectionCallbacks, OnConnectionFailedListener,
+-                                                LocationListener, LocationProvider {
++public class LocationProviderGmsCore implements LocationProvider {
+     private static final String TAG = "LocationProvider";
+ 
+     // Values for the LocationRequest's setInterval for normal and high accuracy, respectively.
+     private static final long UPDATE_INTERVAL_MS = 1000;
+     private static final long UPDATE_INTERVAL_FAST_MS = 500;
+ 
+-    private final GoogleApiClient mGoogleApiClient;
+-    private FusedLocationProviderApi mLocationProviderApi = LocationServices.FusedLocationApi;
+-
+     private boolean mEnablehighAccuracy;
+-    private LocationRequest mLocationRequest;
+ 
+     public static boolean isGooglePlayServicesAvailable(Context context) {
+-        return GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context)
+-                == ConnectionResult.SUCCESS;
++        return false;
+     }
+ 
+     LocationProviderGmsCore(Context context) {
+         Log.i(TAG, "Google Play Services");
+-        mGoogleApiClient = new GoogleApiClient.Builder(context)
+-                                   .addApi(LocationServices.API)
+-                                   .addConnectionCallbacks(this)
+-                                   .addOnConnectionFailedListener(this)
+-                                   .build();
+-        assert mGoogleApiClient != null;
+-    }
+-
+-    LocationProviderGmsCore(GoogleApiClient client, FusedLocationProviderApi locationApi) {
+-        mGoogleApiClient = client;
+-        mLocationProviderApi = locationApi;
+-    }
+-
+-    // ConnectionCallbacks implementation
+-    @Override
+-    public void onConnected(Bundle connectionHint) {
+-        ThreadUtils.assertOnUiThread();
+-
+-        mLocationRequest = LocationRequest.create();
+-        if (mEnablehighAccuracy) {
+-            // With enableHighAccuracy, request a faster update interval and configure the provider
+-            // for high accuracy mode.
+-            mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
+-                    .setInterval(UPDATE_INTERVAL_FAST_MS);
+-        } else {
+-            // Use balanced mode by default. In this mode, the API will prefer the network provider
+-            // but may use sensor data (for instance, GPS) if high accuracy is requested by another
+-            // app.
+-            //
+-            // If location is configured for sensors-only then elevate the priority to ensure GPS
+-            // and other sensors are used.
+-            if (LocationUtils.getInstance().isSystemLocationSettingSensorsOnly()) {
+-                mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+-            } else {
+-                mLocationRequest.setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY);
+-            }
+-            mLocationRequest.setInterval(UPDATE_INTERVAL_MS);
+-        }
+-
+-        final Location location = mLocationProviderApi.getLastLocation(mGoogleApiClient);
+-        if (location != null) {
+-            LocationProviderAdapter.onNewLocationAvailable(location);
+-        }
+-
+-        try {
+-            // Request updates on UI Thread replicating LocationProviderAndroid's behaviour.
+-            mLocationProviderApi.requestLocationUpdates(
+-                    mGoogleApiClient, mLocationRequest, this, ThreadUtils.getUiThreadLooper());
+-        } catch (IllegalStateException | SecurityException e) {
+-            // IllegalStateException is thrown "If this method is executed in a thread that has not
+-            // called Looper.prepare()". SecurityException is thrown if there is no permission, see
+-            // https://crbug.com/731271.
+-            Log.e(TAG, " mLocationProviderApi.requestLocationUpdates() " + e);
+-            LocationProviderAdapter.newErrorAvailable(
+-                    "Failed to request location updates: " + e.toString());
+-            assert false;
+-        }
+-    }
+-
+-    @Override
+-    public void onConnectionSuspended(int cause) {}
+-
+-    // OnConnectionFailedListener implementation
+-    @Override
+-    public void onConnectionFailed(ConnectionResult result) {
+-        LocationProviderAdapter.newErrorAvailable(
+-                "Failed to connect to Google Play Services: " + result.toString());
+     }
+ 
+     // LocationProvider implementation
+     @Override
+     public void start(boolean enableHighAccuracy) {
+         ThreadUtils.assertOnUiThread();
+-        if (mGoogleApiClient.isConnected()) mGoogleApiClient.disconnect();
+ 
+         mEnablehighAccuracy = enableHighAccuracy;
+-        mGoogleApiClient.connect(); // Should return via onConnected().
+     }
+ 
+     @Override
+     public void stop() {
+         ThreadUtils.assertOnUiThread();
+-        if (!mGoogleApiClient.isConnected()) return;
+-
+-        mLocationProviderApi.removeLocationUpdates(mGoogleApiClient, this);
+-
+-        mGoogleApiClient.disconnect();
+     }
+ 
+     @Override
+     public boolean isRunning() {
+         assert ThreadUtils.runningOnUiThread();
+-        if (mGoogleApiClient == null) return false;
+-        return mGoogleApiClient.isConnecting() || mGoogleApiClient.isConnected();
+-    }
+-
+-    // LocationListener implementation
+-    @Override
+-    public void onLocationChanged(Location location) {
+-        LocationProviderAdapter.onNewLocationAvailable(location);
++        return false;
+     }
+ }
+diff --git a/third_party/android_deps/BUILD.gn b/third_party/android_deps/BUILD.gn
+--- a/third_party/android_deps/BUILD.gn
++++ b/third_party/android_deps/BUILD.gn
+@@ -907,64 +907,6 @@ android_aar_prebuilt("google_play_services_cast_framework_java") {
+   strip_resources = !is_java_debug
+ }
+ 
+-# This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+-android_aar_prebuilt("google_play_services_fido_java") {
+-  aar_path = "libs/com_google_android_gms_play_services_fido/play-services-fido-15.0.1.aar"
+-  info_path = "libs/com_google_android_gms_play_services_fido/com_google_android_gms_play_services_fido.info"
+-  deps = [
+-    ":google_play_services_base_java",
+-    ":google_play_services_basement_java",
+-    ":google_play_services_tasks_java",
+-  ]
+-
+-  # Removing drawables from GMS .aars as they are unused bloat.
+-  strip_drawables = true
+-}
+-
+-# This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+-android_aar_prebuilt("google_play_services_iid_java") {
+-  aar_path = "libs/com_google_android_gms_play_services_iid/play-services-iid-15.0.1.aar"
+-  info_path = "libs/com_google_android_gms_play_services_iid/com_google_android_gms_play_services_iid.info"
+-  deps = [
+-    ":google_play_services_base_java",
+-    ":google_play_services_basement_java",
+-    ":google_play_services_stats_java",
+-    ":google_play_services_tasks_java",
+-  ]
+-
+-  # Removing drawables from GMS .aars as they are unused bloat.
+-  strip_drawables = true
+-}
+-
+-# This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+-android_aar_prebuilt("google_play_services_instantapps_java") {
+-  aar_path = "libs/com_google_android_gms_play_services_instantapps/play-services-instantapps-16.0.0.aar"
+-  info_path = "libs/com_google_android_gms_play_services_instantapps/com_google_android_gms_play_services_instantapps.info"
+-  deps = [
+-    ":google_play_services_base_java",
+-    ":google_play_services_basement_java",
+-    ":google_play_services_tasks_java",
+-  ]
+-
+-  # Removing drawables from GMS .aars as they are unused bloat.
+-  strip_drawables = true
+-}
+-
+-# This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+-android_aar_prebuilt("google_play_services_location_java") {
+-  aar_path = "libs/com_google_android_gms_play_services_location/play-services-location-15.0.1.aar"
+-  info_path = "libs/com_google_android_gms_play_services_location/com_google_android_gms_play_services_location.info"
+-  deps = [
+-    ":google_play_services_base_java",
+-    ":google_play_services_basement_java",
+-    ":google_play_services_places_placereport_java",
+-    ":google_play_services_tasks_java",
+-  ]
+-
+-  # Removing drawables from GMS .aars as they are unused bloat.
+-  strip_drawables = true
+-}
+-
+ # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+ android_aar_prebuilt("google_play_services_tasks_java") {
+   aar_path = "libs/com_google_android_gms_play_services_tasks/play-services-tasks-15.0.1.aar"
+diff --git a/third_party/cacheinvalidation/BUILD.gn b/third_party/cacheinvalidation/BUILD.gn
+--- a/third_party/cacheinvalidation/BUILD.gn
++++ b/third_party/cacheinvalidation/BUILD.gn
+@@ -133,7 +133,6 @@ if (is_android) {
+     jacoco_never_instrument = true
+     deps = [
+       ":cacheinvalidation_proto_java",
+-      "$google_play_services_package:google_play_services_iid_java",
+       "$google_play_services_package:google_play_services_tasks_java",
+       "//base:base_java",
+       "//third_party/android_protobuf:protobuf_nano_javalib",
+diff --git a/third_party/cacheinvalidation/src/java/com/google/ipc/invalidation/external/client/android2/AndroidManifestUpdatedGcm.xml b/third_party/cacheinvalidation/src/java/com/google/ipc/invalidation/external/client/android2/AndroidManifestUpdatedGcm.xml
+--- a/third_party/cacheinvalidation/src/java/com/google/ipc/invalidation/external/client/android2/AndroidManifestUpdatedGcm.xml
++++ b/third_party/cacheinvalidation/src/java/com/google/ipc/invalidation/external/client/android2/AndroidManifestUpdatedGcm.xml
+@@ -27,9 +27,6 @@
+     <!-- InstanceID Listener Service -->
+     <service android:exported="false"
+         android:name="com.google.ipc.invalidation.ticl2.android2.channel.AndroidInstanceIDListenerService">
+-        <intent-filter>
+-            <action android:name="com.google.android.gms.iid.InstanceID"/>
+-        </intent-filter>
+     </service>
+   </application>
+ </manifest>
+-- 
+2.17.1
+

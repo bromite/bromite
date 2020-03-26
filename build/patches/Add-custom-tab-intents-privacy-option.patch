@@ -1,0 +1,115 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Wed, 29 Aug 2018 11:03:44 +0200
+Subject: Add custom tab intents privacy option
+
+---
+ chrome/android/java/res/values/values.xml             |  3 +++
+ chrome/android/java/res/xml/privacy_preferences.xml   |  5 +++++
+ .../chrome/browser/LaunchIntentDispatcher.java        |  3 +++
+ .../browser/settings/privacy/PrivacySettings.java     | 11 +++++++++++
+ .../ui/android/strings/android_chrome_strings.grd     |  7 +++++++
+ 5 files changed, 29 insertions(+)
+
+diff --git a/chrome/android/java/res/values/values.xml b/chrome/android/java/res/values/values.xml
+--- a/chrome/android/java/res/values/values.xml
++++ b/chrome/android/java/res/values/values.xml
+@@ -14,6 +14,9 @@
+     <item name="top_controls_show_threshold" format="float" type="dimen">0.5</item>
+     <item name="top_controls_hide_threshold" format="float" type="dimen">0.5</item>
+ 
++    <string name="allow_custom_tab_intents_title">Allow custom tab intents from applications</string>
++    <string name="allow_custom_tab_intents_summary">When disabled, all custom tab intents will be processed as regular navigation instead</string>
++
+     <!-- The number of thumbnails that the thumbnail cache can hold. -->
+     <integer name="default_thumbnail_cache_size">5</integer>
+     <!-- The number of approximation thumbnails that the approximation cache can hold. -->
+diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
+--- a/chrome/android/java/res/xml/privacy_preferences.xml
++++ b/chrome/android/java/res/xml/privacy_preferences.xml
+@@ -29,6 +29,11 @@
+         android:fragment="org.chromium.chrome.browser.settings.privacy.DoNotTrackSettings"
+         android:key="do_not_track"
+         android:title="@string/do_not_track_title" />
++    <org.chromium.chrome.browser.settings.ChromeBaseCheckBoxPreference
++        android:key="allow_custom_tab_intents"
++        android:title="@string/allow_custom_tab_intents_title"
++        android:summary="@string/allow_custom_tab_intents_summary"
++        android:defaultValue="false" />
+     <Preference
+         android:key="clear_browsing_data"
+         android:title="@string/clear_browsing_data_title"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcher.java b/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcher.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcher.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcher.java
+@@ -43,6 +43,7 @@ import org.chromium.chrome.browser.notifications.NotificationPlatformBridge;
+ import org.chromium.chrome.browser.partnercustomizations.PartnerBrowserCustomizations;
+ import org.chromium.chrome.browser.searchwidget.SearchActivity;
+ import org.chromium.chrome.browser.tab.Tab;
++import org.chromium.chrome.browser.settings.privacy.PrivacySettings;
+ import org.chromium.chrome.browser.util.IntentUtils;
+ import org.chromium.chrome.browser.util.UrlConstants;
+ import org.chromium.chrome.browser.vr.VrModuleProvider;
+@@ -251,6 +252,8 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
+      */
+     public static boolean isCustomTabIntent(Intent intent) {
+         if (intent == null) return false;
++        if (!ContextUtils.getAppSharedPreferences().getBoolean(PrivacySettings.PREF_ALLOW_CUSTOM_TAB_INTENTS, false))
++            return false;
+         if (CustomTabsIntent.shouldAlwaysUseBrowserUI(intent)
+                 || !intent.hasExtra(CustomTabsIntent.EXTRA_SESSION)) {
+             return false;
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacySettings.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacySettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacySettings.java
+@@ -41,6 +41,8 @@ public class PrivacySettings
+ 
+     private ManagedPreferenceDelegate mManagedPreferenceDelegate;
+ 
++    public static final String PREF_ALLOW_CUSTOM_TAB_INTENTS = "allow_custom_tab_intents";
++
+     @Override
+     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
+         SettingsUtils.addPreferencesFromResource(this, R.xml.privacy_preferences);
+@@ -76,6 +78,10 @@ public class PrivacySettings
+                     Pref.CAN_MAKE_PAYMENT_ENABLED, (boolean) newValue);
+         } else if (PREF_NETWORK_PREDICTIONS.equals(key)) {
+             PrivacyPreferencesManager.getInstance().setNetworkPredictionEnabled((boolean) newValue);
++        } else if (PREF_ALLOW_CUSTOM_TAB_INTENTS.equals(key)) {
++            SharedPreferences.Editor sharedPreferencesEditor = ContextUtils.getAppSharedPreferences().edit();
++            sharedPreferencesEditor.putBoolean(PREF_ALLOW_CUSTOM_TAB_INTENTS, (boolean)newValue);
++            sharedPreferencesEditor.apply();
+         } else if (PREF_SEARCH_SUGGESTIONS.equals(key)) {
+             PrefServiceBridge.getInstance().setBoolean(Pref.SEARCH_SUGGEST_ENABLED, (boolean) newValue);
+         }
+@@ -111,6 +117,11 @@ public class PrivacySettings
+                     prefServiceBridge.getBoolean(Pref.CAN_MAKE_PAYMENT_ENABLED));
+         }
+ 
++        ChromeBaseCheckBoxPreference allowCustomTabIntentsPref =
++                (ChromeBaseCheckBoxPreference) findPreference(PREF_ALLOW_CUSTOM_TAB_INTENTS);
++        allowCustomTabIntentsPref.setOnPreferenceChangeListener(this);
++        allowCustomTabIntentsPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
++
+         Preference doNotTrackPref = findPreference(PREF_DO_NOT_TRACK);
+         if (doNotTrackPref != null) {
+             doNotTrackPref.setSummary(prefServiceBridge.getBoolean(Pref.ENABLE_DO_NOT_TRACK)
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -3863,6 +3863,13 @@ Only you can see what your camera is looking at. The site can't see your camera'
+       <message name="IDS_NEAR_OOM_REDUCTION_DECLINE" desc="The text of the button letting the user decline the browser's intervention, so that the page can be reloaded.">
+          Show original
+       </message>
++      <!-- Allow custom tab intents -->
++      <message name="IDS_ALLOW_CUSTOM_TAB_INTENTS_TITLE" desc="Text for 'Allow custom tab intents' settings-privacy option.">
++        Allow custom tab intents
++      </message>
++      <message name="IDS_ALLOW_CUSTOM_TAB_INTENTS_SUMMARY" desc="Summary text for 'Allow custom tab intents' settings-privacy option.">
++        Allow applications to open custom tab intents, similar to webview.
++      </message>
+ 
+       <!-- Autofill Assistant preferences -->
+       <message name="IDS_PREFS_AUTOFILL_ASSISTANT_TITLE" desc="Title for the Autofill Assistant preferences screen. [CHAR-LIMIT=32]">
+-- 
+2.17.1
+

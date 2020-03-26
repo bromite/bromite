@@ -1,0 +1,111 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sun, 20 Jan 2019 06:20:10 +0100
+Subject: Do not ignore download location prompt setting
+
+Upstream has decided that it works as intended (https://bugs.chromium.org/p/chromium/issues/detail?id=916606)
+but users would like to decide where to save a file even when there is no SD card available;
+do not skip the prompt in such cases.
+---
+ .../DownloadLocationDialogBridge.java         | 72 ++++++-------------
+ 1 file changed, 21 insertions(+), 51 deletions(-)
+
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadLocationDialogBridge.java b/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadLocationDialogBridge.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadLocationDialogBridge.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadLocationDialogBridge.java
+@@ -31,9 +31,6 @@ public class DownloadLocationDialogBridge implements ModalDialogProperties.Contr
+     private PropertyModel mDialogModel;
+     private DownloadLocationCustomView mCustomView;
+     private ModalDialogManager mModalDialogManager;
+-    private long mTotalBytes;
+-    private @DownloadLocationDialogType int mDialogType;
+-    private String mSuggestedPath;
+     private Context mContext;
+ 
+     private DownloadLocationDialogBridge(long nativeDownloadLocationDialogBridge) {
+@@ -66,12 +63,28 @@ public class DownloadLocationDialogBridge implements ModalDialogProperties.Contr
+ 
+         mModalDialogManager = activity.getModalDialogManager();
+         mContext = activity;
+-        mTotalBytes = totalBytes;
+-        mDialogType = dialogType;
+-        mSuggestedPath = suggestedPath;
+ 
+-        DownloadDirectoryProvider.getInstance().getAllDirectoriesOptions(
+-                (ArrayList<DirectoryOption> dirs) -> { onDirectoryOptionsRetrieved(dirs); });
++        // Already showing the dialog.
++        if (mDialogModel != null) return;
++
++        // Actually show the dialog.
++        mCustomView = (DownloadLocationCustomView) LayoutInflater.from(mContext).inflate(
++                R.layout.download_location_dialog, null);
++        mCustomView.initialize(dialogType, new File(suggestedPath));
++
++        Resources resources = mContext.getResources();
++        mDialogModel =
++                new PropertyModel.Builder(ModalDialogProperties.ALL_KEYS)
++                        .with(ModalDialogProperties.CONTROLLER, this)
++                        .with(ModalDialogProperties.TITLE, getTitle(totalBytes, dialogType))
++                        .with(ModalDialogProperties.CUSTOM_VIEW, mCustomView)
++                        .with(ModalDialogProperties.POSITIVE_BUTTON_TEXT, resources,
++                                R.string.duplicate_download_infobar_download_button)
++                        .with(ModalDialogProperties.NEGATIVE_BUTTON_TEXT, resources,
++                                R.string.cancel)
++                        .build();
++
++        mModalDialogManager.showDialog(mDialogModel, ModalDialogManager.ModalDialogType.APP);
+     }
+ 
+     @Override
+@@ -104,49 +117,6 @@ public class DownloadLocationDialogBridge implements ModalDialogProperties.Contr
+         mCustomView = null;
+     }
+ 
+-    /**
+-     * Called after retrieved the download directory options.
+-     * @param dirs An list of available download directories.
+-     */
+-    private void onDirectoryOptionsRetrieved(ArrayList<DirectoryOption> dirs) {
+-        // If there is only one directory available, don't show the default dialog, and set the
+-        // download directory to default. Dialog will still show for other types of dialogs, like
+-        // name conflict or disk error.
+-        if (dirs.size() == 1 && mDialogType == DownloadLocationDialogType.DEFAULT) {
+-            final DirectoryOption dir = dirs.get(0);
+-            if (dir.type == DirectoryOption.DownloadLocationDirectoryType.DEFAULT) {
+-                assert(!TextUtils.isEmpty(dir.location));
+-                setDownloadAndSaveFileDefaultDirectory(dir.location);
+-                DownloadLocationDialogBridgeJni.get().onComplete(
+-                        mNativeDownloadLocationDialogBridge, DownloadLocationDialogBridge.this,
+-                        mSuggestedPath);
+-            }
+-            return;
+-        }
+-
+-        // Already showing the dialog.
+-        if (mDialogModel != null) return;
+-
+-        // Actually show the dialog.
+-        mCustomView = (DownloadLocationCustomView) LayoutInflater.from(mContext).inflate(
+-                R.layout.download_location_dialog, null);
+-        mCustomView.initialize(mDialogType, new File(mSuggestedPath));
+-
+-        Resources resources = mContext.getResources();
+-        mDialogModel =
+-                new PropertyModel.Builder(ModalDialogProperties.ALL_KEYS)
+-                        .with(ModalDialogProperties.CONTROLLER, this)
+-                        .with(ModalDialogProperties.TITLE, getTitle(mTotalBytes, mDialogType))
+-                        .with(ModalDialogProperties.CUSTOM_VIEW, mCustomView)
+-                        .with(ModalDialogProperties.POSITIVE_BUTTON_TEXT, resources,
+-                                R.string.duplicate_download_infobar_download_button)
+-                        .with(ModalDialogProperties.NEGATIVE_BUTTON_TEXT, resources,
+-                                R.string.cancel)
+-                        .build();
+-
+-        mModalDialogManager.showDialog(mDialogModel, ModalDialogManager.ModalDialogType.APP);
+-    }
+-
+     private String getTitle(long totalBytes, @DownloadLocationDialogType int dialogType) {
+         switch (dialogType) {
+             case DownloadLocationDialogType.LOCATION_FULL:
+-- 
+2.17.1
+

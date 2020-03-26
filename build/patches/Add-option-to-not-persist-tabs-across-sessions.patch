@@ -1,0 +1,124 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sat, 7 Sep 2019 15:07:42 +0200
+Subject: Add option to not persist tabs across sessions
+
+---
+ chrome/android/java/res/values/values.xml            |  3 +++
+ chrome/android/java/res/xml/privacy_preferences.xml  |  5 +++++
+ .../chrome/browser/ChromeTabbedActivity.java         |  4 +++-
+ .../browser/settings/privacy/PrivacySettings.java    | 12 ++++++++++++
+ .../ui/android/strings/android_chrome_strings.grd    |  6 ++++++
+ 5 files changed, 29 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/android/java/res/values/values.xml b/chrome/android/java/res/values/values.xml
+--- a/chrome/android/java/res/values/values.xml
++++ b/chrome/android/java/res/values/values.xml
+@@ -63,6 +63,9 @@
+     <!-- TODO(peconn): Add help section. -->
+     <!-- <string name="help_context_suggestions">mobile_content_suggestions</string> -->
+ 
++    <string name="close_tabs_on_exit_title">Close tabs on exit</string>
++    <string name="close_tabs_on_exit_summary">Don\'t persist tabs between browsing sessions</string>
++
+     <!-- Our manage space activity. Default pre-KitKat to be nothing. -->
+     <string name="manage_space_activity"></string>
+ 
+diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
+--- a/chrome/android/java/res/xml/privacy_preferences.xml
++++ b/chrome/android/java/res/xml/privacy_preferences.xml
+@@ -34,6 +34,11 @@
+         android:title="@string/allow_custom_tab_intents_title"
+         android:summary="@string/allow_custom_tab_intents_summary"
+         android:defaultValue="false" />
++    <org.chromium.chrome.browser.settings.ChromeBaseCheckBoxPreference
++        android:key="close_tabs_on_exit"
++        android:title="@string/close_tabs_on_exit_title"
++        android:summary="@string/close_tabs_on_exit_summary"
++        android:defaultValue="false" />
+     <Preference
+         android:key="clear_browsing_data"
+         android:title="@string/clear_browsing_data_title"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -1104,8 +1104,10 @@ public class ChromeTabbedActivity extends ChromeActivity {
+             boolean hadCipherData =
+                     CipherFactory.getInstance().restoreFromBundle(getSavedInstanceState());
+ 
++            String PREF_CLOSE_TABS_ON_EXIT = "close_tabs_on_exit";
+             boolean noRestoreState =
+-                    CommandLine.getInstance().hasSwitch(ChromeSwitches.NO_RESTORE_STATE);
++                CommandLine.getInstance().hasSwitch(ChromeSwitches.NO_RESTORE_STATE) ||
++                ContextUtils.getAppSharedPreferences().getBoolean(PREF_CLOSE_TABS_ON_EXIT, false);
+             if (noRestoreState) {
+                 // Clear the state files because they are inconsistent and useless from now on.
+                 mTabModelSelectorImpl.clearState();
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacySettings.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacySettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/privacy/PrivacySettings.java
+@@ -4,6 +4,7 @@
+ 
+ package org.chromium.chrome.browser.settings.privacy;
+ 
++import android.content.SharedPreferences;
+ import android.os.Bundle;
+ import android.support.graphics.drawable.VectorDrawableCompat;
+ import android.support.v7.preference.CheckBoxPreference;
+@@ -13,6 +14,7 @@ import android.view.Menu;
+ import android.view.MenuInflater;
+ import android.view.MenuItem;
+ 
++import org.chromium.base.ContextUtils;
+ import org.chromium.base.BuildInfo;
+ import org.chromium.chrome.R;
+ import org.chromium.chrome.browser.flags.ChromeFeatureList;
+@@ -36,6 +38,7 @@ public class PrivacySettings
+     private static final String PREF_SEARCH_SUGGESTIONS = "search_suggestions";
+     private static final String PREF_CAN_MAKE_PAYMENT = "can_make_payment";
+     private static final String PREF_NETWORK_PREDICTIONS = "preload_pages";
++    private static final String PREF_CLOSE_TABS_ON_EXIT = "close_tabs_on_exit";
+     private static final String PREF_DO_NOT_TRACK = "do_not_track";
+     private static final String PREF_CLEAR_BROWSING_DATA = "clear_browsing_data";
+ 
+@@ -84,6 +87,10 @@ public class PrivacySettings
+             sharedPreferencesEditor.apply();
+         } else if (PREF_SEARCH_SUGGESTIONS.equals(key)) {
+             PrefServiceBridge.getInstance().setBoolean(Pref.SEARCH_SUGGEST_ENABLED, (boolean) newValue);
++        } else if (PREF_CLOSE_TABS_ON_EXIT.equals(key)) {
++            SharedPreferences.Editor sharedPreferencesEditor = ContextUtils.getAppSharedPreferences().edit();
++            sharedPreferencesEditor.putBoolean(PREF_CLOSE_TABS_ON_EXIT, (boolean)newValue);
++            sharedPreferencesEditor.apply();
+         }
+ 
+         return true;
+@@ -128,6 +135,11 @@ public class PrivacySettings
+                             ? R.string.text_on
+                             : R.string.text_off);
+         }
++
++        ChromeBaseCheckBoxPreference closeTabsOnExitPref =
++                (ChromeBaseCheckBoxPreference) findPreference(PREF_CLOSE_TABS_ON_EXIT);
++        closeTabsOnExitPref.setOnPreferenceChangeListener(this);
++        closeTabsOnExitPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
+     }
+ 
+     private ManagedPreferenceDelegate createManagedPreferenceDelegate() {
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -3618,6 +3618,12 @@ Only you can see what your camera is looking at. The site can't see your camera'
+       <message name="IDS_CONTEXTMENU_IMAGE_TITLE" desc="The title of a context menu tab when the item pressed contains more than one type. This indicates that all the actions are related to the image.">
+         IMAGE
+       </message>
++      <message name="IDS_CLOSE_TABS_ON_EXIT_TITLE" desc="Text for 'Close tabs on exit' settings-privacy option.">
++        Close all open tabs on exit
++      </message>
++      <message name="IDS_CLOSE_TABS_ON_EXIT_SUMMARY" desc="Summary text for 'Close tabs on exit' settings-privacy option.">
++        Don't persist tabs between browsing sessions
++      </message>
+       <message name="IDS_CONTEXTMENU_LINK_TITLE" desc="The title of a context menu tab when the item pressed contains more than one type. This indicates that all the actions are related to the link.">
+         LINK
+       </message>
+-- 
+2.17.1
+

@@ -1,0 +1,1013 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Wed, 1 Aug 2018 09:19:40 +0200
+Subject: Add bookmark import/export actions
+
+Add bookmark import/export actions in bookmarks activity and page
+Reduce permissions needed for bookmarks import/export
+Completely remove contacts picker permission from the file dialog
+---
+ chrome/android/java/AndroidManifest.xml       |   1 -
+ .../res/menu/bookmark_action_bar_menu.xml     |  14 ++
+ .../browser/bookmarks/BookmarkActionBar.java  |  12 +
+ .../browser/bookmarks/BookmarkActivity.java   |  15 ++
+ .../browser/bookmarks/BookmarkBridge.java     |  47 ++++
+ .../browser/bookmarks/BookmarkDelegate.java   |  10 +
+ .../browser/bookmarks/BookmarkManager.java    |  20 ++
+ .../browser/bookmarks/BookmarkPage.java       |   1 +
+ chrome/browser/BUILD.gn                       |   8 +-
+ .../android/bookmarks/bookmark_bridge.cc      | 217 ++++++++++++++++++
+ .../android/bookmarks/bookmark_bridge.h       |  20 +-
+ chrome/browser/importer/profile_writer.cc     |  12 +
+ chrome/browser/importer/profile_writer.h      |   6 +
+ .../strings/android_chrome_strings.grd        |   6 +
+ chrome/common/BUILD.gn                        |   3 +
+ chrome/utility/BUILD.gn                       |   7 +-
+ .../utility/importer/bookmark_html_reader.cc  |  27 ++-
+ .../utility/importer/bookmark_html_reader.h   |   8 +
+ .../chromium/ui/base/SelectFileDialog.java    |  18 +-
+ ui/shell_dialogs/select_file_dialog.h         |   2 +
+ .../select_file_dialog_android.cc             |   6 +
+ ui/shell_dialogs/select_file_dialog_android.h |   2 +
+ 22 files changed, 448 insertions(+), 14 deletions(-)
+
+diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/AndroidManifest.xml
+--- a/chrome/android/java/AndroidManifest.xml
++++ b/chrome/android/java/AndroidManifest.xml
+@@ -34,7 +34,6 @@ by a child template that "extends" this file.
+     {% endif %}
+     <uses-permission-sdk-23 android:name="android.permission.BLUETOOTH"/>
+     <uses-permission-sdk-23 android:name="android.permission.BLUETOOTH_ADMIN"/>
+-    <uses-permission-sdk-23 android:name="android.permission.READ_CONTACTS"/>
+     <uses-permission-sdk-23 android:name="android.permission.REORDER_TASKS"/>
+     <uses-permission-sdk-23 android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+ 
+diff --git a/chrome/android/java/res/menu/bookmark_action_bar_menu.xml b/chrome/android/java/res/menu/bookmark_action_bar_menu.xml
+--- a/chrome/android/java/res/menu/bookmark_action_bar_menu.xml
++++ b/chrome/android/java/res/menu/bookmark_action_bar_menu.xml
+@@ -21,6 +21,20 @@
+             android:visible="false"
+             app:showAsAction="ifRoom"
+             app:iconTint="@color/standard_mode_tint" />
++        <item
++            android:id="@+id/import_menu_id"
++            android:icon="@drawable/ic_folder_blue_24dp"
++            android:title="@string/import_bookmarks"
++            android:visible="true"
++            app:showAsAction="ifRoom"
++            app:iconTint="@color/standard_mode_tint" />
++        <item
++            android:id="@+id/export_menu_id"
++            android:icon="@drawable/ic_file_download_white_24dp"
++            android:title="@string/export_bookmarks"
++            android:visible="true"
++            app:showAsAction="ifRoom"
++            app:iconTint="@color/standard_mode_tint" />
+         <item
+             android:id="@+id/close_menu_id"
+             android:icon="@drawable/btn_close"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkActionBar.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkActionBar.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkActionBar.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkActionBar.java
+@@ -82,6 +82,12 @@ public class BookmarkActionBar extends SelectableListToolbar<BookmarkId>
+         } else if (menuItem.getItemId() == R.id.search_menu_id) {
+             mDelegate.openSearchUI();
+             return true;
++        } else if (menuItem.getItemId() == R.id.import_menu_id) {
++            mDelegate.importBookmarks();
++            return true;
++        } else if (menuItem.getItemId() == R.id.export_menu_id) {
++            mDelegate.exportBookmarks();
++            return true;
+         }
+ 
+         SelectionDelegate<BookmarkId> selectionDelegate = mDelegate.getSelectionDelegate();
+@@ -133,6 +139,8 @@ public class BookmarkActionBar extends SelectableListToolbar<BookmarkId>
+     void showLoadingUi() {
+         setTitle(null);
+         setNavigationButton(NAVIGATION_BUTTON_NONE);
++        getMenu().findItem(R.id.import_menu_id).setVisible(false);
++        getMenu().findItem(R.id.export_menu_id).setVisible(false);
+         getMenu().findItem(R.id.search_menu_id).setVisible(false);
+         getMenu().findItem(R.id.edit_menu_id).setVisible(false);
+     }
+@@ -142,6 +150,8 @@ public class BookmarkActionBar extends SelectableListToolbar<BookmarkId>
+         super.showNormalView();
+ 
+         if (mDelegate == null) {
++            getMenu().findItem(R.id.import_menu_id).setVisible(false);
++            getMenu().findItem(R.id.export_menu_id).setVisible(false);
+             getMenu().findItem(R.id.search_menu_id).setVisible(false);
+             getMenu().findItem(R.id.edit_menu_id).setVisible(false);
+         }
+@@ -172,6 +182,8 @@ public class BookmarkActionBar extends SelectableListToolbar<BookmarkId>
+     public void onFolderStateSet(BookmarkId folder) {
+         mCurrentFolder = mDelegate.getModel().getBookmarkById(folder);
+ 
++        getMenu().findItem(R.id.import_menu_id).setVisible(true);
++        getMenu().findItem(R.id.export_menu_id).setVisible(true);
+         getMenu().findItem(R.id.search_menu_id).setVisible(true);
+         getMenu().findItem(R.id.edit_menu_id).setVisible(mCurrentFolder.isEditable());
+ 
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkActivity.java
+@@ -13,6 +13,7 @@ import androidx.annotation.VisibleForTesting;
+ import org.chromium.chrome.browser.SnackbarActivity;
+ import org.chromium.chrome.browser.util.UrlConstants;
+ import org.chromium.components.bookmarks.BookmarkId;
++import org.chromium.ui.base.ActivityWindowAndroid;
+ 
+ /**
+  * The activity that displays the bookmark UI on the phone. It keeps a {@link BookmarkManager}
+@@ -22,6 +23,7 @@ import org.chromium.components.bookmarks.BookmarkId;
+ public class BookmarkActivity extends SnackbarActivity {
+ 
+     private BookmarkManager mBookmarkManager;
++    private ActivityWindowAndroid mWindowAndroid;
+     static final int EDIT_BOOKMARK_REQUEST_CODE = 14;
+     public static final String INTENT_VISIT_BOOKMARK_ID = "BookmarkEditActivity.VisitBookmarkId";
+ 
+@@ -33,6 +35,18 @@ public class BookmarkActivity extends SnackbarActivity {
+         if (TextUtils.isEmpty(url)) url = UrlConstants.BOOKMARKS_URL;
+         mBookmarkManager.updateForUrl(url);
+         setContentView(mBookmarkManager.getView());
++
++        final boolean listenToActivityState = true;
++        mWindowAndroid = new ActivityWindowAndroid(this, listenToActivityState);
++        mWindowAndroid.restoreInstanceState(savedInstanceState);
++        mBookmarkManager.setWindow(mWindowAndroid);
++    }
++
++    @Override
++    protected void onSaveInstanceState(Bundle outState) {
++        super.onSaveInstanceState(outState);
++
++        mWindowAndroid.saveInstanceState(outState);
+     }
+ 
+     @Override
+@@ -49,6 +63,7 @@ public class BookmarkActivity extends SnackbarActivity {
+     @Override
+     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+         super.onActivityResult(requestCode, resultCode, data);
++        mWindowAndroid.onActivityResult(requestCode, resultCode, data);
+         if (requestCode == EDIT_BOOKMARK_REQUEST_CODE && resultCode == RESULT_OK) {
+             BookmarkId bookmarkId = BookmarkId.getBookmarkIdFromString(data.getStringExtra(
+                     INTENT_VISIT_BOOKMARK_ID));
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java
+@@ -4,7 +4,11 @@
+ 
+ package org.chromium.chrome.browser.bookmarks;
+ 
++import android.content.Intent;
++import android.content.Context;
++import android.net.Uri;
+ import android.os.SystemClock;
++import android.provider.Browser;
+ import android.support.annotation.Nullable;
+ import android.text.TextUtils;
+ import android.util.Pair;
+@@ -26,6 +30,11 @@ import org.chromium.components.url_formatter.SchemeDisplay;
+ import org.chromium.components.url_formatter.UrlFormatter;
+ import org.chromium.content_public.browser.WebContents;
+ 
++import org.chromium.chrome.browser.document.ChromeLauncherActivity;
++import org.chromium.chrome.browser.IntentHandler;
++import org.chromium.ui.base.PageTransition;
++import org.chromium.ui.base.WindowAndroid;
++
+ import java.util.ArrayList;
+ import java.util.List;
+ 
+@@ -574,6 +583,24 @@ public class BookmarkBridge {
+                 mNativeBookmarkBridge, BookmarkBridge.this, id.getId(), id.getType());
+     }
+ 
++    /**
++     * Import bookmarks from a selected file.
++     * @param window The current window of the bookmarks activity or page.
++     */
++    public void importBookmarks(WindowAndroid window) {
++        assert mIsNativeBookmarkModelLoaded;
++        BookmarkBridgeJni.get().importBookmarks(mNativeBookmarkBridge, BookmarkBridge.this, window);
++    }
++
++    /**
++     * Export bookmarks to a path selected by the user.
++     * @param window The current window of the bookmarks activity or page.
++     */
++    public void exportBookmarks() {
++        assert mIsNativeBookmarkModelLoaded;
++        BookmarkBridgeJni.get().exportBookmarks(mNativeBookmarkBridge, BookmarkBridge.this);
++    }
++
+     /**
+      * Synchronously gets a list of bookmarks that match the specified search query.
+      * @param query Keyword used for searching bookmarks.
+@@ -954,6 +981,24 @@ public class BookmarkBridge {
+         depthList.add(depth);
+     }
+ 
++    @CalledByNative
++    public void bookmarksExported(String bookmarksPath) {
++        Context context = ContextUtils.getApplicationContext();
++
++        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("file://" + bookmarksPath));
++        intent.putExtra(Browser.EXTRA_APPLICATION_ID,
++                        context.getPackageName());
++        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++        intent.putExtra(IntentHandler.EXTRA_PAGE_TRANSITION_TYPE, PageTransition.AUTO_BOOKMARK);
++
++        // If the bookmark manager is shown in a tab on a phone (rather than in a separate
++        // activity) the component name may be null. Send the intent through
++        // ChromeLauncherActivity instead to avoid crashing. See crbug.com/615012.
++        intent.setClass(context, ChromeLauncherActivity.class);
++
++        IntentHandler.startActivityForTrustedIntent(intent);
++    }
++
+     private static List<Pair<Integer, Integer>> createPairsList(int[] left, int[] right) {
+         List<Pair<Integer, Integer>> pairList = new ArrayList<Pair<Integer, Integer>>();
+         for (int i = 0; i < left.length; i++) {
+@@ -1022,6 +1067,8 @@ public class BookmarkBridge {
+         int getChildCount(long nativeBookmarkBridge, BookmarkBridge caller, long id, int type);
+         void getChildIDs(long nativeBookmarkBridge, BookmarkBridge caller, long id, int type,
+                 boolean getFolders, boolean getBookmarks, List<BookmarkId> bookmarksList);
++        void importBookmarks(long nativeBookmarkBridge, BookmarkBridge caller, WindowAndroid window);
++        void exportBookmarks(long nativeBookmarkBridge, BookmarkBridge caller);
+         BookmarkId getChildAt(
+                 long nativeBookmarkBridge, BookmarkBridge caller, long id, int type, int index);
+         int getTotalBookmarkCount(
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkDelegate.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkDelegate.java
+@@ -67,6 +67,16 @@ interface BookmarkDelegate {
+      */
+     void openSearchUI();
+ 
++    /**
++     * Imports bookmarks from user-selected file.
++     */
++    void importBookmarks();
++
++    /**
++     * Exports bookmarks to downloads directory.
++     */
++    void exportBookmarks();
++
+     /**
+      * Dismisses the search UI.
+      */
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkManager.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkManager.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkManager.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkManager.java
+@@ -23,6 +23,7 @@ import org.chromium.base.metrics.RecordUserAction;
+ import org.chromium.chrome.R;
+ import org.chromium.chrome.browser.bookmarks.BookmarkBridge.BookmarkItem;
+ import org.chromium.chrome.browser.bookmarks.BookmarkBridge.BookmarkModelObserver;
++import org.chromium.chrome.browser.ChromeActivity;
+ import org.chromium.chrome.browser.favicon.LargeIconBridge;
+ import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.partnerbookmarks.PartnerBookmarksReader;
+@@ -35,6 +36,7 @@ import org.chromium.components.bookmarks.BookmarkId;
+ import org.chromium.components.browser_ui.widget.dragreorder.DragStateDelegate;
+ import org.chromium.components.browser_ui.widget.selectable_list.SelectableListLayout;
+ import org.chromium.components.browser_ui.widget.selectable_list.SelectableListToolbar.SearchDelegate;
++import org.chromium.ui.base.ActivityWindowAndroid;
+ import org.chromium.components.browser_ui.widget.selectable_list.SelectionDelegate;
+ 
+ import java.util.Stack;
+@@ -54,6 +56,7 @@ public class BookmarkManager
+     private Activity mActivity;
+     private ViewGroup mMainView;
+     private BookmarkModel mBookmarkModel;
++    private ActivityWindowAndroid mWindowAndroid;
+     private BookmarkUndoController mUndoController;
+     private final ObserverList<BookmarkUIObserver> mUIObservers = new ObserverList<>();
+     private BasicNativePage mNativePage;
+@@ -357,6 +360,13 @@ public class BookmarkManager
+         mNativePage = nativePage;
+     }
+ 
++    /**
++     * Sets the Android window that is used by further intents created by the bookmark activity.
++     */
++    public void setWindow(ActivityWindowAndroid window) {
++        mWindowAndroid = window;
++    }
++
+     /**
+      * @return Current URL representing the UI state of bookmark manager. If no state has been shown
+      *         yet in this session, on phone return last used state stored in preference; on tablet
+@@ -529,6 +539,16 @@ public class BookmarkManager
+         }
+     }
+ 
++    @Override
++    public void importBookmarks() {
++        mBookmarkModel.importBookmarks(mWindowAndroid);
++    }
++
++    @Override
++    public void exportBookmarks() {
++        mBookmarkModel.exportBookmarks();
++    }
++
+     @Override
+     public void openSearchUI() {
+         setState(BookmarkUIState.createSearchState());
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkPage.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkPage.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkPage.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkPage.java
+@@ -29,6 +29,7 @@ public class BookmarkPage extends BasicNativePage {
+ 
+         mManager = new BookmarkManager(activity, false, activity.getSnackbarManager());
+         mManager.setBasicNativePage(this);
++        mManager.setWindow(activity.getWindowAndroid());
+         mTitle = host.getContext().getResources().getString(R.string.bookmarks);
+ 
+         initWithView(mManager.getView());
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -170,6 +170,10 @@ jumbo_static_library("browser") {
+     "bitmap_fetcher/bitmap_fetcher_service.h",
+     "bitmap_fetcher/bitmap_fetcher_service_factory.cc",
+     "bitmap_fetcher/bitmap_fetcher_service_factory.h",
++    "importer/profile_writer.cc",
++    "importer/profile_writer.h",
++    "bookmarks/bookmark_html_writer.cc",
++    "bookmarks/bookmark_html_writer.h",
+     "bluetooth/bluetooth_chooser_context.cc",
+     "bluetooth/bluetooth_chooser_context.h",
+     "bluetooth/bluetooth_chooser_context_factory.cc",
+@@ -3071,8 +3075,6 @@ jumbo_static_library("browser") {
+       "badging/badge_manager_factory.h",
+       "banners/app_banner_manager_desktop.cc",
+       "banners/app_banner_manager_desktop.h",
+-      "bookmarks/bookmark_html_writer.cc",
+-      "bookmarks/bookmark_html_writer.h",
+       "certificate_viewer.h",
+       "chrome_browser_field_trials_desktop.cc",
+       "chrome_browser_field_trials_desktop.h",
+@@ -3186,8 +3188,6 @@ jumbo_static_library("browser") {
+       "importer/importer_uma.h",
+       "importer/in_process_importer_bridge.cc",
+       "importer/in_process_importer_bridge.h",
+-      "importer/profile_writer.cc",
+-      "importer/profile_writer.h",
+       "lifetime/browser_close_manager.cc",
+       "lifetime/browser_close_manager.h",
+       "lifetime/termination_notification.cc",
+diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browser/android/bookmarks/bookmark_bridge.cc
+--- a/chrome/browser/android/bookmarks/bookmark_bridge.cc
++++ b/chrome/browser/android/bookmarks/bookmark_bridge.cc
+@@ -34,6 +34,7 @@
+ #include "components/bookmarks/common/android/bookmark_type.h"
+ #include "components/bookmarks/common/bookmark_pref_names.h"
+ #include "components/bookmarks/managed/managed_bookmark_service.h"
++#include "components/favicon_base/favicon_usage_data.h"
+ #include "components/dom_distiller/core/url_utils.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/query_parser/query_parser.h"
+@@ -43,6 +44,21 @@
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/web_contents.h"
+ 
++#include "base/android/content_uri_utils.h"
++#include "base/android/path_utils.h"
++#include "base/strings/utf_string_conversions.h"
++#include "chrome/utility/importer/bookmark_html_reader.h"
++#include "chrome/browser/bookmarks/bookmark_html_writer.h"
++#include "chrome/browser/importer/profile_writer.h"
++#include "chrome/browser/platform_util.h"
++#include "chrome/browser/ui/chrome_select_file_policy.h"
++#include "chrome/common/importer/imported_bookmark_entry.h"
++#include "chrome/common/importer/importer_data_types.h"
++#include "chrome/common/url_constants.h"
++#include "components/search_engines/template_url.h"
++#include "components/url_formatter/url_fixer.h"
++#include "ui/android/window_android.h"
++
+ using base::android::AttachCurrentThread;
+ using base::android::ConvertUTF8ToJavaString;
+ using base::android::ConvertUTF16ToJavaString;
+@@ -60,6 +76,56 @@ using bookmarks::BookmarkPermanentNode;
+ using bookmarks::BookmarkType;
+ using content::BrowserThread;
+ 
++namespace internal {
++
++// Returns true if |url| has a valid scheme that we allow to import. We
++// filter out the URL with a unsupported scheme.
++bool CanImportURL(const GURL& url) {
++  // The URL is not valid.
++  if (!url.is_valid())
++    return false;
++
++  // Filter out the URLs with unsupported schemes.
++  const char* const kInvalidSchemes[] = {"wyciwyg", "place"};
++  for (size_t i = 0; i < base::size(kInvalidSchemes); ++i) {
++    if (url.SchemeIs(kInvalidSchemes[i]))
++      return false;
++  }
++
++  // Check if |url| is about:blank.
++  if (url == url::kAboutBlankURL)
++    return true;
++
++  // If |url| starts with chrome:// or about:, check if it's one of the URLs
++  // that we support.
++  if (url.SchemeIs(content::kChromeUIScheme) ||
++      url.SchemeIs(url::kAboutScheme)) {
++    if (url.host_piece() == chrome::kChromeUIAboutHost)
++      return true;
++
++    GURL fixed_url(url_formatter::FixupURL(url.spec(), std::string()));
++    for (size_t i = 0; i < chrome::kNumberOfChromeHostURLs; ++i) {
++      if (fixed_url.DomainIs(chrome::kChromeHostURLs[i]))
++        return true;
++    }
++
++    for (size_t i = 0; i < chrome::kNumberOfChromeDebugURLs; ++i) {
++      if (fixed_url == chrome::kChromeDebugURLs[i])
++        return true;
++    }
++
++    // If url has either chrome:// or about: schemes but wasn't found in the
++    // above lists, it means we don't support it, so we don't allow the user
++    // to import it.
++    return false;
++  }
++
++  // Otherwise, we assume the url has a valid (importable) scheme.
++  return true;
++}
++
++} // internal
++
+ namespace {
+ 
+ const int kInvalidId = -1;
+@@ -138,6 +204,10 @@ BookmarkBridge::~BookmarkBridge() {
+   bookmark_model_->RemoveObserver(this);
+   if (partner_bookmarks_shim_)
+     partner_bookmarks_shim_->RemoveObserver(this);
++  // There may be pending file dialogs, we need to tell them that we've gone
++  // away so they don't try and call back to us.
++  if (select_file_dialog_)
++    select_file_dialog_->ListenerDestroyed();
+ }
+ 
+ void BookmarkBridge::Destroy(JNIEnv*, const JavaParamRef<jobject>&) {
+@@ -543,6 +613,153 @@ jint BookmarkBridge::GetTotalBookmarkCount(
+   return count;
+ }
+ 
++void BookmarkBridge::ImportBookmarks(JNIEnv* env,
++                                       const JavaParamRef<jobject>& obj,
++                                       const JavaParamRef<jobject>& java_window) {
++  DCHECK(IsLoaded());
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++
++  ui::WindowAndroid* window =
++      ui::WindowAndroid::FromJavaWindowAndroid(java_window);
++  CHECK(window);
++
++  select_file_dialog_ = ui::SelectFileDialog::Create(
++    this, std::make_unique<ChromeSelectFilePolicy>(nullptr));
++
++  //NOTE: extension and description are not used on Android, thus not set
++  ui::SelectFileDialog::FileTypeInfo file_type_info;
++
++  const std::vector<base::string16> v_accept_types = { base::UTF8ToUTF16("text/html") };
++
++  // Android needs the original MIME types and an additional capture value.
++  std::pair<std::vector<base::string16>, bool> accept_types =
++      std::make_pair(v_accept_types, /* use_media_capture */ false);
++
++  select_file_dialog_->SelectFile(
++        ui::SelectFileDialog::SELECT_OPEN_FILE,
++        base::string16(),
++        export_path_,
++        &file_type_info,
++        0,
++        base::FilePath::StringType(),
++        window,
++        &accept_types
++  );
++}
++
++void BookmarkBridge::ExportBookmarks(JNIEnv* env,
++                                       const JavaParamRef<jobject>& obj) {
++  DCHECK(IsLoaded());
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++
++  if (export_path_.empty()) {
++    if (!base::android::GetDownloadsDirectory(&export_path_)) {
++      LOG(ERROR) << "Could not retrieve downloads directory for bookmarks export";
++      return;
++    }
++    export_path_ = export_path_.Append(FILE_PATH_LITERAL("bookmarks.html"));
++  }
++
++  bookmark_html_writer::WriteBookmarks(profile_, export_path_, NULL);
++
++  Java_BookmarkBridge_bookmarksExported(env, obj, ConvertUTF8ToJavaString(env, export_path_.MaybeAsASCII()));
++
++  //NOTE: nothing will be written if write permission has not been granted before
++  LOG(INFO) << "Bookmarks exported successfully to " << export_path_;
++}
++
++// Attempts to create a TemplateURL from the provided data. |title| is optional.
++// If TemplateURL creation fails, returns null.
++std::unique_ptr<TemplateURL> CreateTemplateURL(const base::string16& url,
++                                               const base::string16& keyword,
++                                               const base::string16& title) {
++  if (url.empty() || keyword.empty())
++    return nullptr;
++  TemplateURLData data;
++  data.SetKeyword(keyword);
++  // We set short name by using the title if it exists.
++  // Otherwise, we use the shortcut.
++  data.SetShortName(title.empty() ? keyword : title);
++  data.SetURL(TemplateURLRef::DisplayURLToURLRef(url));
++  return std::make_unique<TemplateURL>(data);
++}
++
++void BookmarkBridge::FileSelected(const base::FilePath& path, int index,
++                            void* params) {
++  base::File file;
++  if (path.IsContentUri()) {
++    file = base::OpenContentUriForRead(path);
++  } else {
++    file.Initialize(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
++  }
++  if (!file.IsValid()) {
++    select_file_dialog_->ShowToast("Cannot open bookmarks file for import");
++    return;
++  }
++
++  auto fileLength = file.GetLength();
++  if (-1 == fileLength) {
++    select_file_dialog_->ShowToast("Cannot read bookmarks file length");
++    return;
++  }
++
++  if (fileLength > 10 * 1024 * 1024) {
++    select_file_dialog_->ShowToast("Bookmark file is bigger than 10MB");
++    return;
++  }
++
++  std::vector<char> buffer(fileLength);
++  if (-1 == file.ReadAtCurrentPos(buffer.data(), fileLength)) {
++    select_file_dialog_->ShowToast("Could not read bookmarks file");
++    return;
++  }
++
++  if (buffer.empty()) {
++    select_file_dialog_->ShowToast("Empty bookmarks file");
++    return;
++  }
++
++  std::string contents(buffer.begin(), buffer.end());
++
++  // the following import logic comes from BookmarksFileImporter class
++  std::vector<ImportedBookmarkEntry> bookmarks;
++  std::vector<importer::SearchEngineInfo> search_engines;
++  favicon_base::FaviconUsageDataList favicons;
++
++  bookmark_html_reader::ImportBookmarksFile(
++      base::Callback<bool(void)>(),
++      base::BindRepeating(internal::CanImportURL),
++      contents,
++      &bookmarks,
++      &search_engines,
++      &favicons);
++
++  auto *writer = new ProfileWriter(profile_);
++
++  if (!bookmarks.empty()) {
++    // adding bookmarks will begin extensive changes to the model
++    writer->AddBookmarksWithModel(bookmark_model_, bookmarks, base::ASCIIToUTF16("Imported"));
++  }
++  if (!search_engines.empty()) {
++    TemplateURLService::OwnedTemplateURLVector owned_template_urls;
++    for (const auto& search_engine : search_engines) {
++      std::unique_ptr<TemplateURL> owned_template_url = CreateTemplateURL(
++          search_engine.url, search_engine.keyword, search_engine.display_name);
++      if (owned_template_url)
++        owned_template_urls.push_back(std::move(owned_template_url));
++    }
++    writer->AddKeywords(std::move(owned_template_urls), false);
++  }
++
++  select_file_dialog_->ShowToast("Bookmarks import complete");
++
++  LOG(INFO) << "Imported " << bookmarks.size() << " bookmarks and " <<
++		search_engines.size() << " search engines from " << path.MaybeAsASCII();
++}
++
++void BookmarkBridge::FileSelectionCanceled(void* params) {
++}
++
+ void BookmarkBridge::SetBookmarkTitle(JNIEnv* env,
+                                        const JavaParamRef<jobject>& obj,
+                                        jlong id,
+diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.h b/chrome/browser/android/bookmarks/bookmark_bridge.h
+--- a/chrome/browser/android/bookmarks/bookmark_bridge.h
++++ b/chrome/browser/android/bookmarks/bookmark_bridge.h
+@@ -16,6 +16,8 @@
+ #include "components/bookmarks/browser/base_bookmark_model_observer.h"
+ #include "components/bookmarks/common/android/bookmark_id.h"
+ #include "components/prefs/pref_change_registrar.h"
++#include "components/search_engines/template_url.h"
++#include "ui/shell_dialogs/select_file_dialog.h"
+ 
+ namespace bookmarks {
+ class BookmarkModel;
+@@ -29,7 +31,8 @@ class Profile;
+ // bookmark page. This fetches the bookmarks, title, urls, folder
+ // hierarchy.
+ class BookmarkBridge : public bookmarks::BaseBookmarkModelObserver,
+-                        public PartnerBookmarksShim::Observer {
++                        public PartnerBookmarksShim::Observer,
++                        public ui::SelectFileDialog::Listener {
+  public:
+   BookmarkBridge(JNIEnv* env,
+                  const base::android::JavaRef<jobject>& obj,
+@@ -39,6 +42,12 @@ class BookmarkBridge : public bookmarks::BaseBookmarkModelObserver,
+   bool IsDoingExtensiveChanges(JNIEnv* env,
+                                const base::android::JavaParamRef<jobject>& obj);
+ 
++  // SelectFileDialog::Listener implementation.
++  void FileSelected(const base::FilePath& path,
++                    int index,
++                    void* params) override;
++  void FileSelectionCanceled(void* params) override;
++
+   jboolean IsEditBookmarksEnabled(JNIEnv* env);
+ 
+   void LoadEmptyPartnerBookmarkShimForTesting(
+@@ -133,6 +142,13 @@ class BookmarkBridge : public bookmarks::BaseBookmarkModelObserver,
+                              jlong id,
+                              jint type);
+ 
++  void ImportBookmarks(JNIEnv* env,
++                        const base::android::JavaParamRef<jobject>& obj,
++                        const base::android::JavaParamRef<jobject>& java_window);
++
++  void ExportBookmarks(JNIEnv* env,
++                        const base::android::JavaParamRef<jobject>& obj);
++
+   void SetBookmarkTitle(JNIEnv* env,
+                         const base::android::JavaParamRef<jobject>& obj,
+                         jlong id,
+@@ -278,12 +294,14 @@ class BookmarkBridge : public bookmarks::BaseBookmarkModelObserver,
+   void ShimBeingDeleted(PartnerBookmarksShim* shim) override;
+ 
+   Profile* profile_;
++  base::FilePath export_path_;
+   JavaObjectWeakGlobalRef weak_java_ref_;
+   bookmarks::BookmarkModel* bookmark_model_;  // weak
+   bookmarks::ManagedBookmarkService* managed_bookmark_service_;  // weak
+   std::unique_ptr<bookmarks::ScopedGroupBookmarkActions>
+       grouped_bookmark_actions_;
+   PrefChangeRegistrar pref_change_registrar_;
++  scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
+ 
+   // Information about the Partner bookmarks (must check for IsLoaded()).
+   // This is owned by profile.
+diff --git a/chrome/browser/importer/profile_writer.cc b/chrome/browser/importer/profile_writer.cc
+--- a/chrome/browser/importer/profile_writer.cc
++++ b/chrome/browser/importer/profile_writer.cc
+@@ -96,12 +96,14 @@ void ProfileWriter::AddHistoryPage(const history::URLRows& page,
+     HistoryServiceFactory::GetForProfile(profile_,
+                                          ServiceAccessType::EXPLICIT_ACCESS)
+         ->AddPagesWithDetails(page, visit_source);
++#if !defined(OS_ANDROID)
+   // Measure the size of the history page after Auto Import on first run.
+   if (first_run::IsChromeFirstRun() &&
+       visit_source == history::SOURCE_IE_IMPORTED) {
+     UMA_HISTOGRAM_COUNTS_1M("Import.ImportedHistorySize.AutoImportFromIE",
+                             page.size());
+   }
++#endif
+ }
+ 
+ void ProfileWriter::AddHomepage(const GURL& home_page) {
+@@ -122,6 +124,16 @@ void ProfileWriter::AddBookmarks(
+     return;
+ 
+   BookmarkModel* model = BookmarkModelFactory::GetForBrowserContext(profile_);
++  AddBookmarksWithModel(model, bookmarks, top_level_folder_name);
++}
++
++void ProfileWriter::AddBookmarksWithModel(
++    BookmarkModel* model,
++    const std::vector<ImportedBookmarkEntry>& bookmarks,
++    const base::string16& top_level_folder_name) {
++  if (bookmarks.empty())
++    return;
++
+   DCHECK(model->loaded());
+ 
+   // If the bookmark bar is currently empty, we should import directly to it.
+diff --git a/chrome/browser/importer/profile_writer.h b/chrome/browser/importer/profile_writer.h
+--- a/chrome/browser/importer/profile_writer.h
++++ b/chrome/browser/importer/profile_writer.h
+@@ -12,6 +12,7 @@
+ #include "base/strings/string16.h"
+ #include "base/time/time.h"
+ #include "build/build_config.h"
++#include "components/bookmarks/browser/bookmark_model.h"
+ #include "components/favicon_base/favicon_usage_data.h"
+ #include "components/history/core/browser/history_types.h"
+ #include "components/search_engines/template_url_service.h"
+@@ -67,6 +68,11 @@ class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
+       const std::vector<ImportedBookmarkEntry>& bookmarks,
+       const base::string16& top_level_folder_name);
+ 
++  virtual void AddBookmarksWithModel(
++      bookmarks::BookmarkModel* model,
++      const std::vector<ImportedBookmarkEntry>& bookmarks,
++      const base::string16& top_level_folder_name);
++
+   virtual void AddFavicons(const favicon_base::FaviconUsageDataList& favicons);
+ 
+   // Adds the TemplateURLs in |template_urls| to the local store.
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -256,6 +256,12 @@ CHAR-LIMIT guidelines:
+       <message name="IDS_NOTIFICATION_CATEGORY_SITES" desc="Label for notifications from websites, within a list of notification categories. [CHAR-LIMIT=32]">
+         Sites
+       </message>
++      <message name="IDS_IMPORT_BOOKMARKS" desc="The label for the import bookmarks button.">
++        Import
++      </message>
++      <message name="IDS_EXPORT_BOOKMARKS" desc="The label for an export bookmarks button.">
++        Export
++      </message>
+       <message name="IDS_NOTIFICATION_CATEGORY_VR" desc="Label for notifications in VR, within a list of notification categories. [CHAR-LIMIT=32]">
+         Virtual Reality
+       </message>
+diff --git a/chrome/common/BUILD.gn b/chrome/common/BUILD.gn
+--- a/chrome/common/BUILD.gn
++++ b/chrome/common/BUILD.gn
+@@ -420,6 +420,9 @@ static_library("common") {
+     sources += [
+       "media/chrome_media_drm_bridge_client.cc",
+       "media/chrome_media_drm_bridge_client.h",
++      ## Bromite dependencies for bookmark import functionality
++      "importer/imported_bookmark_entry.cc",
++      "importer/imported_bookmark_entry.h",
+     ]
+   } else {
+     # Non-Android.
+diff --git a/chrome/utility/BUILD.gn b/chrome/utility/BUILD.gn
+--- a/chrome/utility/BUILD.gn
++++ b/chrome/utility/BUILD.gn
+@@ -70,8 +70,6 @@ static_library("utility") {
+ 
+   if (!is_android) {
+     sources += [
+-      "importer/bookmark_html_reader.cc",
+-      "importer/bookmark_html_reader.h",
+       "importer/bookmarks_file_importer.cc",
+       "importer/bookmarks_file_importer.h",
+       "importer/edge_database_reader_win.cc",
+@@ -169,6 +167,11 @@ static_library("utility") {
+     }
+   }
+ 
++  sources += [
++    "importer/bookmark_html_reader.cc",
++    "importer/bookmark_html_reader.h",
++  ]
++
+   if (use_nss_certs) {
+     sources += [
+       "importer/nss_decryptor_system_nss.cc",
+diff --git a/chrome/utility/importer/bookmark_html_reader.cc b/chrome/utility/importer/bookmark_html_reader.cc
+--- a/chrome/utility/importer/bookmark_html_reader.cc
++++ b/chrome/utility/importer/bookmark_html_reader.cc
+@@ -17,7 +17,9 @@
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/time/time.h"
+ #include "chrome/common/importer/imported_bookmark_entry.h"
++#if !defined(OS_ANDROID)
+ #include "chrome/utility/importer/favicon_reencode.h"
++#endif
+ #include "components/search_engines/search_terms_data.h"
+ #include "components/search_engines/template_url.h"
+ #include "net/base/data_url.h"
+@@ -56,6 +58,7 @@ bool GetAttribute(const std::string& attribute_list,
+   return true;
+ }
+ 
++#if !defined(OS_ANDROID)
+ // Given the URL of a page and a favicon data URL, adds an appropriate record
+ // to the given favicon usage vector.
+ void DataURLToFaviconUsage(const GURL& link_url,
+@@ -86,6 +89,7 @@ void DataURLToFaviconUsage(const GURL& link_url,
+ 
+   favicons->push_back(usage);
+ }
++#endif
+ 
+ }  // namespace
+ 
+@@ -106,14 +110,28 @@ static std::string stripDt(const std::string& lineDt) {
+ }
+ 
+ void ImportBookmarksFile(
+-    base::RepeatingCallback<bool(void)> cancellation_callback,
+-    base::RepeatingCallback<bool(const GURL&)> valid_url_callback,
++    const base::RepeatingCallback<bool(void)> cancellation_callback,
++    const base::RepeatingCallback<bool(const GURL&)> valid_url_callback,
+     const base::FilePath& file_path,
+     std::vector<ImportedBookmarkEntry>* bookmarks,
+     std::vector<importer::SearchEngineInfo>* search_engines,
+     favicon_base::FaviconUsageDataList* favicons) {
+   std::string content;
+-  base::ReadFileToString(file_path, &content);
++  if (!base::ReadFileToString(file_path, &content)) {
++     LOG(ERROR) << "Could not directly read bookmarks import file";
++     return;
++  }
++
++  ImportBookmarksFile(cancellation_callback, valid_url_callback, content, bookmarks, search_engines, favicons);
++}
++
++void ImportBookmarksFile(
++    base::RepeatingCallback<bool(void)> cancellation_callback,
++    base::RepeatingCallback<bool(const GURL&)> valid_url_callback,
++    const std::string& content,
++    std::vector<ImportedBookmarkEntry>* bookmarks,
++    std::vector<importer::SearchEngineInfo>* search_engines,
++    favicon_base::FaviconUsageDataList* favicons) {
+   std::vector<std::string> lines = base::SplitString(
+       content, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+ 
+@@ -126,6 +144,7 @@ void ImportBookmarksFile(
+   std::vector<base::string16> path;
+   size_t toolbar_folder_index = 0;
+   std::string charset = "UTF-8";  // If no charset is specified, assume utf-8.
++
+   for (size_t i = 0;
+        i < lines.size() &&
+            (cancellation_callback.is_null() || !cancellation_callback.Run());
+@@ -218,10 +237,12 @@ void ImportBookmarksFile(
+       }
+       bookmarks->push_back(entry);
+ 
++#if !defined(OS_ANDROID)
+       // Save the favicon. DataURLToFaviconUsage will handle the case where
+       // there is no favicon.
+       if (favicons)
+         DataURLToFaviconUsage(url, favicon, favicons);
++#endif
+ 
+       continue;
+     }
+diff --git a/chrome/utility/importer/bookmark_html_reader.h b/chrome/utility/importer/bookmark_html_reader.h
+--- a/chrome/utility/importer/bookmark_html_reader.h
++++ b/chrome/utility/importer/bookmark_html_reader.h
+@@ -51,6 +51,14 @@ void ImportBookmarksFile(
+     std::vector<importer::SearchEngineInfo>* search_engines,
+     favicon_base::FaviconUsageDataList* favicons);
+ 
++void ImportBookmarksFile(
++    const base::RepeatingCallback<bool(void)> cancellation_callback,
++    const base::RepeatingCallback<bool(const GURL&)> valid_url_callback,
++    const std::string& content,
++    std::vector<ImportedBookmarkEntry>* bookmarks,
++    std::vector<importer::SearchEngineInfo>* search_engines,
++    favicon_base::FaviconUsageDataList* favicons);
++
+ // Returns true if |url| should be imported as a search engine, i.e. because it
+ // has replacement terms. Chrome treats such bookmarks as search engines rather
+ // than true bookmarks.
+diff --git a/ui/android/java/src/org/chromium/ui/base/SelectFileDialog.java b/ui/android/java/src/org/chromium/ui/base/SelectFileDialog.java
+--- a/ui/android/java/src/org/chromium/ui/base/SelectFileDialog.java
++++ b/ui/android/java/src/org/chromium/ui/base/SelectFileDialog.java
+@@ -35,6 +35,7 @@ import org.chromium.base.task.PostTask;
+ import org.chromium.base.task.TaskTraits;
+ import org.chromium.ui.PhotoPickerListener;
+ import org.chromium.ui.R;
++import org.chromium.ui.widget.Toast;
+ import org.chromium.ui.UiUtils;
+ 
+ import java.io.File;
+@@ -54,6 +55,7 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+     private static final String IMAGE_TYPE = "image/";
+     private static final String VIDEO_TYPE = "video/";
+     private static final String AUDIO_TYPE = "audio/";
++    private static final String HTML_TYPE = "text/html";
+     private static final String ALL_IMAGE_TYPES = IMAGE_TYPE + "*";
+     private static final String ALL_VIDEO_TYPES = VIDEO_TYPE + "*";
+     private static final String ALL_AUDIO_TYPES = AUDIO_TYPE + "*";
+@@ -132,6 +134,11 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+         mFileTypes = fileTypes;
+     }
+ 
++    @CalledByNative
++    private void showToast(String message) {
++        Toast.makeText(ContextUtils.getApplicationContext(), message, Toast.LENGTH_LONG).show();
++    }
++
+     /**
+      * Creates and starts an intent based on the passed fileTypes and capture value.
+      * @param fileTypes MIME types requested (i.e. "image/*")
+@@ -159,7 +166,7 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+         List<String> missingPermissions = new ArrayList<>();
+         String storagePermission = Manifest.permission.READ_EXTERNAL_STORAGE;
+         boolean shouldUsePhotoPicker = shouldUsePhotoPicker();
+-        if (shouldUsePhotoPicker) {
++        if (shouldUsePhotoPicker || shouldShowHtmlTypes()) {
+             if (!window.hasPermission(storagePermission)) missingPermissions.add(storagePermission);
+         } else {
+             if (((mSupportsImageCapture && shouldShowImageTypes())
+@@ -187,7 +194,7 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+                         }
+ 
+                         // TODO(finnur): Remove once we figure out the cause of crbug.com/950024.
+-                        if (shouldUsePhotoPicker) {
++                        if (shouldUsePhotoPicker || shouldShowHtmlTypes()) {
+                             if (permissions.length != requestPermissions.length) {
+                                 throw new RuntimeException(
+                                         String.format("Permissions arrays misaligned: %d != %d",
+@@ -201,7 +208,7 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+                             }
+                         }
+ 
+-                        if (shouldUsePhotoPicker && permissions[i].equals(storagePermission)) {
++                        if ((shouldUsePhotoPicker || shouldShowHtmlTypes()) && permissions[i].equals(storagePermission)) {
+                             onFileNotSelected();
+                             return;
+                         }
+@@ -350,6 +357,7 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+             }
+             if (!mimeTypes.contains(mimeType)) mimeTypes.add(mimeType);
+         }
++        if (mimeTypes.size() == 0) return null;
+         return mimeTypes;
+     }
+ 
+@@ -627,6 +635,10 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+         return countAcceptTypesFor(specificType) > 0;
+     }
+ 
++    private boolean shouldShowHtmlTypes() {
++        return countAcceptTypesFor(HTML_TYPE) > 0;
++    }
++
+     private boolean shouldShowImageTypes() {
+         return shouldShowTypes(ALL_IMAGE_TYPES, IMAGE_TYPE);
+     }
+diff --git a/ui/shell_dialogs/select_file_dialog.h b/ui/shell_dialogs/select_file_dialog.h
+--- a/ui/shell_dialogs/select_file_dialog.h
++++ b/ui/shell_dialogs/select_file_dialog.h
+@@ -191,6 +191,8 @@ class SHELL_DIALOGS_EXPORT SelectFileDialog
+                   void* params);
+   bool HasMultipleFileTypeChoices();
+ 
++  virtual void ShowToast(const std::string& message) = 0;
++
+  protected:
+   friend class base::RefCountedThreadSafe<SelectFileDialog>;
+ 
+diff --git a/ui/shell_dialogs/select_file_dialog_android.cc b/ui/shell_dialogs/select_file_dialog_android.cc
+--- a/ui/shell_dialogs/select_file_dialog_android.cc
++++ b/ui/shell_dialogs/select_file_dialog_android.cc
+@@ -139,6 +139,12 @@ void SelectFileDialogImpl::SelectFileImpl(
+                                    owning_window->GetJavaObject());
+ }
+ 
++void SelectFileDialogImpl::ShowToast(const std::string& message) {
++  JNIEnv* env = base::android::AttachCurrentThread();
++
++  Java_SelectFileDialog_showToast(env, java_object_, base::android::ConvertUTF8ToJavaString(env, message));
++}
++
+ SelectFileDialogImpl::~SelectFileDialogImpl() {
+ }
+ 
+diff --git a/ui/shell_dialogs/select_file_dialog_android.h b/ui/shell_dialogs/select_file_dialog_android.h
+--- a/ui/shell_dialogs/select_file_dialog_android.h
++++ b/ui/shell_dialogs/select_file_dialog_android.h
+@@ -55,6 +55,8 @@ class SelectFileDialogImpl : public SelectFileDialog {
+                       gfx::NativeWindow owning_window,
+                       void* params) override;
+ 
++  void ShowToast(const std::string& message) override;
++
+  protected:
+   ~SelectFileDialogImpl() override;
+ 
+-- 
+2.17.1
+

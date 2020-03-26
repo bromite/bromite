@@ -1,0 +1,220 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Tue, 28 Aug 2018 23:27:23 +0200
+Subject: Add site settings option for session-only cookies
+
+---
+ chrome/android/java/res/values/values.xml     |  3 ++
+ .../java/res/xml/website_preferences.xml      |  7 +++++
+ .../website/SingleCategorySettings.java       | 21 ++++++++++++-
+ .../preferences/pref_service_bridge.cc        | 31 +++++++++++++++++++
+ .../preferences/PrefServiceBridge.java        | 10 ++++++
+ .../strings/android_chrome_strings.grd        |  6 ++++
+ 6 files changed, 77 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/android/java/res/values/values.xml b/chrome/android/java/res/values/values.xml
+--- a/chrome/android/java/res/values/values.xml
++++ b/chrome/android/java/res/values/values.xml
+@@ -32,6 +32,9 @@
+     <integer name="reload_button_level_reload">0</integer>
+     <integer name="reload_button_level_stop">1</integer>
+ 
++    <string name="allow_cookies_session_only_title">Keep cookies only until you quit your browser</string>
++    <string name="allow_cookies_session_only_summary">When enabled, all cookies will be erased when the browsing session is over</string>
++
+     <!-- Help and Feedback
+          These constants should be in sync with the context names on go/mobilehelprecs.
+          If the context ID cannot be found, the default help page will be shown to the user.-->
+diff --git a/chrome/android/java/res/xml/website_preferences.xml b/chrome/android/java/res/xml/website_preferences.xml
+--- a/chrome/android/java/res/xml/website_preferences.xml
++++ b/chrome/android/java/res/xml/website_preferences.xml
+@@ -32,6 +32,13 @@
+         android:title="@string/website_settings_category_notifications_quiet"
+         android:defaultValue="false"
+         android:persistent="false" />
++    <!-- A toggle for cookies to be saved only until session exit, only shown for the Cookies category. -->
++    <org.chromium.chrome.browser.settings.ChromeBaseCheckBoxPreference
++        android:key="cookies_session_only"
++        android:title="@string/allow_cookies_session_only_title"
++        android:summary="@string/allow_cookies_session_only_summary"
++        android:defaultValue="true"
++        android:persistent="false" />
+     <!-- A toggle for enabling vibration in notifications. -->
+     <org.chromium.chrome.browser.settings.ChromeBaseCheckBoxPreference
+         android:key="notifications_vibrate"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/website/SingleCategorySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/website/SingleCategorySettings.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/settings/website/SingleCategorySettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/website/SingleCategorySettings.java
+@@ -130,6 +130,7 @@ public class SingleCategorySettings extends PreferenceFragmentCompat
+ 
+     // Keys for category-specific preferences (toggle, link, button etc.), dynamically shown.
+     public static final String THIRD_PARTY_COOKIES_TOGGLE_KEY = "third_party_cookies";
++    public static final String COOKIES_SESSION_ONLY_TOGGLE_KEY = "cookies_session_only";
+     public static final String NOTIFICATIONS_VIBRATE_TOGGLE_KEY = "notifications_vibrate";
+     public static final String NOTIFICATIONS_QUIET_UI_TOGGLE_KEY = "notifications_quiet_ui";
+     public static final String EXPLAIN_PROTECTED_MEDIA_KEY = "protected_content_learn_more";
+@@ -478,6 +479,7 @@ public class SingleCategorySettings extends PreferenceFragmentCompat
+ 
+                 if (type == SiteSettingsCategory.Type.COOKIES) {
+                     updateThirdPartyCookiesCheckBox();
++                    updateCookiesSessionOnlyCheckBox();
+                 } else if (type == SiteSettingsCategory.Type.NOTIFICATIONS) {
+                     updateNotificationsSecondaryControls();
+                 }
+@@ -516,6 +518,8 @@ public class SingleCategorySettings extends PreferenceFragmentCompat
+             int setting = (int) newValue;
+             WebsitePreferenceBridge.setContentSetting(mCategory.getContentSettingsType(), setting);
+             getInfoForOrigins();
++        } else if (COOKIES_SESSION_ONLY_TOGGLE_KEY.equals(preference.getKey())) {
++            PrefServiceBridge.getInstance().setCookiesSessionOnlyEnabled((boolean) newValue);
+         } else if (THIRD_PARTY_COOKIES_TOGGLE_KEY.equals(preference.getKey())) {
+             PrefServiceBridge.getInstance().setBoolean(
+                     Pref.BLOCK_THIRD_PARTY_COOKIES, ((boolean) newValue));
+@@ -829,6 +833,8 @@ public class SingleCategorySettings extends PreferenceFragmentCompat
+         TriStateSiteSettingsPreference triStateToggle =
+                 (TriStateSiteSettingsPreference) screen.findPreference(TRI_STATE_TOGGLE_KEY);
+         Preference thirdPartyCookies = screen.findPreference(THIRD_PARTY_COOKIES_TOGGLE_KEY);
++        Preference cookiesSessionOnly = getPreferenceScreen().findPreference(
++                COOKIES_SESSION_ONLY_TOGGLE_KEY);
+         Preference notificationsVibrate = screen.findPreference(NOTIFICATIONS_VIBRATE_TOGGLE_KEY);
+         Preference notificationsQuietUi = screen.findPreference(NOTIFICATIONS_QUIET_UI_TOGGLE_KEY);
+         Preference explainProtectedMediaKey = screen.findPreference(EXPLAIN_PROTECTED_MEDIA_KEY);
+@@ -861,6 +867,7 @@ public class SingleCategorySettings extends PreferenceFragmentCompat
+ 
+         if (hideSecondaryToggles) {
+             screen.removePreference(thirdPartyCookies);
++            screen.removePreference(cookiesSessionOnly);
+             screen.removePreference(notificationsVibrate);
+             screen.removePreference(notificationsQuietUi);
+             screen.removePreference(explainProtectedMediaKey);
+@@ -872,12 +879,15 @@ public class SingleCategorySettings extends PreferenceFragmentCompat
+             return;
+         }
+ 
+-        // Configure/hide the third-party cookies toggle, as needed.
++        // Configure/hide the third-party cookies toggle and session-only cookie toggle, as needed.
+         if (mCategory.showSites(SiteSettingsCategory.Type.COOKIES)) {
+             thirdPartyCookies.setOnPreferenceChangeListener(this);
+             updateThirdPartyCookiesCheckBox();
++            cookiesSessionOnly.setOnPreferenceChangeListener(this);
++            updateCookiesSessionOnlyCheckBox();
+         } else {
+             screen.removePreference(thirdPartyCookies);
++            screen.removePreference(cookiesSessionOnly);
+         }
+ 
+         // Configure/hide the notifications secondary controls, as needed.
+@@ -992,6 +1002,15 @@ public class SingleCategorySettings extends PreferenceFragmentCompat
+         }
+     }
+ 
++    private void updateCookiesSessionOnlyCheckBox() {
++        ChromeBaseCheckBoxPreference cookiesSessionOnlyPref = (ChromeBaseCheckBoxPreference)
++                getPreferenceScreen().findPreference(COOKIES_SESSION_ONLY_TOGGLE_KEY);
++        cookiesSessionOnlyPref.setChecked(
++                PrefServiceBridge.getInstance().isCookiesSessionOnlyEnabled());
++        cookiesSessionOnlyPref.setEnabled(WebsitePreferenceBridge.isCategoryEnabled(
++                ContentSettingsType.COOKIES));
++    }
++
+     private void updateThirdPartyCookiesCheckBox() {
+         ChromeBaseCheckBoxPreference thirdPartyCookiesPref =
+                 (ChromeBaseCheckBoxPreference) getPreferenceScreen().findPreference(
+diff --git a/chrome/browser/android/preferences/pref_service_bridge.cc b/chrome/browser/android/preferences/pref_service_bridge.cc
+--- a/chrome/browser/android/preferences/pref_service_bridge.cc
++++ b/chrome/browser/android/preferences/pref_service_bridge.cc
+@@ -13,10 +13,17 @@
+ #include "chrome/browser/android/preferences/prefs.h"
+ #include "chrome/browser/preferences/jni_headers/PrefServiceBridge_jni.h"
+ #include "chrome/browser/profiles/profile_manager.h"
++#include "components/content_settings/core/browser/host_content_settings_map.h"
++#include "chrome/browser/content_settings/host_content_settings_map_factory.h"
++//#include "components/content_settings/core/common/content_settings_types.h"
+ #include "components/prefs/pref_service.h"
+ 
+ namespace {
+ 
++Profile* GetOriginalProfile() {
++  return ProfileManager::GetActiveUserProfile()->GetOriginalProfile();
++}
++
+ PrefService* GetPrefService() {
+   return ProfileManager::GetActiveUserProfile()
+       ->GetOriginalProfile()
+@@ -84,3 +91,27 @@ static jboolean JNI_PrefServiceBridge_IsManagedPreference(
+   return GetPrefService()->IsManagedPreference(
+       PrefServiceBridge::GetPrefNameExposedToJava(j_pref_index));
+ }
++static jboolean JNI_PrefServiceBridge_GetCookiesSessionOnlyEnabled(
++    JNIEnv* env,
++    const base::android::JavaParamRef<jobject>& obj) {
++  HostContentSettingsMap* host_content_settings_map =
++      HostContentSettingsMapFactory::GetForProfile(GetOriginalProfile());
++  auto value = host_content_settings_map->GetDefaultContentSetting(ContentSettingsType::COOKIES, nullptr);
++  auto enabled = CONTENT_SETTING_SESSION_ONLY == value;
++  LOG(INFO) << "GetCookiesSessionOnly := " << enabled << " (raw_value = " << value << ")";
++  return enabled;
++}
++
++static void JNI_PrefServiceBridge_SetCookiesSessionOnlyEnabled(
++    JNIEnv* env,
++    const base::android::JavaParamRef<jobject>& obj,
++    jboolean enabled) {
++  HostContentSettingsMap* host_content_settings_map =
++      HostContentSettingsMapFactory::GetForProfile(GetOriginalProfile());
++  LOG(INFO) << "SetCookiesSessionOnly -> " << (enabled ? "true" : "false") <<
++           "; false -> setting_allow: " << CONTENT_SETTING_ALLOW <<
++           "; true -> session_only: "   << CONTENT_SETTING_SESSION_ONLY;
++  host_content_settings_map->SetDefaultContentSetting(
++      ContentSettingsType::COOKIES,
++      enabled ? CONTENT_SETTING_SESSION_ONLY : CONTENT_SETTING_ALLOW);
++}
+diff --git a/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/PrefServiceBridge.java b/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/PrefServiceBridge.java
+--- a/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/PrefServiceBridge.java
++++ b/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/PrefServiceBridge.java
+@@ -82,6 +82,13 @@ public class PrefServiceBridge {
+         PrefServiceBridgeJni.get().setString(preference, value);
+     }
+ 
++    public boolean isCookiesSessionOnlyEnabled() {
++        return PrefServiceBridgeJni.get().getCookiesSessionOnlyEnabled(PrefServiceBridge.this);
++    }
++    public void setCookiesSessionOnlyEnabled(boolean enabled) {
++        PrefServiceBridgeJni.get().setCookiesSessionOnlyEnabled(PrefServiceBridge.this, enabled);
++    }
++
+     /**
+      * @param preference The name of the preference.
+      * @return Whether the specified preference is managed.
+@@ -97,6 +104,8 @@ public class PrefServiceBridge {
+ 
+     @NativeMethods
+     interface Natives {
++        boolean getCookiesSessionOnlyEnabled(PrefServiceBridge caller);
++        void setCookiesSessionOnlyEnabled(PrefServiceBridge caller, boolean enabled);
+         boolean getBoolean(int preference);
+         void setBoolean(int preference, boolean value);
+         int getInteger(int preference);
+@@ -106,3 +115,4 @@ public class PrefServiceBridge {
+         boolean isManagedPreference(int preference);
+     }
+ }
++
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -814,6 +814,12 @@ Your Google account may have other forms of browsing history like searches and a
+       <message name="IDS_BLOCK_THIRD_PARTY_COOKIES_SUMMARY" desc="Summary text for Block Third Party Cookies preference">
+         Prevent third-party websites from saving and reading cookie data
+       </message>
++      <message name="IDS_ALLOW_COOKIES_SESSION_ONLY_TITLE" desc="Title for Allow Cookies Session Only preference">
++        Keep cookies only until you quit your browser
++      </message>
++      <message name="IDS_ALLOW_COOKIES_SESSION_ONLY_SUMMARY" desc="Summary text for Allow Session Only Cookies preference">
++        When enabled, all cookies will be erased when the browsing session is over
++      </message>
+       <message name="IDS_JAVASCRIPT_PERMISSION_TITLE" desc="Title of the permission to run javascript [CHAR-LIMIT=32]">
+         JavaScript
+       </message>
+-- 
+2.17.1
+

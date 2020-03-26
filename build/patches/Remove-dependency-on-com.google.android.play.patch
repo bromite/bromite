@@ -1,0 +1,496 @@
+From: Wengling Chen <feiyu2817@gmail.com>
+Date: Fri, 1 Nov 2019 23:01:41 +0100
+Subject: Remove dependency on com.google.android.play
+
+---
+ chrome/android/BUILD.gn                       |   1 -
+ .../inline/FakeAppUpdateManagerWrapper.java   |  60 +----
+ .../inline/InlineUpdateControllerFactory.java |  16 --
+ .../inline/PlayInlineUpdateController.java    | 226 +-----------------
+ components/module_installer/android/BUILD.gn  |   1 -
+ third_party/google_android_play_core/BUILD.gn |   5 -
+ 6 files changed, 3 insertions(+), 306 deletions(-)
+
+diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
+--- a/chrome/android/BUILD.gn
++++ b/chrome/android/BUILD.gn
+@@ -363,7 +363,6 @@ android_library("chrome_java") {
+     "//third_party/cacheinvalidation:cacheinvalidation_proto_java",
+     "//third_party/cct_dynamic_module:cct_dynamic_module_java",
+     "//third_party/gif_player:gif_player_java",
+-    "//third_party/google_android_play_core:com_google_android_play_core_java",
+     "//third_party/jsr-305:jsr_305_javalib",
+     "//ui/android:ui_java",
+     "//ui/base/mojom:mojom_java",
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/FakeAppUpdateManagerWrapper.java b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/FakeAppUpdateManagerWrapper.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/FakeAppUpdateManagerWrapper.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/FakeAppUpdateManagerWrapper.java
+@@ -11,11 +11,6 @@ import android.os.Message;
+ 
+ import androidx.annotation.IntDef;
+ 
+-import com.google.android.play.core.appupdate.AppUpdateInfo;
+-import com.google.android.play.core.appupdate.testing.FakeAppUpdateManager;
+-import com.google.android.play.core.install.model.AppUpdateType;
+-import com.google.android.play.core.tasks.Task;
+-
+ import org.chromium.base.ContextUtils;
+ import org.chromium.base.task.PostTask;
+ import org.chromium.chrome.browser.ChromeActivity;
+@@ -31,7 +26,7 @@ import java.lang.ref.WeakReference;
+  * wrapper isn't meant to be used for a full integration test, but simulating all of the possible
+  * error cases is a bit easier to do here.
+  */
+-public class FakeAppUpdateManagerWrapper extends FakeAppUpdateManager {
++public class FakeAppUpdateManagerWrapper {
+     private static final int RESULT_IN_APP_UPDATE_FAILED = 1;
+     private static final int STEP_DELAY_MS = 5000;
+     private static final int TOAST_DURATION_MS = 2000;
+@@ -108,15 +103,12 @@ public class FakeAppUpdateManagerWrapper extends FakeAppUpdateManager {
+             switch (event) {
+                 case Event.UPDATE_AVAILABLE:
+                     w.toast("Making app update available.");
+-                    w.setUpdateAvailable(10000 /* Figure out a better version? */);
+                     return;
+                 case Event.USER_ACCEPTS_UPDATE:
+                     w.toast("User accepts update.");
+-                    w.userAcceptsUpdate();
+                     return;
+                 case Event.USER_REJECTS_UPDATE:
+                     w.toast("User rejects update.");
+-                    w.userRejectsUpdate();
+                     return;
+                 case Event.TRIGGER_DOWNLOAD:
+                     w.toast("Triggering download.");
+@@ -124,27 +116,21 @@ public class FakeAppUpdateManagerWrapper extends FakeAppUpdateManager {
+                     return;
+                 case Event.DOWNLOAD_STARTS:
+                     w.toast("Download has started.");
+-                    w.downloadStarts();
+                     return;
+                 case Event.DOWNLOAD_FAILS:
+                     w.toast("Triggering download failure.");
+-                    w.downloadFails();
+                     return;
+                 case Event.USER_CANCELS_DOWNLOAD:
+                     w.toast("Triggering cancellation of download.");
+-                    w.userCancelsDownload();
+                     return;
+                 case Event.DOWNLOAD_COMPLETES:
+                     w.toast("Download completes.");
+-                    w.downloadCompletes();
+                     return;
+                 case Event.INSTALL_FAILS:
+                     w.toast("Triggering install failure.");
+-                    w.installFails();
+                     return;
+                 case Event.INSTALL_COMPLETES:
+                     w.toast("Triggering install completion.");
+-                    w.installCompletes();
+                     return;
+                 default:
+                     w.toast("Unknown event.");
+@@ -159,56 +145,12 @@ public class FakeAppUpdateManagerWrapper extends FakeAppUpdateManager {
+      * @param endState at which point should the inline update flow end.
+      */
+     FakeAppUpdateManagerWrapper(@Type int endState) {
+-        super(ContextUtils.getApplicationContext());
+         mType = endState;
+         mEventHandler = new EventHandler(this);
+ 
+         if (mType != Type.NONE) execute(Event.UPDATE_AVAILABLE);
+     }
+ 
+-    // FakeAppUpdateManager implementation.
+-    @Override
+-    public boolean startUpdateFlowForResult(AppUpdateInfo appUpdateInfo,
+-            @AppUpdateType int appUpdateType, Activity activity, int requestCode) {
+-        toast("Starting update flow.");
+-        // TODO(dtrainor): Simulate exceptions being thrown or returning false from the super call.
+-        boolean success =
+-                super.startUpdateFlowForResult(appUpdateInfo, appUpdateType, activity, requestCode);
+-        if (!success) return false;
+-
+-        assert activity instanceof ChromeActivity : "Unexpected triggering activity.";
+-
+-        final int resultCode;
+-        if (mType == Type.FAIL_DIALOG_CANCEL) {
+-            resultCode = Activity.RESULT_CANCELED;
+-        } else if (mType == Type.FAIL_DIALOG_UPDATE_FAILED) {
+-            resultCode = RESULT_IN_APP_UPDATE_FAILED;
+-        } else {
+-            resultCode = Activity.RESULT_OK;
+-        }
+-
+-        PostTask.postDelayedTask(UiThreadTaskTraits.DEFAULT, () -> {
+-            triggerDialogResponse((ChromeActivity) activity, requestCode, resultCode);
+-        }, STEP_DELAY_MS);
+-
+-        return true;
+-    }
+-
+-    @Override
+-    public Task<Void> completeUpdate() {
+-        toast("Completing update.");
+-        Task<Void> result = super.completeUpdate();
+-
+-        if (mType == Type.FAIL_INSTALL) {
+-            postDelayedEvent(Event.INSTALL_FAILS);
+-        } else {
+-            postDelayedEvent(Event.INSTALL_COMPLETES);
+-            // This doesn't actually restart Chrome in this case.
+-        }
+-
+-        return result;
+-    }
+-
+     private void triggerDialogResponse(ChromeActivity activity, int requestCode, int resultCode) {
+         if (resultCode == Activity.RESULT_OK) {
+             execute(Event.USER_ACCEPTS_UPDATE);
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java
+@@ -4,8 +4,6 @@
+ 
+ package org.chromium.chrome.browser.omaha.inline;
+ 
+-import com.google.android.play.core.appupdate.AppUpdateManagerFactory;
+-
+ import org.chromium.base.ContextUtils;
+ import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.omaha.UpdateConfigs;
+@@ -20,20 +18,6 @@ public class InlineUpdateControllerFactory {
+     public static InlineUpdateController create(Runnable callback) {
+         @FakeAppUpdateManagerWrapper.Type
+         int mockInlineEndState = UpdateConfigs.getMockInlineScenarioEndState();
+-        if (mockInlineEndState != FakeAppUpdateManagerWrapper.Type.NO_SIMULATION) {
+-            // The config requires to run through a test controller, using the
+-            // PlayInlineUpdateController, but with a fake Google Play backend that automatically
+-            // goes through a scenario flow.
+-            return new PlayInlineUpdateController(
+-                    callback, new FakeAppUpdateManagerWrapper(mockInlineEndState));
+-        }
+-
+-        if (ChromeFeatureList.isEnabled(ChromeFeatureList.INLINE_UPDATE_FLOW)) {
+-            // The application configuration requires to use the real Google Play backend for inline
+-            // updates.
+-            return new PlayInlineUpdateController(
+-                    callback, AppUpdateManagerFactory.create(ContextUtils.getApplicationContext()));
+-        }
+ 
+         // No test scenario was in place, and the inline flow has not been enabled, so use a
+         // controller with no functionality.
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/PlayInlineUpdateController.java b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/PlayInlineUpdateController.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/PlayInlineUpdateController.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/PlayInlineUpdateController.java
+@@ -10,15 +10,6 @@ import android.content.IntentSender.SendIntentException;
+ import androidx.annotation.IntDef;
+ import androidx.annotation.Nullable;
+ 
+-import com.google.android.play.core.appupdate.AppUpdateInfo;
+-import com.google.android.play.core.appupdate.AppUpdateManager;
+-import com.google.android.play.core.install.InstallState;
+-import com.google.android.play.core.install.InstallStateUpdatedListener;
+-import com.google.android.play.core.install.model.AppUpdateType;
+-import com.google.android.play.core.install.model.InstallErrorCode;
+-import com.google.android.play.core.install.model.InstallStatus;
+-import com.google.android.play.core.install.model.UpdateAvailability;
+-
+ import org.chromium.base.Log;
+ import org.chromium.base.metrics.RecordHistogram;
+ import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateState;
+@@ -32,7 +23,7 @@ import java.lang.annotation.RetentionPolicy;
+  * in the foreground.
+  */
+ public class PlayInlineUpdateController
+-        implements InlineUpdateController, InstallStateUpdatedListener {
++        implements InlineUpdateController {
+     /**
+      * Converts Play's InstallErrorCode enum to a stable monotomically incrementing Chrome enum.
+      * This is used for metric stability.
+@@ -127,26 +118,9 @@ public class PlayInlineUpdateController
+     private static final int RESULT_IN_APP_UPDATE_FAILED = 1;
+     private static final int REQUEST_CODE = 8123;
+ 
+-    private final Runnable mCallback;
+-    private final AppUpdateManager mAppUpdateManager;
+-
+     private boolean mEnabled;
+     private @Nullable @UpdateState Integer mUpdateState;
+ 
+-    private AppUpdateInfo mAppUpdateInfo;
+-    private @Nullable @UpdateAvailability Integer mUpdateAvailability;
+-    private @Nullable @InstallStatus Integer mInstallStatus;
+-
+-    /**
+-     * Builds an instance of {@link PlayInlineUpdateController}.
+-     * @param callback The {@link Runnable} to notify when an inline update state change occurs.
+-     */
+-    PlayInlineUpdateController(Runnable callback, AppUpdateManager appUpdateManager) {
+-        mCallback = callback;
+-        mAppUpdateManager = appUpdateManager;
+-        setEnabled(true);
+-    }
+-
+     // InlineUpdateController implementation.
+     @Override
+     public void setEnabled(boolean enabled) {
+@@ -155,10 +129,8 @@ public class PlayInlineUpdateController
+ 
+         if (mEnabled) {
+             mUpdateState = UpdateState.NONE;
+-            mAppUpdateManager.registerListener(this);
+             pullCurrentState();
+         } else {
+-            mAppUpdateManager.unregisterListener(this);
+         }
+     }
+ 
+@@ -169,220 +141,26 @@ public class PlayInlineUpdateController
+ 
+     @Override
+     public void startUpdate(Activity activity) {
+-        try {
+-            boolean success = mAppUpdateManager.startUpdateFlowForResult(
+-                    mAppUpdateInfo, AppUpdateType.FLEXIBLE, activity, REQUEST_CODE);
+-            Log.i(TAG, "startUpdateFlowForResult() returned " + success);
+-
+-            if (!success) recordCallFailure(CallFailure.START_FAILED);
+-        } catch (SendIntentException exception) {
+-            mInstallStatus = InstallStatus.FAILED;
+-            Log.i(TAG, "startUpdateFlowForResult() threw an exception.");
+-            recordCallFailure(CallFailure.START_EXCEPTION);
+-        }
+-        // TODO(dtrainor): Use success.
+     }
+ 
+     @Override
+     public void completeUpdate() {
+-        mAppUpdateManager.completeUpdate()
+-                .addOnSuccessListener(unused -> {
+-                    Log.i(TAG, "completeUpdate() success.");
+-                    pushStatus();
+-                })
+-                .addOnFailureListener(exception -> {
+-                    Log.i(TAG, "completeUpdate() failed.");
+-                    recordCallFailure(CallFailure.COMPLETE_FAILED);
+-                    mInstallStatus = InstallStatus.FAILED;
+-                    pushStatus();
+-                });
+-    }
+-
+-    // InstallStateUpdatedListener implementation.
+-    @Override
+-    public void onStateUpdate(InstallState state) {
+-        Log.i(TAG,
+-                "onStateUpdate(" + state.installStatus() + ", " + state.installErrorCode() + ")");
+-
+-        if (state.installStatus() != mInstallStatus) {
+-            RecordHistogram.recordEnumeratedHistogram("GoogleUpdate.Inline.StateChange.Error."
+-                            + installStatusToEnumSuffix(state.installStatus()),
+-                    installErrorCodeToMetrics(state.installErrorCode()),
+-                    InstallErrorCodeMetrics.NUM_ENTRIES);
+-        }
+-
+-        mInstallStatus = state.installStatus();
+-        pushStatus();
+     }
+ 
+     private void pullCurrentState() {
+-        mAppUpdateManager.getAppUpdateInfo()
+-                .addOnSuccessListener(info -> {
+-                    mAppUpdateInfo = info;
+-                    mUpdateAvailability = info.updateAvailability();
+-                    mInstallStatus = info.installStatus();
+-                    Log.i(TAG,
+-                            "pullCurrentState(" + mUpdateAvailability + ", " + mInstallStatus
+-                                    + ") success.");
+-                    recordOnAppUpdateInfo(info);
+-                    pushStatus();
+-                })
+-                .addOnFailureListener(exception -> {
+-                    mAppUpdateInfo = null;
+-                    mUpdateAvailability = UpdateAvailability.UNKNOWN;
+-                    mInstallStatus = InstallStatus.UNKNOWN;
+-                    Log.i(TAG, "pullCurrentState() failed.");
+-                    recordCallFailure(CallFailure.QUERY_FAILED);
+-                    pushStatus();
+-                });
+     }
+ 
+     private void pushStatus() {
+-        if (!mEnabled || mUpdateAvailability == null || mInstallStatus == null) return;
+-
+-        @UpdateState
+-        int newState = toUpdateState(mUpdateAvailability, mInstallStatus);
+-        if (mUpdateState != null && mUpdateState == newState) return;
+-
+-        Log.i(TAG, "Pushing inline update state to " + newState);
+-        mUpdateState = newState;
+-        mCallback.run();
+     }
+ 
+     private static @UpdateState int toUpdateState(
+-            @UpdateAvailability int updateAvailability, @InstallStatus int installStatus) {
++            int updateAvailability, int installStatus) {
+         @UpdateState
+         int newStatus = UpdateState.NONE;
+ 
+-        // Note, use InstallStatus first then UpdateAvailability if InstallStatus doesn't indicate
+-        // a currently active install.
+-        switch (installStatus) {
+-            case InstallStatus.PENDING:
+-                // Intentional fall through.
+-            case InstallStatus.DOWNLOADING:
+-                newStatus = UpdateState.INLINE_UPDATE_DOWNLOADING;
+-                break;
+-            case InstallStatus.DOWNLOADED:
+-                newStatus = UpdateState.INLINE_UPDATE_READY;
+-                break;
+-            case InstallStatus.FAILED:
+-                newStatus = UpdateState.INLINE_UPDATE_FAILED;
+-                break;
+-        }
+-
+-        if (newStatus == UpdateState.NONE) {
+-            switch (updateAvailability) {
+-                case UpdateAvailability.UPDATE_AVAILABLE:
+-                    newStatus = UpdateState.INLINE_UPDATE_AVAILABLE;
+-                    break;
+-            }
+-        }
+-
+         return newStatus;
+     }
+ 
+-    private static String installStatusToEnumSuffix(@InstallStatus int status) {
+-        switch (status) {
+-            case InstallStatus.UNKNOWN:
+-                return "Unknown";
+-            case InstallStatus.REQUIRES_UI_INTENT:
+-                return "RequiresUiIntent";
+-            case InstallStatus.PENDING:
+-                return "Pending";
+-            case InstallStatus.DOWNLOADING:
+-                return "Downloading";
+-            case InstallStatus.DOWNLOADED:
+-                return "Downloaded";
+-            case InstallStatus.INSTALLING:
+-                return "Installing";
+-            case InstallStatus.INSTALLED:
+-                return "Installed";
+-            case InstallStatus.FAILED:
+-                return "Failed";
+-            case InstallStatus.CANCELED:
+-                return "Canceled";
+-            default:
+-                return "Untracked";
+-        }
+-    }
+-
+-    private static @InstallErrorCodeMetrics int installErrorCodeToMetrics(
+-            @InstallErrorCode int error) {
+-        switch (error) {
+-            case InstallErrorCode.NO_ERROR:
+-                return InstallErrorCodeMetrics.NO_ERROR;
+-            case InstallErrorCode.NO_ERROR_PARTIALLY_ALLOWED:
+-                return InstallErrorCodeMetrics.NO_ERROR_PARTIALLY_ALLOWED;
+-            case InstallErrorCode.ERROR_UNKNOWN:
+-                return InstallErrorCodeMetrics.ERROR_UNKNOWN;
+-            case InstallErrorCode.ERROR_API_NOT_AVAILABLE:
+-                return InstallErrorCodeMetrics.ERROR_API_NOT_AVAILABLE;
+-            case InstallErrorCode.ERROR_INVALID_REQUEST:
+-                return InstallErrorCodeMetrics.ERROR_INVALID_REQUEST;
+-            case InstallErrorCode.ERROR_INSTALL_UNAVAILABLE:
+-                return InstallErrorCodeMetrics.ERROR_INSTALL_UNAVAILABLE;
+-            case InstallErrorCode.ERROR_INSTALL_NOT_ALLOWED:
+-                return InstallErrorCodeMetrics.ERROR_INSTALL_NOT_ALLOWED;
+-            case InstallErrorCode.ERROR_DOWNLOAD_NOT_PRESENT:
+-                return InstallErrorCodeMetrics.ERROR_DOWNLOAD_NOT_PRESENT;
+-            case InstallErrorCode.ERROR_INTERNAL_ERROR:
+-                return InstallErrorCodeMetrics.ERROR_INTERNAL_ERROR;
+-            default:
+-                return InstallErrorCodeMetrics.ERROR_UNTRACKED;
+-        }
+-    }
+-
+-    private static @UpdateAvailabilityMetric int updateAvailabilityToMetrics(
+-            @UpdateAvailability int updateAvailability) {
+-        switch (updateAvailability) {
+-            case UpdateAvailability.UNKNOWN:
+-                return UpdateAvailabilityMetric.UNKNOWN;
+-            case UpdateAvailability.UPDATE_NOT_AVAILABLE:
+-                return UpdateAvailabilityMetric.UPDATE_NOT_AVAILABLE;
+-            case UpdateAvailability.UPDATE_AVAILABLE:
+-                return UpdateAvailabilityMetric.UPDATE_AVAILABLE;
+-            case UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS:
+-                return UpdateAvailabilityMetric.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS;
+-            default:
+-                return UpdateAvailabilityMetric.UNTRACKED;
+-        }
+-    }
+-
+-    private static @InstallStatusMetric int installStatusToMetrics(
+-            @InstallStatus int installStatus) {
+-        switch (installStatus) {
+-            case InstallStatus.UNKNOWN:
+-                return InstallStatusMetric.UNKNOWN;
+-            case InstallStatus.REQUIRES_UI_INTENT:
+-                return InstallStatusMetric.REQUIRES_UI_INTENT;
+-            case InstallStatus.PENDING:
+-                return InstallStatusMetric.PENDING;
+-            case InstallStatus.DOWNLOADING:
+-                return InstallStatusMetric.DOWNLOADING;
+-            case InstallStatus.DOWNLOADED:
+-                return InstallStatusMetric.DOWNLOADED;
+-            case InstallStatus.INSTALLING:
+-                return InstallStatusMetric.INSTALLING;
+-            case InstallStatus.INSTALLED:
+-                return InstallStatusMetric.INSTALLED;
+-            case InstallStatus.FAILED:
+-                return InstallStatusMetric.FAILED;
+-            case InstallStatus.CANCELED:
+-                return InstallStatusMetric.CANCELED;
+-            default:
+-                return InstallStatusMetric.UNTRACKED;
+-        }
+-    }
+-
+-    private static void recordOnAppUpdateInfo(AppUpdateInfo info) {
+-        RecordHistogram.recordEnumeratedHistogram(
+-                "GoogleUpdate.Inline.AppUpdateInfo.UpdateAvailability",
+-                updateAvailabilityToMetrics(info.updateAvailability()),
+-                UpdateAvailabilityMetric.NUM_ENTRIES);
+-        RecordHistogram.recordEnumeratedHistogram("GoogleUpdate.Inline.AppUpdateInfo.InstallStatus",
+-                installStatusToMetrics(info.installStatus()), InstallStatusMetric.NUM_ENTRIES);
+-    }
+-
+     private static void recordCallFailure(@CallFailure int failure) {
+         RecordHistogram.recordEnumeratedHistogram(
+                 "GoogleUpdate.Inline.CallFailure", failure, CallFailure.NUM_ENTRIES);
+diff --git a/components/module_installer/android/BUILD.gn b/components/module_installer/android/BUILD.gn
+--- a/components/module_installer/android/BUILD.gn
++++ b/components/module_installer/android/BUILD.gn
+@@ -35,7 +35,6 @@ android_library("module_installer_java") {
+     "//base:base_java",
+     "//base:jni_java",
+     "//components/crash/android:java",
+-    "//third_party/google_android_play_core:com_google_android_play_core_java",
+   ]
+ 
+   annotation_processor_deps = [ "//base/android/jni_generator:jni_processor" ]
+diff --git a/third_party/google_android_play_core/BUILD.gn b/third_party/google_android_play_core/BUILD.gn
+--- a/third_party/google_android_play_core/BUILD.gn
++++ b/third_party/google_android_play_core/BUILD.gn
+@@ -3,8 +3,3 @@
+ # found in the LICENSE file.
+ 
+ import("//build/config/android/rules.gni")
+-
+-android_aar_prebuilt("com_google_android_play_core_java") {
+-  aar_path = "core-1.6.4.aar"
+-  info_path = "com_google_android_play_core.info"
+-}
+-- 
+2.17.1
+

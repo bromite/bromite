@@ -1,0 +1,92 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sat, 28 Apr 2018 08:30:26 +0200
+Subject: Reduce HTTP headers in DoH requests to bare minimum
+
+---
+ net/base/load_flags_list.h              |  9 +++++++++
+ net/dns/dns_transaction.cc              |  1 +
+ net/url_request/url_request_http_job.cc | 16 +++++++++++-----
+ 3 files changed, 21 insertions(+), 5 deletions(-)
+
+diff --git a/net/base/load_flags_list.h b/net/base/load_flags_list.h
+--- a/net/base/load_flags_list.h
++++ b/net/base/load_flags_list.h
+@@ -112,3 +112,12 @@ LOAD_FLAG(RESTRICTED_PREFETCH, 1 << 17)
+ // is considered privileged, and therefore this flag must only be set from a
+ // trusted process.
+ LOAD_FLAG(CAN_USE_RESTRICTED_PREFETCH, 1 << 18)
++
++
++
++
++// This load will not send Accept-Language or User-Agent headers, and not
++// advertise brotli encoding.
++// Used to comply with IETF (draft) DNS-over-HTTPS:
++// "Implementors SHOULD NOT set non-essential HTTP headers in DoH client requests."
++LOAD_FLAG(MINIMAL_HEADERS, 1 << 19)
+diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
+--- a/net/dns/dns_transaction.cc
++++ b/net/dns/dns_transaction.cc
+@@ -405,6 +405,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
+     // perspective to prevent the client from sending AIA requests).
+     request_->SetLoadFlags(request_->load_flags() | LOAD_DISABLE_CACHE |
+                            LOAD_BYPASS_PROXY |
++                           LOAD_IGNORE_LIMITS | LOAD_MINIMAL_HEADERS |
+                            LOAD_DISABLE_CERT_NETWORK_FETCHES);
+     request_->set_allow_credentials(false);
+   }
+diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_request_http_job.cc
+--- a/net/url_request/url_request_http_job.cc
++++ b/net/url_request/url_request_http_job.cc
+@@ -278,6 +278,7 @@ void URLRequestHttpJob::Start() {
+   // plugin could set a referrer although sending the referrer is inhibited.
+   request_info_.extra_headers.RemoveHeader(HttpRequestHeaders::kReferer);
+ 
++  if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
+   // Our consumer should have made sure that this is a safe referrer. See for
+   // instance WebCore::FrameLoader::HideReferrer.
+   if (referrer.is_valid()) {
+@@ -293,11 +294,14 @@ void URLRequestHttpJob::Start() {
+     request_info_.extra_headers.SetHeader(HttpRequestHeaders::kReferer,
+                                           referer_value);
+   }
++  }
+ 
++  if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
+   request_info_.extra_headers.SetHeaderIfMissing(
+       HttpRequestHeaders::kUserAgent,
+       http_user_agent_settings_ ?
+           http_user_agent_settings_->GetUserAgent() : std::string());
++  }
+ 
+   AddExtraHeaders();
+   AddCookieHeaderAndStart();
+@@ -510,10 +514,12 @@ void URLRequestHttpJob::AddExtraHeaders() {
+     } else {
+       // Advertise "br" encoding only if transferred data is opaque to proxy.
+       bool advertise_brotli = false;
+-      if (request()->context()->enable_brotli()) {
+-        if (request()->url().SchemeIsCryptographic() ||
+-            IsLocalhost(request()->url())) {
+-          advertise_brotli = true;
++      if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
++        if (request()->context()->enable_brotli()) {
++          if (request()->url().SchemeIsCryptographic() ||
++              IsLocalhost(request()->url())) {
++            advertise_brotli = true;
++          }
+         }
+       }
+ 
+@@ -531,7 +537,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
+     }
+   }
+ 
+-  if (http_user_agent_settings_) {
++  if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS) && http_user_agent_settings_) {
+     // Only add default Accept-Language if the request didn't have it
+     // specified.
+     std::string accept_language =
+-- 
+2.17.1
+
