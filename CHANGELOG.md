@@ -1,7 +1,6 @@
 # 81.0.4044.97
 * disable browser auto-login by default
 * show download prompt again
-* remove option to add NTP as homepage (fixes https://github.com/bromite/bromite/issues/517)
 
 # 81.0.4044.83
 
