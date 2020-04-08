@@ -4,7 +4,7 @@
 
 <img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
 
-Bromite is [Chromium](https://www.chromium.org/Home) plus some patches for ad blocking and enhanced privacy.
+Bromite is a [Chromium](https://www.chromium.org/Home) fork with support for ad blocking and enhanced privacy.
 
 Bromite is only available for Android v4.4 and above.
 
