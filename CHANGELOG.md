@@ -1,5 +1,5 @@
 # 81.0.4044.127
-* fix always-incognito crashes (https://github.com/bromite/bromite/issues/132 and https://github.com/bromite/bromite/pull/529)
+* fix always-incognito crashes (https://github.com/bromite/bromite/issues/135 and https://github.com/bromite/bromite/pull/529)
 * improved crash uploader mock by calling done callback
 
 # 81.0.4044.106
