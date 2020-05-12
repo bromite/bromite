@@ -3,6 +3,7 @@
 * change default mode for WebRTC (fixes https://github.com/bromite/bromite/issues/553)
 * add flag to allow screenshots of incognito tabs (fixes https://github.com/bromite/bromite/issues/551https://github.com/bromite/bromite/issues/551)
 * reintroduced patches for disabling AImageReader
+* fixed DevTools issue with domain substitution (fixes https://github.com/bromite/bromite/issues/526)
 * drop patch to disable QUIC by default
 * drop patch for DoH minimum timeout (upstream also implemented it)
 * dropped patch for removal of support of CCT dynamic modules (upstream also removed it)
