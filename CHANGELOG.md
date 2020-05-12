@@ -1,3 +1,13 @@
+# 83.0.4103.46
+* add zh_CN missing translations (fixes https://github.com/bromite/bromite/issues/546)
+* change default mode for WebRTC (fixes https://github.com/bromite/bromite/issues/553)
+* add flag to allow screenshots of incognito tabs (fixes https://github.com/bromite/bromite/issues/551https://github.com/bromite/bromite/issues/551)
+* reintroduced patches for disabling AImageReader
+* drop patch to disable QUIC by default
+* drop patch for DoH minimum timeout (upstream also implemented it)
+* dropped patch for removal of support of CCT dynamic modules (upstream also removed it)
+* removed upstream patch for SD card not found issue (upstream merged it)
+
 # 81.0.4044.127
 * fix always-incognito crashes (https://github.com/bromite/bromite/issues/135 and https://github.com/bromite/bromite/pull/529)
 * improved crash uploader mock by calling done callback
