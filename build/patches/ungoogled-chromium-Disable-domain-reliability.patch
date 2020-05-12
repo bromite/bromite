@@ -5,14 +5,16 @@ Subject: ungoogled-chromium: Disable domain reliability
 ---
  components/domain_reliability/BUILD.gn        |  42 +-
  .../domain_reliability/bake_in_configs.py     |   2 +-
- .../domain_reliability/google_configs.cc      | 565 ------------------
+ .../domain_reliability/context_manager.cc     |  22 +-
+ .../domain_reliability/google_configs.cc      | 611 ------------------
+ .../domain_reliability/google_configs.h       |   8 +-
  components/domain_reliability/uploader.cc     |   2 +-
- 4 files changed, 17 insertions(+), 594 deletions(-)
+ 6 files changed, 23 insertions(+), 664 deletions(-)
 
 diff --git a/components/domain_reliability/BUILD.gn b/components/domain_reliability/BUILD.gn
 --- a/components/domain_reliability/BUILD.gn
 +++ b/components/domain_reliability/BUILD.gn
-@@ -10,26 +10,6 @@ action("bake_in_configs") {
+@@ -9,26 +9,6 @@ action("bake_in_configs") {
    script = "bake_in_configs.py"
  
    inputs = [
@@ -39,7 +41,7 @@ diff --git a/components/domain_reliability/BUILD.gn b/components/domain_reliabil
    ]
  
    output_file = "$target_gen_dir/baked_in_configs.cc"
-@@ -37,13 +17,21 @@ action("bake_in_configs") {
+@@ -36,13 +16,21 @@ action("bake_in_configs") {
  
    # The JSON file list is too long for the command line on Windows, so put
    # them in a response file.
@@ -80,13 +82,46 @@ diff --git a/components/domain_reliability/bake_in_configs.py b/components/domai
  
  
  def quote_and_wrap_text(text, width=79, prefix='  "', suffix='"'):
+diff --git a/components/domain_reliability/context_manager.cc b/components/domain_reliability/context_manager.cc
+--- a/components/domain_reliability/context_manager.cc
++++ b/components/domain_reliability/context_manager.cc
+@@ -41,26 +41,8 @@ void DomainReliabilityContextManager::RouteBeacon(
+   DomainReliabilityContext* superdomain_context =
+       GetSuperdomainContext(beacon_host);
+ 
+-  // Try to get a Google config which may match the host itself, or the host's
+-  // parent domain.
+-  std::unique_ptr<const DomainReliabilityConfig> google_config =
+-      MaybeGetGoogleConfig(beacon_host);
+-
+-  if (!google_config) {
+-    if (superdomain_context)
+-      superdomain_context->OnBeacon(std::move(beacon));
+-    return;
+-  }
+-
+-  context_to_use = superdomain_context;
+-  bool google_config_is_exact = (google_config->origin.host() == beacon_host);
+-
+-  // An exact match takes priority over an existing superdomain context, if any
+-  // exists.
+-  if (google_config_is_exact || !context_to_use)
+-    context_to_use = AddContextForConfig(std::move(google_config));
+-
+-  context_to_use->OnBeacon(std::move(beacon));
++  if (superdomain_context)
++    superdomain_context->OnBeacon(std::move(beacon));
+ }
+ 
+ void DomainReliabilityContextManager::ClearBeacons(
 diff --git a/components/domain_reliability/google_configs.cc b/components/domain_reliability/google_configs.cc
 --- a/components/domain_reliability/google_configs.cc
 +++ b/components/domain_reliability/google_configs.cc
-@@ -13,575 +13,10 @@
+@@ -9,615 +9,4 @@
+ #include "net/base/url_util.h"
  
  namespace domain_reliability {
- 
+-
 -namespace {
 -
 -struct GoogleConfigParams {
@@ -330,7 +365,7 @@ diff --git a/components/domain_reliability/google_configs.cc b/components/domain
 -    {"l.google.com", true, true, true},
 -
 -    // google.com is a special case. We have a custom config for www.google.com,
--    // so set generate_config_for_www_subdomain = false.
+-    // so set duplicate_for_www = false.
 -    {"google.com", true, true, false},
 -
 -    // Origins with subdomains and without same-origin collectors.
@@ -615,7 +650,7 @@ diff --git a/components/domain_reliability/google_configs.cc b/components/domain
 -const char* const kGoogleOriginSpecificCollectorPathString =
 -    "/domainreliability/upload";
 -
--static std::unique_ptr<DomainReliabilityConfig> CreateGoogleConfig(
+-std::unique_ptr<const DomainReliabilityConfig> CreateGoogleConfig(
 -    const GoogleConfigParams& params,
 -    bool is_www) {
 -  if (is_www)
@@ -624,8 +659,7 @@ diff --git a/components/domain_reliability/google_configs.cc b/components/domain
 -  std::string hostname = (is_www ? "www." : "") + std::string(params.hostname);
 -  bool include_subdomains = params.include_subdomains && !is_www;
 -
--  std::unique_ptr<DomainReliabilityConfig> config(
--      new DomainReliabilityConfig());
+-  auto config = std::make_unique<DomainReliabilityConfig>();
 -  config->origin = GURL("https://" + hostname + "/");
 -  config->include_subdomains = include_subdomains;
 -  config->collectors.clear();
@@ -635,9 +669,9 @@ diff --git a/components/domain_reliability/google_configs.cc b/components/domain
 -    config->collectors.push_back(
 -        std::make_unique<GURL>(config->origin.ReplaceComponents(replacements)));
 -  }
--  for (size_t i = 0; i < base::size(kGoogleStandardCollectors); i++)
--    config->collectors.push_back(
--        std::make_unique<GURL>(kGoogleStandardCollectors[i]));
+-  for (const char* collector : kGoogleStandardCollectors) {
+-    config->collectors.push_back(std::make_unique<GURL>(collector));
+-  }
 -  config->success_sample_rate = 0.05;
 -  config->failure_sample_rate = 1.00;
 -  config->path_prefixes.clear();
@@ -646,19 +680,78 @@ diff --git a/components/domain_reliability/google_configs.cc b/components/domain
 -
 -}  // namespace
 -
- // static
- void GetAllGoogleConfigs(
-     std::vector<std::unique_ptr<DomainReliabilityConfig>>* configs_out) {
-   configs_out->clear();
+-std::unique_ptr<const DomainReliabilityConfig> MaybeGetGoogleConfig(
+-    const std::string& hostname) {
+-  bool is_www_subdomain =
+-      base::StartsWith(hostname, "www.", base::CompareCase::SENSITIVE);
+-  std::string hostname_parent = net::GetSuperdomain(hostname);
 -
--  for (auto& params : kGoogleConfigs) {
--    configs_out->push_back(CreateGoogleConfig(params, false));
--    if (params.duplicate_for_www)
--      configs_out->push_back(CreateGoogleConfig(params, true));
+-  std::unique_ptr<const DomainReliabilityConfig> config = nullptr;
+-  std::unique_ptr<const DomainReliabilityConfig> superdomain_config = nullptr;
+-
+-  for (const auto& params : kGoogleConfigs) {
+-    if (params.hostname == hostname) {
+-      config = CreateGoogleConfig(params, false);
+-      break;
+-    }
+-    if (params.duplicate_for_www && is_www_subdomain &&
+-        params.hostname == hostname_parent) {
+-      config = CreateGoogleConfig(params, true);
+-      break;
+-    }
+-    // Don't break out of the loop upon finding a superdomain config, because
+-    // there might be an exact match later on.
+-    if (params.include_subdomains && params.hostname == hostname_parent) {
+-      superdomain_config = CreateGoogleConfig(params, false);
+-    }
 -  }
- }
+-
+-  if (config) {
+-    DCHECK(config->origin.host() == hostname);
+-    return config;
+-  }
+-
+-  if (!superdomain_config)
+-    return nullptr;
+-
+-  DCHECK(superdomain_config->origin.host() == hostname_parent);
+-  DCHECK(superdomain_config->include_subdomains);
+-
+-  return superdomain_config;
+-}
+-
+-std::vector<std::unique_ptr<const DomainReliabilityConfig>>
+-GetAllGoogleConfigsForTesting() {
+-  std::vector<std::unique_ptr<const DomainReliabilityConfig>> configs_out;
+-
+-  for (const auto& params : kGoogleConfigs) {
+-    configs_out.push_back(CreateGoogleConfig(params, false));
+-    if (params.duplicate_for_www)
+-      configs_out.push_back(CreateGoogleConfig(params, true));
+-  }
+-  return configs_out;
+-}
+-
+ }  // namespace domain_reliability
+diff --git a/components/domain_reliability/google_configs.h b/components/domain_reliability/google_configs.h
+--- a/components/domain_reliability/google_configs.h
++++ b/components/domain_reliability/google_configs.h
+@@ -26,11 +26,11 @@ namespace domain_reliability {
+ // the www subdomain. A superdomain match occurs if removing the first label of
+ // |hostname| yields a string equal to a Google config's hostname and that
+ // config specifies that it includes subdomains.
+-std::unique_ptr<const DomainReliabilityConfig> DOMAIN_RELIABILITY_EXPORT
+-MaybeGetGoogleConfig(const std::string& hostname);
++//std::unique_ptr<const DomainReliabilityConfig> DOMAIN_RELIABILITY_EXPORT
++//MaybeGetGoogleConfig(const std::string& hostname);
+ 
+-std::vector<std::unique_ptr<const DomainReliabilityConfig>>
+-    DOMAIN_RELIABILITY_EXPORT GetAllGoogleConfigsForTesting();
++//std::vector<std::unique_ptr<const DomainReliabilityConfig>>
++//    DOMAIN_RELIABILITY_EXPORT GetAllGoogleConfigsForTesting();
  
  }  // namespace domain_reliability
+ 
 diff --git a/components/domain_reliability/uploader.cc b/components/domain_reliability/uploader.cc
 --- a/components/domain_reliability/uploader.cc
 +++ b/components/domain_reliability/uploader.cc
@@ -667,7 +760,7 @@ diff --git a/components/domain_reliability/uploader.cc b/components/domain_relia
        discarded_upload_count_++;
  
 -    if (discard_uploads_ || shutdown_) {
-+    if (true) {
++    if ((true)) {
        DVLOG(1) << "Discarding report instead of uploading.";
        UploadResult result;
        result.status = UploadResult::SUCCESS;
