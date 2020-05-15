@@ -1,3 +1,7 @@
+# 83.0.4103.53
+* updated zh_CN translations
+* mitigation for LocationBarPhone crash (https://github.com/bromite/bromite/issues/565)
+
 # 83.0.4103.46
 * add zh_CN missing translations (fixes https://github.com/bromite/bromite/issues/546)
 * change default mode for WebRTC (fixes https://github.com/bromite/bromite/issues/553)

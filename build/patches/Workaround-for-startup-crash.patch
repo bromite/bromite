@@ -1,0 +1,167 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Wed, 13 May 2020 19:50:08 +0200
+Subject: Workaround for startup crash
+
+Disable some buggy experiment code, unused anyways
+---
+ .../browser/omnibox/LocationBarPhone.java     | 110 +-----------------
+ 1 file changed, 6 insertions(+), 104 deletions(-)
+
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omnibox/LocationBarPhone.java b/chrome/android/java/src/org/chromium/chrome/browser/omnibox/LocationBarPhone.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/omnibox/LocationBarPhone.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/omnibox/LocationBarPhone.java
+@@ -64,39 +64,8 @@ public class LocationBarPhone extends LocationBarLayout {
+                 shouldShowSearchEngineLogo, isSearchEngineGoogle, searchEngineUrl);
+ 
+         // The search engine icon will be the first visible focused view when it's showing.
+-        shouldShowSearchEngineLogo = SearchEngineLogoUtils.shouldShowSearchEngineLogo(
+-                getToolbarDataProvider().isIncognito());
+-
+-        // This branch will be hit if the search engine logo experiment is enabled.
+-        // This value can never revert back to false, so it's safe to initialize mStatusView here
+-        // without a corresponding else that nulls it out.
+-        if (SearchEngineLogoUtils.isSearchEngineLogoEnabled()) {
+-            // Setup the padding once we're loaded, the focused padding changes will happen with
+-            // post-layout positioning via setTranslation. This is a byproduct of the way we do the
+-            // omnibox un/focus animation which is by writing a function f(x) where x ranges from
+-            // 0 (totally unfocused) to 1 (totally focused). Positioning the location bar and it's
+-            // children this way doesn't affect the views' bounds (including hit rect). But these
+-            // hit rects are preserved for the views that matter (the icon and the url actions
+-            // container).
+-            int lateralPadding = getResources().getDimensionPixelOffset(
+-                    R.dimen.sei_location_bar_lateral_padding);
+-            setPaddingRelative(lateralPadding, getPaddingTop(), lateralPadding, getPaddingBottom());
+-            updateUrlBarPaddingForSearchEngineIcon();
+-            mStatusView = findViewById(R.id.location_bar_status);
+-        }
++        shouldShowSearchEngineLogo = false;
+ 
+-        // This branch will be hit if the search engine logo experiment is enabled and we should
+-        // show the logo.
+-        if (shouldShowSearchEngineLogo) {
+-            mStatusView.updateSearchEngineStatusIcon(
+-                    shouldShowSearchEngineLogo, isSearchEngineGoogle, searchEngineUrl);
+-            mFirstVisibleFocusedView = mStatusView;
+-            updateUrlBarPaddingForSearchEngineIcon();
+-
+-            // When the search engine icon is enabled, icons are translations into the parent view's
+-            // padding area. Set clip padding to false to prevent them from getting clipped.
+-            setClipToPadding(false);
+-        }
+         setShowIconsWhenUrlFocused(shouldShowSearchEngineLogo);
+     }
+ 
+@@ -110,12 +79,7 @@ public class LocationBarPhone extends LocationBarLayout {
+             // TODO(crbug.com/1019019): Come up with a better solution for M80 or M81.
+             // This padding prevents the UrlBar's content from extending past the available space
+             // and into the next view while focused.
+-            final int endPadding = SearchEngineLogoUtils.shouldShowSearchEngineLogo(
+-                                           mToolbarDataProvider.isIncognito())
+-                            && hasFocus()
+-                    ? mStatusView.getEndPaddingPixelSizeForFocusState(true)
+-                            - mStatusView.getEndPaddingPixelSizeForFocusState(false)
+-                    : 0;
++            final int endPadding = 0;
+ 
+             mUrlBar.setPaddingRelative(mUrlBar.getPaddingStart(), mUrlBar.getPaddingTop(),
+                     endPadding, mUrlBar.getPaddingBottom());
+@@ -169,24 +133,7 @@ public class LocationBarPhone extends LocationBarLayout {
+         if (mStatusView == null) return 0;
+ 
+         // No offset is required if the experiment is disabled.
+-        if (!SearchEngineLogoUtils.shouldShowSearchEngineLogo(
+-                    getToolbarDataProvider().isIncognito())) {
+-            return 0;
+-        }
+-
+-        // On non-NTP pages, there will always be an icon when unfocused.
+-        if (mToolbarDataProvider.getNewTabPageForCurrentTab() == null) return 0;
+-
+-        // This offset is only required when the focus animation is running.
+-        if (!hasFocus) return 0;
+-
+-        // We're on the NTP with the fakebox showing.
+-        // The value returned changes based on if the layout is LTR OR RTL.
+-        // For LTR, the value is negative because we are making space on the left-hand side.
+-        // For RTL, the value is positive because we are pushing the icon further to the
+-        // right-hand side.
+-        int offset = mStatusViewCoordinator.getStatusIconWidth() - getAdditionalOffsetForNTP();
+-        return getLayoutDirection() == LAYOUT_DIRECTION_RTL ? offset : -offset;
++        return 0;
+     }
+ 
+     /**
+@@ -204,42 +151,7 @@ public class LocationBarPhone extends LocationBarLayout {
+         if (mStatusView == null) return 0;
+ 
+         // No offset is required if the experiment is disabled.
+-        if (!SearchEngineLogoUtils.shouldShowSearchEngineLogo(
+-                    getToolbarDataProvider().isIncognito())) {
+-            return 0;
+-        }
+-
+-        boolean isRtl = getLayoutDirection() == LAYOUT_DIRECTION_RTL;
+-        // The calculation here is:  the difference in padding between the focused vs unfocused
+-        // states and also accounts for the translation that the status icon will do. In the end,
+-        // this translation will be the distance that the url bar needs to travel to arrive at the
+-        // desired padding when focused.
+-        float translation = urlExpansionPercent
+-                * (mStatusView.getEndPaddingPixelSizeForFocusState(true)
+-                        - mStatusView.getEndPaddingPixelSizeForFocusState(false));
+-
+-        if (!hasFocus && mStatusView.isSearchEngineStatusIconVisible()
+-                && SearchEngineLogoUtils.currentlyOnNTP(mToolbarDataProvider)) {
+-            // When:
+-            // 1. unfocusing the LocationBar on the NTP.
+-            // 2. scrolling the fakebox to the LocationBar on the NTP.
+-            // The status icon and the URL bar text overlap in the animation.
+-            //
+-            // This branch calculates the negative distance the URL bar needs to travel to
+-            // completely overlap the status icon and end up in a state that matches the fakebox.
+-            float overStatusIconTranslation = translation
+-                    - (1f - urlExpansionPercent)
+-                            * (mStatusViewCoordinator.getStatusIconWidth()
+-                                    - getAdditionalOffsetForNTP());
+-            // The value returned changes based on if the layout is LTR or RTL.
+-            // For LTR, the value is negative because the status icon is left of the url bar on the
+-            // x/y plane.
+-            // For RTL, the value is positive because the status icon is right of the url bar on the
+-            // x/y plane.
+-            return isRtl ? -overStatusIconTranslation : overStatusIconTranslation;
+-        }
+-
+-        return isRtl ? -translation : translation;
++        return 0;
+     }
+ 
+     /**
+@@ -336,8 +248,7 @@ public class LocationBarPhone extends LocationBarLayout {
+     public void updateVisualsForState() {
+         super.updateVisualsForState();
+         boolean isIncognito = getToolbarDataProvider().isIncognito();
+-        boolean shouldShowSearchEngineLogo =
+-                SearchEngineLogoUtils.shouldShowSearchEngineLogo(isIncognito);
++        boolean shouldShowSearchEngineLogo = false;
+         setShowIconsWhenUrlFocused(shouldShowSearchEngineLogo);
+         mFirstVisibleFocusedView = shouldShowSearchEngineLogo ? mStatusView : mUrlBar;
+ 
+@@ -357,15 +268,6 @@ public class LocationBarPhone extends LocationBarLayout {
+ 
+     /** Update the status visibility according to the current state held in LocationBar. */
+     private void updateStatusVisibility() {
+-        boolean incognito = getToolbarDataProvider().isIncognito();
+-        if (!SearchEngineLogoUtils.shouldShowSearchEngineLogo(incognito)) {
+-            return;
+-        }
+-
+-        if (SearchEngineLogoUtils.currentlyOnNTP(mToolbarDataProvider)) {
+-            mStatusViewCoordinator.setStatusIconShown(hasFocus());
+-        } else {
+-            mStatusViewCoordinator.setStatusIconShown(true);
+-        }
++        return;
+     }
+ }
+-- 
+2.17.1
+
