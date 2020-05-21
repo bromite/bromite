@@ -117,6 +117,7 @@ The [Bromite main repository](https://github.com/bromite/bromite) contains tags 
 
 Please refer to [official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
 
+The Chromium version tag used as base for the patches is available here: [RELEASE](./build/RELEASE); this is always corresponding to the git tag for every release.
 The GN args used to build Bromite are available here: [GN_ARGS](./build/GN_ARGS).
 The patches are to be applied second the order specified in the `bromite_patches_list.txt` file (you can use `git am`).
 

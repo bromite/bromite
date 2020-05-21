@@ -1,3 +1,7 @@
+# 83.0.4103.76
+* fixed inverted Omnibox flag
+* fixed LocationBarPhone/LocationBarTablet crash (fixes https://github.com/bromite/bromite/issues/565)
+
 # 83.0.4103.53
 * updated zh_CN translations
 * mitigation for LocationBarPhone crash (https://github.com/bromite/bromite/issues/565)
