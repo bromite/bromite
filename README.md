@@ -46,8 +46,8 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * enable site-per-process isolation for all devices with memory > 1GB
 * completely remove safe browsing and other privacy-unfriendly features
 * [proxy configuration page](https://github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
-* flags to disable custom intents and clear session on exit
-* flags to toggle anti-fingerprinting mitigations for canvas, audio, client rects, webGL and sensor APIs
+* settings to disable custom intents and clear session on exit
+* flags to toggle anti-fingerprinting mitigations for canvas, audio, client rects, webGL and sensor APIs (see full list below for all the new flags)
 * use frozen User-Agent to conceal real model and browser version
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
 * security enhancement patches from [GrapheneOS](https://github.com/GrapheneOS) project
@@ -74,6 +74,15 @@ Flags which have been retired from upstream Chromium but are still available in 
 * `#enable-horizontal-tab-switcher`
 * `#pull-to-refresh`
 * `#enable-search-ready-omnibox`
+
+New flags:
+
+* `#enable-incognito-snapshots-in-android-recents`
+* `#max-connections-per-host`
+* `#resume-background-video`
+* `#ipv6-probing`
+* `#disable-webgl`
+* `#enable-device-motion` and `#enable-device-orientation`
 
 # Privacy limitations
 
