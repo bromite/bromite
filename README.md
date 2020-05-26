@@ -46,7 +46,6 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * enable site-per-process isolation for all devices with memory > 1GB
 * completely remove safe browsing and other privacy-unfriendly features
 * [proxy configuration page](https://github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
-* [DuckDuckGo](https://duckduckgo.com/) and [Qwant](https://www.qwant.com/) search engines available by default
 * flags to disable custom intents and clear session on exit
 * flags to toggle anti-fingerprinting mitigations for canvas, audio, client rects, webGL and sensor APIs
 * use frozen User-Agent to conceal real model and browser version
