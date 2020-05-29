@@ -36,7 +36,6 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * DNS-over-HTTPS support with any valid IETF DoH endpoint
 * always-incognito mode
 * disable all field trials permanently
-* disable [QUIC](https://en.wikipedia.org/wiki/QUIC) by default
 * disable smart search by default, allow web search from incognito mode
 * always-visible cookies, javascript and ads site settings
 * remove Play integration binary blobs
