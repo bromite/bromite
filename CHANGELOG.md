@@ -1,3 +1,7 @@
+# 83.0.4103.93
+* fix undesired replacement for search engines (fixes https://github.com/bromite/bromite/issues/595)
+* fix resume flag not visible
+
 # 83.0.4103.76
 * fixed inverted Omnibox flag
 * fixed LocationBarPhone/LocationBarTablet crash (fixes https://github.com/bromite/bromite/issues/565)
