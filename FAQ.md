@@ -71,3 +71,8 @@ when websites use the [Push API](https://w3c.github.io/push-api/); this will not
 ## Can PWAs be installed?
 
 PWAs are only supported as home shortcuts; WebAPKs will not work because they are generated server-side on googleapis.com (which is not allowed in Bromite).
+
+## Does Bromite support the Android autofill framework?
+
+No; the only autofill available in Chromium browsers requires integration with cloud services.
+Some apps use accessibility services as a workaround.
