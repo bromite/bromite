@@ -4,9 +4,15 @@ about: Create a Bromite bug report
 
 ---
 
+<!-- Welcome! Thanks for taking time to submit a bug report.
+Have you read the README? https://github.com/bromite/bromite/blob/master/README.md
+Have you searched the issue tracker? https://github.com/bromite/bromite/issues
+Are you sure this is not a Chromium bug? You have to test with Chromium before submitting a bug.
+-->
+
 ### Bromite version
 
-Version: `76.0...`
+Version: `83.0...`
 Arch: `arm` or `arm64` or `x86`
 Android version: (example: `9.0`)
 Device model: (example: `SM-G960UZKABST`)
