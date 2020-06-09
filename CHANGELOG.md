@@ -1,3 +1,6 @@
+# 83.0.4103.101
+* enable HEVC and Dolby Vision
+
 # 83.0.4103.93
 * fix undesired replacement for search engines (fixes https://github.com/bromite/bromite/issues/595)
 * fix resume flag not visible
