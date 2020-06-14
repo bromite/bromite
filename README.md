@@ -39,7 +39,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * disable smart search by default, allow web search from incognito mode
 * always-visible cookies, javascript and ads site settings
 * remove Play integration binary blobs
-* use [CFI](https://en.wikipedia.org/wiki/Control-flow_integrity) on all architectures except x86
+* use [CFI](https://en.wikipedia.org/wiki/Control-flow_integrity) on all architectures
 * disable media router and remoting by default
 * disable dynamic module loading
 * enable site-per-process isolation for all devices with memory > 1GB
