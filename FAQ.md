@@ -74,5 +74,5 @@ PWAs are only supported as home shortcuts; WebAPKs will not work because they ar
 
 ## Does Bromite support the Android autofill framework?
 
-No; the only autofill available in Chromium browsers requires integration with cloud services.
+No; the only autofill available in Chromium browsers requires integration with the Play Store binary blobs.
 Some apps use accessibility services as a workaround.
