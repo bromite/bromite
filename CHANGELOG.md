@@ -1,3 +1,6 @@
+# 83.0.4103.119
+* restored non-CFI builds for x86
+
 # 83.0.4103.101
 * enable HEVC and Dolby Vision
 
