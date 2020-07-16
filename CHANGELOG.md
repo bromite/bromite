@@ -1,3 +1,8 @@
+# 84.0.4147.90
+* added menu item to view source of current page
+* fixed dialog for SSL/TLS errors (fixes https://github.com/bromite/bromite/issues/638)
+* build with feeds support due to upstream build flags combination bugs
+
 # 83.0.4103.119
 * restored non-CFI builds for x86
 

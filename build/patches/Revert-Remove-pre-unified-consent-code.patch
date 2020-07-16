@@ -8,10 +8,10 @@ Restore translations
 Disable unified consent on Android
 Unified consent miscellanous backport fixes
 ---
- .../java/res/xml/privacy_preferences.xml      | 26 +++++
- .../privacy/settings/PrivacySettings.java     | 96 ++++++++++++++++---
- .../sync/SyncNotificationController.java      |  8 +-
- .../chrome/browser/sync/SyncTestRule.java     |  9 +-
+ .../java/res/xml/privacy_preferences.xml      | 25 +++++
+ .../privacy/settings/PrivacySettings.java     | 97 ++++++++++++++++---
+ .../sync/SyncNotificationController.java      |  6 +-
+ .../chrome/browser/sync/SyncTestRule.java     | 10 +-
  .../chromium/chrome/browser/sync/UkmTest.java | 50 +++++++++-
  .../strings/android_chrome_strings.grd        | 15 +++
  .../android_chrome_strings_am.xtb             | 19 +++-
@@ -67,7 +67,7 @@ Unified consent miscellanous backport fixes
  .../android_chrome_strings_zh-CN.xtb          | 19 +++-
  .../android_chrome_strings_zh-TW.xtb          | 19 +++-
  .../unified_consent_service_factory.cc        |  5 +-
- 59 files changed, 1124 insertions(+), 73 deletions(-)
+ 59 files changed, 1121 insertions(+), 75 deletions(-)
 
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
 --- a/chrome/android/java/res/xml/privacy_preferences.xml
@@ -97,22 +97,21 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
      <org.chromium.components.browser_ui.settings.ChromeBaseCheckBoxPreference
          android:key="can_make_payment"
          android:title="@string/can_make_payment_title"
-@@ -19,6 +37,10 @@
+@@ -19,6 +37,9 @@
          android:key="usage_stats_reporting"
          android:title="@string/usage_stats_setting_title"
          android:persistent="false" />
-+    <android.support.v7.preference.Preference
++    <org.chromium.components.browser_ui.settings.ChromeBasePreference
 +        android:key="usage_and_crash_reports"
-+        android:title="@string/usage_and_crash_reports_title"
-+        android:fragment="org.chromium.chrome.browser.settings.privacy.UsageAndCrashReportsPreferenceFragment" />
++        android:title="@string/usage_and_crash_reports_title" />
      <Preference
          android:fragment="org.chromium.chrome.browser.privacy.settings.DoNotTrackSettings"
          android:key="do_not_track"
-@@ -28,6 +50,10 @@
+@@ -28,6 +49,10 @@
          android:title="@string/clear_browsing_data_title"
          android:summary="@string/clear_browsing_data_summary"
          android:fragment="org.chromium.chrome.browser.browsing_data.ClearBrowsingDataTabsFragment" />
-+    <android.support.v7.preference.Preference
++    <Preference
 +        android:key="sync_and_services_link_divider"
 +        android:layout="@layout/divider_preference"
 +        android:selectable="false"/>
@@ -134,8 +133,8 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
 +import org.chromium.chrome.browser.safe_browsing.SafeBrowsingBridge;
  import org.chromium.chrome.browser.settings.ChromeManagedPreferenceDelegate;
  import org.chromium.chrome.browser.settings.SettingsLauncher;
- import org.chromium.chrome.browser.sync.settings.SyncAndServicesSettings;
-@@ -35,18 +37,24 @@ import org.chromium.ui.text.SpanApplier;
+ import org.chromium.chrome.browser.settings.SettingsLauncherImpl;
+@@ -36,18 +38,24 @@ import org.chromium.ui.text.SpanApplier;
   */
  public class PrivacySettings
          extends PreferenceFragmentCompat implements Preference.OnPreferenceChangeListener {
@@ -163,14 +162,15 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
          SettingsUtils.addPreferencesFromResource(this, R.xml.privacy_preferences);
          getActivity().setTitle(R.string.prefs_privacy);
          setHasOptionsMenu(true);
-@@ -64,14 +72,30 @@ public class PrivacySettings
+@@ -65,15 +73,30 @@ public class PrivacySettings
          networkPredictionPref.setOnPreferenceChangeListener(this);
          networkPredictionPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
  
 -        Preference syncAndServicesLink = findPreference(PREF_SYNC_AND_SERVICES_LINK);
 -        NoUnderlineClickableSpan linkSpan = new NoUnderlineClickableSpan(getResources(), view -> {
--            SettingsLauncher.getInstance().launchSettingsPage(getActivity(),
--                    SyncAndServicesSettings.class, SyncAndServicesSettings.createArguments(false));
+-            SettingsLauncher settingsLauncher = new SettingsLauncherImpl();
+-            settingsLauncher.launchSettingsActivity(getActivity(), SyncAndServicesSettings.class,
+-                    SyncAndServicesSettings.createArguments(false));
 -        });
 -        syncAndServicesLink.setSummary(
 -                SpanApplier.applySpans(getString(R.string.privacy_sync_and_services_link),
@@ -202,7 +202,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
  
          updateSummaries();
      }
-@@ -84,6 +108,15 @@ public class PrivacySettings
+@@ -86,6 +109,15 @@ public class PrivacySettings
                      Pref.CAN_MAKE_PAYMENT_ENABLED, (boolean) newValue);
          } else if (PREF_NETWORK_PREDICTIONS.equals(key)) {
              PrivacyPreferencesManager.getInstance().setNetworkPredictionEnabled((boolean) newValue);
@@ -218,7 +218,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
          }
  
          return true;
-@@ -101,6 +134,35 @@ public class PrivacySettings
+@@ -103,6 +135,35 @@ public class PrivacySettings
      public void updateSummaries() {
          PrefServiceBridge prefServiceBridge = PrefServiceBridge.getInstance();
  
@@ -254,7 +254,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
          CheckBoxPreference canMakePaymentPref =
                  (CheckBoxPreference) findPreference(PREF_CAN_MAKE_PAYMENT);
          if (canMakePaymentPref != null) {
-@@ -138,6 +200,18 @@ public class PrivacySettings
+@@ -140,6 +201,18 @@ public class PrivacySettings
      private ChromeManagedPreferenceDelegate createManagedPreferenceDelegate() {
          return preference -> {
              String key = preference.getKey();
@@ -276,40 +276,25 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/sync/SyncNotificationController.java b/chrome/android/java/src/org/chromium/chrome/browser/sync/SyncNotificationController.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/sync/SyncNotificationController.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/sync/SyncNotificationController.java
-@@ -7,6 +7,7 @@ package org.chromium.chrome.browser.sync;
- import android.content.Context;
- import android.content.Intent;
- import android.os.Build;
-+import android.os.Bundle;
- import android.util.Log;
- 
- import androidx.annotation.StringRes;
-@@ -24,6 +25,7 @@ import org.chromium.chrome.browser.notifications.NotificationMetadata;
- import org.chromium.chrome.browser.notifications.NotificationUmaTracker;
- import org.chromium.chrome.browser.notifications.PendingIntentProvider;
- import org.chromium.chrome.browser.notifications.channels.ChannelDefinitions;
-+import org.chromium.chrome.browser.sync.settings.AccountManagementFragment;
- import org.chromium.chrome.browser.settings.SettingsLauncher;
- import org.chromium.chrome.browser.signin.IdentityServicesProvider;
- import org.chromium.chrome.browser.sync.GoogleServiceAuthError.State;
-@@ -197,9 +199,11 @@ public class SyncNotificationController implements ProfileSyncService.SyncStateC
+@@ -193,10 +193,12 @@ public class SyncNotificationController implements ProfileSyncService.SyncStateC
       * @return the intent for opening the settings
       */
      private Intent createSettingsIntent() {
-+        final String fragmentName = AccountManagementFragment.class.getName();
-+        final Bundle fragmentArguments = null;
++        final String fragmentName = SyncNotificationController.class.getName();
 +
-         return SettingsLauncher.getInstance().createIntentForSettingsPage(
--                ContextUtils.getApplicationContext(), SyncAndServicesSettings.class.getName(),
+         SettingsLauncher settingsLauncher = new SettingsLauncherImpl();
+         return settingsLauncher.createSettingsActivityIntent(ContextUtils.getApplicationContext(),
+-                SyncAndServicesSettings.class.getName(),
 -                SyncAndServicesSettings.createArguments(false));
-+                ContextUtils.getApplicationContext(), fragmentName, fragmentArguments);
++                fragmentName);
++
      }
  
      /**
 diff --git a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/SyncTestRule.java b/chrome/android/javatests/src/org/chromium/chrome/browser/sync/SyncTestRule.java
 --- a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/SyncTestRule.java
 +++ b/chrome/android/javatests/src/org/chromium/chrome/browser/sync/SyncTestRule.java
-@@ -18,6 +18,7 @@ import org.chromium.chrome.browser.ChromeActivity;
+@@ -24,6 +24,7 @@ import org.chromium.chrome.browser.ChromeActivity;
  import org.chromium.chrome.browser.SyncFirstSetupCompleteSource;
  import org.chromium.chrome.browser.autofill.PersonalDataManager;
  import org.chromium.chrome.browser.autofill.PersonalDataManager.CreditCard;
@@ -317,12 +302,13 @@ diff --git a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/SyncT
  import org.chromium.chrome.browser.identity.UniqueIdentificationGenerator;
  import org.chromium.chrome.browser.identity.UniqueIdentificationGeneratorFactory;
  import org.chromium.chrome.browser.identity.UuidBasedUniqueIdentificationGenerator;
-@@ -365,8 +366,12 @@ public class SyncTestRule extends ChromeActivityTestRule<ChromeActivity> {
+@@ -428,9 +429,12 @@ public class SyncTestRule extends ChromeActivityTestRule<ChromeActivity> {
                              Assert.fail("Sign-in was aborted");
                          }
                      });
 -            // Outside of tests, URL-keyed anonymized data collection is enabled by sign-in UI.
--            UnifiedConsentServiceBridge.setUrlKeyedAnonymizedDataCollectionEnabled(true);
+-            UnifiedConsentServiceBridge.setUrlKeyedAnonymizedDataCollectionEnabled(
+-                    Profile.getLastUsedRegularProfile(), true);
 +            if (ChromeFeatureList.isEnabled(ChromeFeatureList.UNIFIED_CONSENT)) {
 +                // Outside of tests, URL-keyed anonymized data collection is enabled by sign-in UI.
 +                // Note: If unified consent is not enabled, then UKM will be enabled based on
@@ -412,7 +398,7 @@ diff --git a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/UkmTe
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -646,6 +646,18 @@ CHAR-LIMIT guidelines:
+@@ -672,6 +672,18 @@ CHAR-LIMIT guidelines:
        <message name="IDS_PREFS_PRIVACY" desc="Title for the Privacy preferences. [CHAR-LIMIT=32]">
          Privacy
        </message>
@@ -431,7 +417,7 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
        <message name="IDS_SAFE_BROWSING_SCOUT_REPORTING_TITLE" desc="Title for checkbox that controls reporting data to detect bad apps/sites. Please ensure ‘Safe Browsing’ in this message matches the ‘Safe Browsing’ settings title.">
          Help improve Chrome security
        </message>
-@@ -1474,6 +1486,9 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -1099,6 +1111,9 @@ Your Google account may have other forms of browsing history like searches and a
        <message name="IDS_ACCOUNT_MANAGEMENT_TITLE" desc="Header title for the account management screen. [CHAR-LIMIT=32]">
          Signed in to Google as
        </message>
@@ -444,8 +430,8 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_am.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_am.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_am.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_am.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">ይህ ለሁሉም ጣቢያዎች ውሂብን ያጸዳል፣ የሚከተሉትን ጨምሮ፦</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">ከመስመር ውጪ</translation>
  <translation id="983192555821071799">ሁሉንም ትሮች ይዝጉ</translation>
  <translation id="987264212798334818">አጠቃላይ</translation>
 -</translationbundle>
@@ -471,8 +457,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ar.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ar.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ar.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ar.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">سيؤدي هذا إلى محو بيانات جميع المواقع، بما في ذلك:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">بلا اتصال</translation>
  <translation id="983192555821071799">إغلاق جميع علامات التبويب</translation>
  <translation id="987264212798334818">عام</translation>
 -</translationbundle>
@@ -498,8 +484,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_bg.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_bg.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_bg.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_bg.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">Това действие ще изчисти данните за всички сайтове, включително:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">Офлайн</translation>
  <translation id="983192555821071799">Затваряне на всички раздели</translation>
  <translation id="987264212798334818">Общи</translation>
 -</translationbundle>
@@ -525,8 +511,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_bn.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_bn.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_bn.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_bn.xtb
-@@ -1120,4 +1120,21 @@
- <translation id="982182592107339124">এটা সব সাইটের জন্য ডেটা সাফ করবে, এতে অন্তর্ভুক্ত আছে:</translation>
+@@ -996,4 +996,21 @@
+ <translation id="981121421437150478">অফলাইন</translation>
  <translation id="983192555821071799">সমস্ত ট্যাবগুলি বন্ধ করুন</translation>
  <translation id="987264212798334818">সাধারণ</translation>
 -</translationbundle>
@@ -552,8 +538,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ca.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ca.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ca.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ca.xtb
-@@ -1118,4 +1118,21 @@ Per exemple, és possible que alguns llocs web responguin a aquesta sol·licitud
- <translation id="982182592107339124">S'esborraran les dades de tots els llocs web, com ara:</translation>
+@@ -994,4 +994,21 @@ Per exemple, és possible que alguns llocs web responguin a aquesta sol·licitud
+ <translation id="981121421437150478">Sense connexió</translation>
  <translation id="983192555821071799">Tanca totes les pestanyes</translation>
  <translation id="987264212798334818">General</translation>
 -</translationbundle>
@@ -579,8 +565,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_cs.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_cs.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_cs.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_cs.xtb
-@@ -1118,4 +1118,21 @@ Některé weby mohou například na tento požadavek reagovat tak, že vám zobr
- <translation id="982182592107339124">Tímto vymažete data všech webů včetně těchto:</translation>
+@@ -994,4 +994,21 @@ Některé weby mohou například na tento požadavek reagovat tak, že vám zobr
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Zavřít všechny karty</translation>
  <translation id="987264212798334818">Všeobecné</translation>
 -</translationbundle>
@@ -606,8 +592,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_da.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_da.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_da.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_da.xtb
-@@ -1118,4 +1118,21 @@ Nogle websites kan f.eks. reagere på denne anmodning ved at vise dig annoncer,
- <translation id="982182592107339124">Denne handling rydder dataene for alle websites, herunder:</translation>
+@@ -994,4 +994,21 @@ Nogle websites kan f.eks. reagere på denne anmodning ved at vise dig annoncer,
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Luk alle faner</translation>
  <translation id="987264212798334818">Generelt</translation>
 -</translationbundle>
@@ -633,8 +619,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_de.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_de.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_de.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_de.xtb
-@@ -1118,4 +1118,21 @@ Einige Websites schalten möglicherweise Werbeanzeigen, deren Auswahl nicht dara
- <translation id="982182592107339124">Alle Daten für alle Websites werden gelöscht, darunter:</translation>
+@@ -994,4 +994,21 @@ Einige Websites schalten möglicherweise Werbeanzeigen, deren Auswahl nicht dara
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Alle Tabs schließen</translation>
  <translation id="987264212798334818">Allgemein</translation>
 -</translationbundle>
@@ -660,8 +646,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_el.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_el.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_el.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_el.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">Αυτή η ενέργεια θα εκκαθαρίσει τα δεδομένα για όλους τους ιστότοπους, όπως:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">Εκτός σύνδεσης</translation>
  <translation id="983192555821071799">Κλείσιμο όλων των καρτελών</translation>
  <translation id="987264212798334818">Γενικά</translation>
 -</translationbundle>
@@ -687,8 +673,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_en-GB.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_en-GB.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_en-GB.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_en-GB.xtb
-@@ -1118,4 +1118,21 @@ For example, some websites may respond to this request by showing you ads that a
- <translation id="982182592107339124">This will clear data for all sites, including:</translation>
+@@ -994,4 +994,21 @@ For example, some websites may respond to this request by showing you ads that a
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Close all tabs</translation>
  <translation id="987264212798334818">General</translation>
 -</translationbundle>
@@ -714,8 +700,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_es-419.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_es-419.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_es-419.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_es-419.xtb
-@@ -1118,4 +1118,21 @@ Por ejemplo, algunos sitios web pueden responder a la solicitud mediante anuncio
- <translation id="982182592107339124">Esta acción borrará los datos de todos los sitios, entre los que se incluyen:</translation>
+@@ -994,4 +994,21 @@ Por ejemplo, algunos sitios web pueden responder a la solicitud mediante anuncio
+ <translation id="981121421437150478">Sin conexión</translation>
  <translation id="983192555821071799">Cerrar todas las pestañas</translation>
  <translation id="987264212798334818">General</translation>
 -</translationbundle>
@@ -741,8 +727,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_es.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_es.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_es.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_es.xtb
-@@ -1118,4 +1118,21 @@ Por ejemplo, algunos sitios web pueden responder a la solicitud mostrándote anu
- <translation id="982182592107339124">Se borrarán los datos de todos los sitios web, incluidos:</translation>
+@@ -994,4 +994,21 @@ Por ejemplo, algunos sitios web pueden responder a la solicitud mostrándote anu
+ <translation id="981121421437150478">Sin conexión</translation>
  <translation id="983192555821071799">Cerrar todas las pestañas</translation>
  <translation id="987264212798334818">General</translation>
 -</translationbundle>
@@ -768,8 +754,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_et.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_et.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_et.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_et.xtb
-@@ -1118,4 +1118,21 @@ Näiteks võivad mõned veebisaidid taotlusele reageerida nii, et näitavad teil
- <translation id="982182592107339124">See kustutab kõikide saitide andmed, sealhulgas:</translation>
+@@ -994,4 +994,21 @@ Näiteks võivad mõned veebisaidid taotlusele reageerida nii, et näitavad teil
+ <translation id="981121421437150478">Võrguühenduseta</translation>
  <translation id="983192555821071799">Sule kõik vahelehed</translation>
  <translation id="987264212798334818">Üldine</translation>
 -</translationbundle>
@@ -795,8 +781,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fa.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fa.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fa.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fa.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">با این کار داده‌های همه سایت‌ها پاک می‌شود، از جمله:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">آفلاین</translation>
  <translation id="983192555821071799">بستن همه برگه‌ها</translation>
  <translation id="987264212798334818">موارد کلی</translation>
 -</translationbundle>
@@ -822,8 +808,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fi.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fi.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fi.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fi.xtb
-@@ -1118,4 +1118,21 @@ Jotkin verkkosivustot voivat vastata tähän pyyntöön esimerkiksi näyttämäl
- <translation id="982182592107339124">Kaikkien sivustojen tiedot poistetaan, esimerkiksi:</translation>
+@@ -994,4 +994,21 @@ Jotkin verkkosivustot voivat vastata tähän pyyntöön esimerkiksi näyttämäl
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Sulje kaikki välilehdet</translation>
  <translation id="987264212798334818">Yleistä</translation>
 -</translationbundle>
@@ -849,8 +835,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fil.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fil.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fil.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fil.xtb
-@@ -1118,4 +1118,21 @@ Halimbawa, puwedeng tumugon ang ilang website sa kahilingang ito sa pamamagitan
- <translation id="982182592107339124">Iki-clear nito ang data para sa lahat ng site, kabilang ang:</translation>
+@@ -994,4 +994,21 @@ Halimbawa, puwedeng tumugon ang ilang website sa kahilingang ito sa pamamagitan
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Isara ang lahat ng tab</translation>
  <translation id="987264212798334818">Pangkalahatan</translation>
 -</translationbundle>
@@ -876,8 +862,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fr.xtb
-@@ -1118,4 +1118,21 @@ Par exemple, certains sites Web peuvent répondre à cette demande en diffusant
- <translation id="982182592107339124">Cette action entraînera la suppression des données pour tous les sites, y compris :</translation>
+@@ -994,4 +994,21 @@ Par exemple, certains sites Web peuvent répondre à cette demande en diffusant
+ <translation id="981121421437150478">Hors connexion</translation>
  <translation id="983192555821071799">Fermer tous les onglets</translation>
  <translation id="987264212798334818">Général</translation>
 -</translationbundle>
@@ -903,8 +889,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_gu.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_gu.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_gu.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_gu.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">આ બધી સાઇટ્સ પરથી ડેટા સાફ કરશે, આ સહિત:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">ઑફલાઇન</translation>
  <translation id="983192555821071799">બધા ટેબ્સ બંધ કરો</translation>
  <translation id="987264212798334818">સામાન્ય</translation>
 -</translationbundle>
@@ -930,8 +916,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hi.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hi.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hi.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hi.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">इससे इन सभी साइटों का डेटा साफ़ हो जाएगा:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">ऑफ़लाइन</translation>
  <translation id="983192555821071799">सभी टैब बंद करें</translation>
  <translation id="987264212798334818">सामान्य</translation>
 -</translationbundle>
@@ -957,8 +943,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hr.xtb
-@@ -1118,4 +1118,21 @@ Na primjer, neke web-lokacije na taj zahtjev mogu odgovoriti tako da vam prikaž
- <translation id="982182592107339124">Izbrisat će se podaci za sve web-lokacije, uključujući:</translation>
+@@ -994,4 +994,21 @@ Na primjer, neke web-lokacije na taj zahtjev mogu odgovoriti tako da vam prikaž
+ <translation id="981121421437150478">Izvanmrežno</translation>
  <translation id="983192555821071799">Zatvori sve kartice</translation>
  <translation id="987264212798334818">Općenito</translation>
 -</translationbundle>
@@ -984,8 +970,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hu.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hu.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hu.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hu.xtb
-@@ -1118,4 +1118,21 @@ Egyes webhelyek például válaszolhatnak rá úgy, hogy olyan hirdetéseket jel
- <translation id="982182592107339124">Ezzel törli az összes webhely adatait, beleértve a következőket:</translation>
+@@ -994,4 +994,21 @@ Egyes webhelyek például válaszolhatnak rá úgy, hogy olyan hirdetéseket jel
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Az összes lap bezárása</translation>
  <translation id="987264212798334818">Általános</translation>
 -</translationbundle>
@@ -1011,8 +997,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_id.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_id.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_id.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_id.xtb
-@@ -1118,4 +1118,21 @@ Misalnya, beberapa situs web mungkin menanggapi permintaan ini dengan menayangka
- <translation id="982182592107339124">Tindakan ini akan menghapus data untuk semua situs, termasuk:</translation>
+@@ -994,4 +994,21 @@ Misalnya, beberapa situs web mungkin menanggapi permintaan ini dengan menayangka
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Tutup semua tab</translation>
  <translation id="987264212798334818">Umum</translation>
 -</translationbundle>
@@ -1038,8 +1024,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
-@@ -1118,4 +1118,21 @@ Ad esempio, alcuni siti web potrebbero rispondere alla richiesta mostrando annun
- <translation id="982182592107339124">Questa operazione cancellerà i dati di tutti i siti, inclusi:</translation>
+@@ -994,4 +994,21 @@ Ad esempio, alcuni siti web potrebbero rispondere alla richiesta mostrando annun
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Chiudi tutte le schede</translation>
  <translation id="987264212798334818">Generali</translation>
 -</translationbundle>
@@ -1065,8 +1051,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_iw.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_iw.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_iw.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_iw.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">פעולה זו תמחק נתונים של כל האתרים, כולל:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">לא מקוון</translation>
  <translation id="983192555821071799">סגור את כל הכרטיסיות</translation>
  <translation id="987264212798334818">כללי</translation>
 -</translationbundle>
@@ -1092,8 +1078,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ja.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ja.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ja.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ja.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">この操作を行うと、次を含むすべてのサイトのデータが削除されます。</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">オフライン</translation>
  <translation id="983192555821071799">すべてのタブを閉じる</translation>
  <translation id="987264212798334818">全般</translation>
 -</translationbundle>
@@ -1119,8 +1105,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_kn.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_kn.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_kn.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_kn.xtb
-@@ -1119,4 +1119,21 @@
- <translation id="982182592107339124">ಇದು ಎಲ್ಲಾ ಸೈಟ್‌ಗಳಿಗೆ ಡೇಟಾ ತೆರವುಗೊಳಿಸುತ್ತದೆ, ಇವುಗಳನ್ನೂ ಒಳಗೊಂಡು:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">ಆಫ್‌ಲೈನ್</translation>
  <translation id="983192555821071799">ಎಲ್ಲ ಟ್ಯಾಬ್‌ಗಳನ್ನು ಮುಚ್ಚಿ</translation>
  <translation id="987264212798334818">ಸಾಮಾನ್ಯ</translation>
 -</translationbundle>
@@ -1146,8 +1132,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ko.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ko.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ko.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ko.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">다음을 포함한 모든 사이트의 데이터가 삭제됩니다.</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">오프라인</translation>
  <translation id="983192555821071799">탭 모두 닫기</translation>
  <translation id="987264212798334818">일반</translation>
 -</translationbundle>
@@ -1173,8 +1159,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_lt.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_lt.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_lt.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_lt.xtb
-@@ -1118,4 +1118,21 @@ Pavyzdžiui, kai kurios svetainės gali atsakyti į šią užklausą rodydamos j
- <translation id="982182592107339124">Bus išvalyti visų svetainių duomenys, įskaitant:</translation>
+@@ -994,4 +994,21 @@ Pavyzdžiui, kai kurios svetainės gali atsakyti į šią užklausą rodydamos j
+ <translation id="981121421437150478">Neprisijungus</translation>
  <translation id="983192555821071799">Uždar. visų skirtukų lapus</translation>
  <translation id="987264212798334818">Bendra</translation>
 -</translationbundle>
@@ -1200,8 +1186,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_lv.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_lv.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_lv.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_lv.xtb
-@@ -1118,4 +1118,21 @@ Piemēram, dažas vietnes, reaģējot uz šo pieprasījumu, var rādīt jums rek
- <translation id="982182592107339124">Tādējādi tiks dzēsti dati no visām vietnēm, tostarp:</translation>
+@@ -994,4 +994,21 @@ Piemēram, dažas vietnes, reaģējot uz šo pieprasījumu, var rādīt jums rek
+ <translation id="981121421437150478">Bezsaistē</translation>
  <translation id="983192555821071799">Aizvērt visas cilnes</translation>
  <translation id="987264212798334818">Vispārīgi</translation>
 -</translationbundle>
@@ -1227,8 +1213,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ml.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ml.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ml.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ml.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">ഇത് ഇനിപ്പറയുന്നവ ഉൾപ്പെടെയുള്ള എല്ലാ സൈറ്റുകളുടെയും വിവരങ്ങൾ മായ്‌ക്കുന്നതിനിടയാക്കും:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">ഓഫ്‌ലൈൻ</translation>
  <translation id="983192555821071799">എല്ലാ ടാബുകളും അടയ്‌ക്കുക</translation>
  <translation id="987264212798334818">പൊതുവായ</translation>
 -</translationbundle>
@@ -1254,8 +1240,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_mr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_mr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_mr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_mr.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">हे यासह सर्व साइटसाठी डेटा साफ करेल:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">ऑफलाइन</translation>
  <translation id="983192555821071799">सर्व टॅब बंद करा</translation>
  <translation id="987264212798334818">सामान्य</translation>
 -</translationbundle>
@@ -1281,8 +1267,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ms.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ms.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ms.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ms.xtb
-@@ -1118,4 +1118,21 @@ Sebagai contoh, sesetengah tapak web mungkin memberi respons kepada permintaan i
- <translation id="982182592107339124">Ini akan memadamkan data untuk semua tapak web, termasuk:</translation>
+@@ -994,4 +994,21 @@ Sebagai contoh, sesetengah tapak web mungkin memberi respons kepada permintaan i
+ <translation id="981121421437150478">Luar talian</translation>
  <translation id="983192555821071799">Tutup semua tab</translation>
  <translation id="987264212798334818">Umum</translation>
 -</translationbundle>
@@ -1308,8 +1294,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_nl.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_nl.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_nl.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_nl.xtb
-@@ -1118,4 +1118,21 @@ Zo kunnen sommige websites op dit verzoek reageren door advertenties weer te gev
- <translation id="982182592107339124">Hiermee worden de gegevens voor alle sites gewist, inclusief:</translation>
+@@ -994,4 +994,21 @@ Zo kunnen sommige websites op dit verzoek reageren door advertenties weer te gev
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Alle tabbladen sluiten</translation>
  <translation id="987264212798334818">Algemeen</translation>
 -</translationbundle>
@@ -1335,8 +1321,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_no.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_no.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_no.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_no.xtb
-@@ -1118,4 +1118,21 @@ Noen nettsteder kan for eksempel svare på denne forespørselen ved å vise deg
- <translation id="982182592107339124">Dette fører til at dataene for alle nettsteder slettes, deriblant disse:</translation>
+@@ -994,4 +994,21 @@ Noen nettsteder kan for eksempel svare på denne forespørselen ved å vise deg
+ <translation id="981121421437150478">Uten nett</translation>
  <translation id="983192555821071799">Lukk alle faner</translation>
  <translation id="987264212798334818">Generelt</translation>
 -</translationbundle>
@@ -1362,8 +1348,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pl.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pl.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pl.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pl.xtb
-@@ -1118,4 +1118,21 @@ Na przykład niektóre strony mogą na nie zareagować, wyświetlając reklamy b
- <translation id="982182592107339124">Spowoduje to usunięcie danych wszystkich witryn, w tym:</translation>
+@@ -994,4 +994,21 @@ Na przykład niektóre strony mogą na nie zareagować, wyświetlając reklamy b
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Zamknij wszystkie karty</translation>
  <translation id="987264212798334818">Ogólne</translation>
 -</translationbundle>
@@ -1389,8 +1375,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-BR.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-BR.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-BR.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-BR.xtb
-@@ -1119,4 +1119,21 @@ Por exemplo, alguns sites podem responder a esse pedido mostrando anúncios que
- <translation id="982182592107339124">Essa ação limpará os dados de todos os sites, incluindo:</translation>
+@@ -995,4 +995,21 @@ Por exemplo, alguns sites podem responder a esse pedido mostrando anúncios que
+ <translation id="981121421437150478">Off-line</translation>
  <translation id="983192555821071799">Fechar todas as guias</translation>
  <translation id="987264212798334818">Geral</translation>
 -</translationbundle>
@@ -1416,8 +1402,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-PT.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-PT.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-PT.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-PT.xtb
-@@ -1118,4 +1118,21 @@ Por exemplo, alguns Sites podem responder a este pedido ao mostrar-lhe anúncios
- <translation id="982182592107339124">Esta ação limpa os dados de todos os sites, incluindo:</translation>
+@@ -994,4 +994,21 @@ Por exemplo, alguns Sites podem responder a este pedido ao mostrar-lhe anúncios
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Fechar todos os separadores</translation>
  <translation id="987264212798334818">Geral</translation>
 -</translationbundle>
@@ -1443,8 +1429,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ro.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ro.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ro.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ro.xtb
-@@ -1118,4 +1118,21 @@ De exemplu, unele site-uri pot răspunde la această solicitare afișând anunț
- <translation id="982182592107339124">Astfel, se vor șterge datele pentru toate site-urile, inclusiv:</translation>
+@@ -994,4 +994,21 @@ De exemplu, unele site-uri pot răspunde la această solicitare afișând anunț
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Închide toate filele</translation>
  <translation id="987264212798334818">General</translation>
 -</translationbundle>
@@ -1470,8 +1456,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ru.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ru.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ru.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ru.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">Будут удалены данные всех сайтов, в том числе:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">Офлайн</translation>
  <translation id="983192555821071799">Закрыть все вкладки</translation>
  <translation id="987264212798334818">Общие</translation>
 -</translationbundle>
@@ -1497,8 +1483,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sk.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sk.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sk.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sk.xtb
-@@ -1118,4 +1118,21 @@ Niektoré weby môžu napríklad na túto žiadosť reagovať tak, že vám zobr
- <translation id="982182592107339124">Vymažete dáta všetkých webov vrátane týchto:</translation>
+@@ -994,4 +994,21 @@ Niektoré weby môžu napríklad na túto žiadosť reagovať tak, že vám zobr
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Zavrieť všetky karty</translation>
  <translation id="987264212798334818">Všeobecné</translation>
 -</translationbundle>
@@ -1524,8 +1510,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sl.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sl.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sl.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sl.xtb
-@@ -1118,4 +1118,21 @@ Nekatera spletna mesta se lahko na primer na zahtevo odzovejo tako, da prikažej
- <translation id="982182592107339124">S tem bodo izbrisani podatki za vsa spletna mesta, vključno s temi:</translation>
+@@ -994,4 +994,21 @@ Nekatera spletna mesta se lahko na primer na zahtevo odzovejo tako, da prikažej
+ <translation id="981121421437150478">Brez povezave</translation>
  <translation id="983192555821071799">Zapri vse zavihke</translation>
  <translation id="987264212798334818">Splošno</translation>
 -</translationbundle>
@@ -1551,8 +1537,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sr.xtb
-@@ -1118,4 +1118,21 @@ Google налог можда има друге облике историје п
- <translation id="982182592107339124">Овим бришете податке за све сајтове, укључујући:</translation>
+@@ -994,4 +994,21 @@ Google налог можда има друге облике историје п
+ <translation id="981121421437150478">Офлајн</translation>
  <translation id="983192555821071799">Затвори све картице</translation>
  <translation id="987264212798334818">Опште</translation>
 -</translationbundle>
@@ -1578,8 +1564,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sv.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sv.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sv.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sv.xtb
-@@ -1118,4 +1118,21 @@ Vissa webbplatser kan till exempel svara på begäran genom att visa annonser so
- <translation id="982182592107339124">Åtgärden raderar data för alla webbplatser, inklusive:</translation>
+@@ -994,4 +994,21 @@ Vissa webbplatser kan till exempel svara på begäran genom att visa annonser so
+ <translation id="981121421437150478">Offline</translation>
  <translation id="983192555821071799">Stäng alla flikar</translation>
  <translation id="987264212798334818">Allmänt</translation>
 -</translationbundle>
@@ -1605,8 +1591,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sw.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sw.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sw.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sw.xtb
-@@ -1118,4 +1118,21 @@ Kwa mfano, baadhi ya tovuti zinaweza kujibu ombi hili kwa kukuonyesha matangazo
- <translation id="982182592107339124">Hatua hii itafuta data ya tovuti zote, ikiwa ni pamoja na:</translation>
+@@ -994,4 +994,21 @@ Kwa mfano, baadhi ya tovuti zinaweza kujibu ombi hili kwa kukuonyesha matangazo
+ <translation id="981121421437150478">Nje ya mtandao</translation>
  <translation id="983192555821071799">Funga vichupo vyote</translation>
  <translation id="987264212798334818">Jumla</translation>
 -</translationbundle>
@@ -1632,8 +1618,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ta.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ta.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ta.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ta.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">இதனால் எல்லா தளங்களுக்கான தரவும் அழிக்கப்படும், இதில் அடங்குபவை:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">ஆஃப்லைன்</translation>
  <translation id="983192555821071799">எல்லா தாவல்களையும் மூடு</translation>
  <translation id="987264212798334818">பொது</translation>
 -</translationbundle>
@@ -1659,8 +1645,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_te.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_te.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_te.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_te.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">ఇది వీటితో సహా అన్ని సైట్‌ల డేటాను తీసివేస్తుంది:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">ఆఫ్‌లైన్</translation>
  <translation id="983192555821071799">అన్ని ట్యాబ్‌లను మూసివేయి</translation>
  <translation id="987264212798334818">సాధారణం</translation>
 -</translationbundle>
@@ -1686,8 +1672,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_th.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_th.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_th.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_th.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">การดำเนินการนี้จะล้างข้อมูลสำหรับทุกเว็บไซต์ รวมถึง</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">ออฟไลน์</translation>
  <translation id="983192555821071799">ปิดแท็บทั้งหมด</translation>
  <translation id="987264212798334818">ทั่วไป</translation>
 -</translationbundle>
@@ -1713,8 +1699,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_tr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_tr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_tr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_tr.xtb
-@@ -1118,4 +1118,21 @@ Bu ayarı değiştirmek için <ph name="BEGIN_LINK" />senkronizasyonu sıfırlay
- <translation id="982182592107339124">Bu işlem, aşağıdakiler de dahil olmak üzere tüm sitelere ilişkin verileri temizleyecek:</translation>
+@@ -994,4 +994,21 @@ Bu ayarı değiştirmek için <ph name="BEGIN_LINK" />senkronizasyonu sıfırlay
+ <translation id="981121421437150478">Çevrimdışı</translation>
  <translation id="983192555821071799">Tüm sekmeleri kapat</translation>
  <translation id="987264212798334818">Genel</translation>
 -</translationbundle>
@@ -1740,8 +1726,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_uk.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_uk.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_uk.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_uk.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">Буде видалено дані всіх сайтів, зокрема:</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">Офлайн</translation>
  <translation id="983192555821071799">Закрити всі вкладки</translation>
  <translation id="987264212798334818">Загальне</translation>
 -</translationbundle>
@@ -1767,8 +1753,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_vi.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_vi.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_vi.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_vi.xtb
-@@ -1118,4 +1118,21 @@ Ví dụ: một số trang web có thể phản hồi yêu cầu này bằng cá
- <translation id="982182592107339124">Thao tác này sẽ xóa dữ liệu của tất cả các trang web, bao gồm:</translation>
+@@ -994,4 +994,21 @@ Ví dụ: một số trang web có thể phản hồi yêu cầu này bằng cá
+ <translation id="981121421437150478">Ngoại tuyến</translation>
  <translation id="983192555821071799">Đóng tất cả các tab</translation>
  <translation id="987264212798334818">Chung</translation>
 -</translationbundle>
@@ -1794,8 +1780,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">这会清除所有网站的数据，包括：</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">离线</translation>
  <translation id="983192555821071799">关闭所有标签页</translation>
  <translation id="987264212798334818">常规</translation>
 -</translationbundle>
@@ -1821,8 +1807,8 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-@@ -1118,4 +1118,21 @@
- <translation id="982182592107339124">這會清除所有網站的資料，包括：</translation>
+@@ -994,4 +994,21 @@
+ <translation id="981121421437150478">離線</translation>
  <translation id="983192555821071799">關閉所有分頁</translation>
  <translation id="987264212798334818">一般</translation>
 -</translationbundle>
