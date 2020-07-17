@@ -12,12 +12,12 @@ Subject: Add user setting for DNS-over-HTTPS (DoH) custom URL
  .../chrome/browser/settings/DoHEditor.java    | 92 +++++++++++++++++++
  .../browser/settings/DoHPreferences.java      | 54 +++++++++++
  chrome/app/generated_resources.grd            |  6 ++
- .../flags/android/cached_feature_flags.cc     | 24 +++++
+ .../flags/android/cached_feature_flags.cc     | 25 +++++
  .../browser/flags/CachedFeatureFlags.java     | 24 +++++
- .../net/stub_resolver_config_reader.cc        | 30 +-----
+ .../net/stub_resolver_config_reader.cc        | 36 ++------
  .../strings/android_chrome_strings.grd        | 11 +++
  chrome/common/chrome_features.cc              |  4 +-
- 14 files changed, 317 insertions(+), 29 deletions(-)
+ 14 files changed, 322 insertions(+), 31 deletions(-)
  create mode 100644 chrome/android/java/res/layout/doh_editor.xml
  create mode 100644 chrome/android/java/res/xml/doh_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/DoHEditor.java
@@ -367,14 +367,15 @@ diff --git a/chrome/browser/flags/android/cached_feature_flags.cc b/chrome/brows
  using base::android::ConvertJavaStringToUTF8;
  using base::android::ConvertUTF8ToJavaString;
  using base::android::JavaParamRef;
-@@ -49,3 +53,23 @@ static jboolean JNI_CachedFeatureFlags_IsNetworkServiceWarmUpEnabled(
+@@ -49,3 +53,24 @@ static jboolean JNI_CachedFeatureFlags_IsNetworkServiceWarmUpEnabled(
    return content::IsOutOfProcessNetworkService() &&
           base::FeatureList::IsEnabled(features::kWarmUpNetworkProcess);
  }
 +
 +static jboolean JNI_CachedFeatureFlags_GetDoHEnabled(JNIEnv* env) {
 +  std::string doh_mode = g_browser_process->local_state()->GetString(prefs::kDnsOverHttpsMode);
-+  return ((doh_mode == "secure") || (doh_mode == "auto"));
++  return ((doh_mode == "secure") || (doh_mode == "auto"))
++         && !g_browser_process->local_state()->GetString(prefs::kDnsOverHttpsTemplates).empty();
 +}
 +
 +static void JNI_CachedFeatureFlags_SetDoHEnabled(JNIEnv* env, jboolean enabled) {
@@ -464,7 +465,7 @@ diff --git a/chrome/browser/net/stub_resolver_config_reader.cc b/chrome/browser/
    }
  
    pref_change_registrar_.Add(prefs::kBuiltInDnsClientEnabled, pref_callback);
-@@ -323,21 +301,19 @@ SecureDnsConfig StubResolverConfigReader::GetAndUpdateConfiguration(
+@@ -323,21 +301,21 @@ SecureDnsConfig StubResolverConfigReader::GetAndUpdateConfiguration(
      parental_controls_checked_ = true;
    }
  
@@ -475,12 +476,16 @@ diff --git a/chrome/browser/net/stub_resolver_config_reader.cc b/chrome/browser/
    std::string doh_templates =
        local_state_->GetString(prefs::kDnsOverHttpsTemplates);
 -  std::string server_method;
++  if (doh_templates.empty()) {
++    secure_dns_mode = net::DnsConfig::SecureDnsMode::OFF;
++  }
 +  LOG(INFO) << "DoH templates: '" << doh_templates << "' with mode " << SecureDnsConfig::ModeToString(secure_dns_mode);
    std::vector<net::DnsOverHttpsServerConfig> dns_over_https_servers;
    base::Optional<std::vector<network::mojom::DnsOverHttpsServerPtr>>
        servers_mojo;
-   if (!doh_templates.empty() &&
-       secure_dns_mode != net::DnsConfig::SecureDnsMode::OFF) {
+-  if (!doh_templates.empty() &&
+-      secure_dns_mode != net::DnsConfig::SecureDnsMode::OFF) {
++  if (secure_dns_mode != net::DnsConfig::SecureDnsMode::OFF) {
 +    std::string server_method;
      for (base::StringPiece server_template :
           chrome_browser_net::secure_dns::SplitGroup(doh_templates)) {
