@@ -6,7 +6,7 @@
 
 Bromite is a [Chromium](https://www.chromium.org/Home) fork with support for ad blocking and enhanced privacy.
 
-Bromite is only available for Android v4.4 and above.
+Bromite is only available for Android Lollipop (v5.0, API level 21) and above.
 
 <img src="https://www.bromite.org/bromite_bromite_gh_downloads.svg" alt="downloads on Github" title="downloads on Github" />
 
