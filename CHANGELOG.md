@@ -1,3 +1,7 @@
+# 84.0.4147.106
+* fixed bug with Javascript site settings not showing
+* add exit menu item to overview menu (fixes https://github.com/bromite/bromite/issues/619)
+
 # 84.0.4147.95
 * show warnings for TLSv1.0/TLSv1.1 connections (fixes https://github.com/bromite/bromite/issues/645)
 * fix bug with unconfigured DoH (fixes https://github.com/bromite/bromite/issues/646)
