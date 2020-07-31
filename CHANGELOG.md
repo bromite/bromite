@@ -1,3 +1,8 @@
+# 84.0.4147.113
+* block gateway attacks via websockets (fixes https://github.com/bromite/bromite/issues/590)
+* enable prefetch-privacy-changes by default (fixes https://github.com/bromite/bromite/issues/659)
+* enable reduced-referrer-granularity by default (fixes https://github.com/bromite/bromite/issues/659)
+
 # 84.0.4147.106
 * fixed bug with Javascript site settings not showing
 * add exit menu item to overview menu (fixes https://github.com/bromite/bromite/issues/619)
