@@ -1,3 +1,8 @@
+# 84.0.4147.119
+* update zh_CN translations
+* disable CORS RFC1918 (fixes https://github.com/bromite/bromite/issues/664)
+* restore duet flags (fixes https://github.com/bromite/bromite/issues/667)
+
 # 84.0.4147.113
 * block gateway attacks via websockets (fixes https://github.com/bromite/bromite/issues/590)
 * enable prefetch-privacy-changes by default (fixes https://github.com/bromite/bromite/issues/659)
