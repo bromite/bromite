@@ -43,9 +43,9 @@ No, and this is unlikely to change. Many limitations apply for submissions there
 Bromite favors user freedom in software choice: the device is yours so you get to choose which software to run on it, end of the story.
 
 ## Is Bromite on F-Droid?
-It is not on the official F-Droid repository and there are no (more) plans to submit it.
+It is not on the official F-Droid repository yet due to the resources needed to compile Chromium builds (see https://gitlab.com/fdroid/rfp/-/issues/378).
 
-You can use F-Droid client to install and receive updates via [the official Bromite F-Droid repository](https://www.bromite.org/fdroid).
+You can use the F-Droid client to install and receive updates via [the official Bromite F-Droid repository](https://www.bromite.org/fdroid).
 
 ## Does Bromite support WebRTC?
 Yes, since version 69. While the desktop version of Chromium has an option to disable it (video/audio site settings), the Android version cannot.
