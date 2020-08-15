@@ -1,0 +1,273 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Fri, 7 Aug 2020 16:33:47 +0000
+Subject: Add history support in incognito mode
+
+---
+ .../java/res/xml/privacy_preferences.xml       |  5 +++++
+ .../privacy/settings/PrivacySettings.java      | 18 ++++++++++++++++++
+ chrome/browser/android/preferences/prefs.h     |  2 ++
+ chrome/browser/history/history_tab_helper.cc   | 16 ++++++++++++++++
+ chrome/browser/history/history_tab_helper.h    |  4 ++++
+ chrome/browser/prefs/browser_prefs.cc          |  2 ++
+ .../android/strings/android_chrome_strings.grd |  6 ++++++
+ .../translations/android_chrome_strings_it.xtb |  2 ++
+ chrome/common/pref_names.cc                    |  5 +++++
+ chrome/common/pref_names.h                     |  4 ++++
+ 10 files changed, 64 insertions(+)
+ mode change 100644 => 100755 chrome/android/java/res/xml/privacy_preferences.xml
+ mode change 100644 => 100755 chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
+ mode change 100644 => 100755 chrome/browser/android/preferences/prefs.h
+ mode change 100644 => 100755 chrome/browser/history/history_tab_helper.cc
+ mode change 100644 => 100755 chrome/browser/history/history_tab_helper.h
+ mode change 100644 => 100755 chrome/browser/prefs/browser_prefs.cc
+ mode change 100644 => 100755 chrome/browser/ui/android/strings/android_chrome_strings.grd
+ mode change 100644 => 100755 chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
+ mode change 100644 => 100755 chrome/common/pref_names.cc
+ mode change 100644 => 100755 chrome/common/pref_names.h
+
+diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
+old mode 100644
+new mode 100755
+--- a/chrome/android/java/res/xml/privacy_preferences.xml
++++ b/chrome/android/java/res/xml/privacy_preferences.xml
+@@ -34,6 +34,11 @@
+         android:title="@string/always_incognito_title"
+         android:summary="@string/always_incognito_summary"
+         android:defaultValue="false" />
++    <org.chromium.components.browser_ui.settings.ChromeBaseCheckBoxPreference
++        android:key="incognito_history_enabled"
++        android:title="@string/incognito_history_enabled_title"
++        android:summary="@string/incognito_history_enabled_summary"
++        android:defaultValue="false" />
+     <Preference
+         android:fragment="org.chromium.chrome.browser.privacy.settings.DoNotTrackSettings"
+         android:key="do_not_track"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
+old mode 100644
+new mode 100755
+--- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
+@@ -34,6 +34,8 @@ import org.chromium.components.browser_ui.settings.SettingsUtils;
+ import org.chromium.ui.text.NoUnderlineClickableSpan;
+ import org.chromium.ui.text.SpanApplier;
+ 
++import org.chromium.base.Log;
++
+ /**
+  * Fragment to keep track of the all the privacy related preferences.
+  */
+@@ -49,6 +51,7 @@ public class PrivacySettings
+     private ManagedPreferenceDelegate mManagedPreferenceDelegate;
+ 
+     public static final String PREF_ALLOW_CUSTOM_TAB_INTENTS = "allow_custom_tab_intents";
++    public static final String PREF_INCOGNITO_TAB_HISTORY_ENABLED = "incognito_history_enabled";
+ 
+     @Override
+     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
+@@ -74,6 +77,11 @@ public class PrivacySettings
+         searchSuggestionsPref.setOnPreferenceChangeListener(this);
+         searchSuggestionsPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
+ 
++        ChromeBaseCheckBoxPreference historyInIncognitoPref =
++                (ChromeBaseCheckBoxPreference) findPreference(PREF_INCOGNITO_TAB_HISTORY_ENABLED);
++        historyInIncognitoPref.setOnPreferenceChangeListener(this);
++        historyInIncognitoPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
++
+         updateSummaries();
+     }
+ 
+@@ -95,6 +103,9 @@ public class PrivacySettings
+             SharedPreferences.Editor sharedPreferencesEditor = ContextUtils.getAppSharedPreferences().edit();
+             sharedPreferencesEditor.putBoolean(PREF_CLOSE_TABS_ON_EXIT, (boolean)newValue);
+             sharedPreferencesEditor.apply();
++        } else if (PREF_INCOGNITO_TAB_HISTORY_ENABLED.equals(key)) {
++            PrefServiceBridge.getInstance().setBoolean(
++                    Pref.INCOGNITO_TAB_HISTORY_ENABLED, (boolean) newValue);
+         }
+ 
+         return true;
+@@ -144,6 +155,13 @@ public class PrivacySettings
+                 (ChromeBaseCheckBoxPreference) findPreference(PREF_CLOSE_TABS_ON_EXIT);
+         closeTabsOnExitPref.setOnPreferenceChangeListener(this);
+         closeTabsOnExitPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
++
++        CheckBoxPreference historyInIncognitoPref =
++                (CheckBoxPreference) findPreference(PREF_INCOGNITO_TAB_HISTORY_ENABLED);
++        if (historyInIncognitoPref != null) {
++            historyInIncognitoPref.setChecked(
++                    prefServiceBridge.getBoolean(Pref.INCOGNITO_TAB_HISTORY_ENABLED));
++        }
+     }
+ 
+     private ChromeManagedPreferenceDelegate createManagedPreferenceDelegate() {
+diff --git a/chrome/browser/android/preferences/prefs.h b/chrome/browser/android/preferences/prefs.h
+old mode 100644
+new mode 100755
+--- a/chrome/browser/android/preferences/prefs.h
++++ b/chrome/browser/android/preferences/prefs.h
+@@ -67,6 +67,7 @@ enum Pref {
+   HOME_PAGE,
+   AUTOFILL_CREDIT_CARD_FIDO_AUTH_ENABLED,
+   ENABLE_QUIET_NOTIFICATION_PERMISSION_UI,
++  INCOGNITO_TAB_HISTORY_ENABLED,
+   // PREF_NUM_PREFS must be the last entry.
+   PREF_NUM_PREFS
+ };
+@@ -115,6 +116,7 @@ const char* const kPrefsExposedToJava[] = {
+     prefs::kHomePage,
+     autofill::prefs::kAutofillCreditCardFidoAuthEnabled,
+     prefs::kEnableQuietNotificationPermissionUi,
++    prefs::kIncognitoTabHistoryEnabled,
+ };
+ 
+ #endif  // CHROME_BROWSER_ANDROID_PREFERENCES_PREFS_H_
+diff --git a/chrome/browser/history/history_tab_helper.cc b/chrome/browser/history/history_tab_helper.cc
+old mode 100644
+new mode 100755
+--- a/chrome/browser/history/history_tab_helper.cc
++++ b/chrome/browser/history/history_tab_helper.cc
+@@ -29,6 +29,9 @@
+ 
+ #if defined(OS_ANDROID)
+ #include "chrome/browser/android/background_tab_manager.h"
++#include "chrome/common/pref_names.h"
++#include "components/prefs/pref_registry_simple.h"
++#include "components/prefs/pref_service.h"
+ #else
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_finder.h"
+@@ -240,6 +243,13 @@ void HistoryTabHelper::TitleWasSet(NavigationEntry* entry) {
+ history::HistoryService* HistoryTabHelper::GetHistoryService() {
+   Profile* profile =
+       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
++
++#if defined(OS_ANDROID)
++  if(profile->GetOriginalProfile()->GetPrefs()->GetBoolean(prefs::kIncognitoTabHistoryEnabled)) {
++    return HistoryServiceFactory::GetForProfile(profile, ServiceAccessType::IMPLICIT_ACCESS);
++  } 
++#endif
++
+   if (profile->IsOffTheRecord())
+     return NULL;
+ 
+@@ -247,6 +257,12 @@ history::HistoryService* HistoryTabHelper::GetHistoryService() {
+       profile, ServiceAccessType::IMPLICIT_ACCESS);
+ }
+ 
++// static
++void HistoryTabHelper::RegisterProfilePrefs(PrefRegistrySimple* registry) {
++  registry->RegisterBooleanPref(prefs::kIncognitoTabHistoryEnabled,
++                                /*default_value=*/false);
++}
++
+ void HistoryTabHelper::WebContentsDestroyed() {
+   // We update the history for this URL.
+   WebContents* tab = web_contents();
+diff --git a/chrome/browser/history/history_tab_helper.h b/chrome/browser/history/history_tab_helper.h
+old mode 100644
+new mode 100755
+--- a/chrome/browser/history/history_tab_helper.h
++++ b/chrome/browser/history/history_tab_helper.h
+@@ -10,6 +10,8 @@
+ #include "base/time/time.h"
+ #include "content/public/browser/web_contents_observer.h"
+ #include "content/public/browser/web_contents_user_data.h"
++#include "components/prefs/pref_registry_simple.h"
++#include "components/prefs/pref_service.h"
+ 
+ namespace history {
+ struct HistoryAddPageArgs;
+@@ -34,6 +36,8 @@ class HistoryTabHelper : public content::WebContentsObserver,
+       int nav_entry_id,
+       content::NavigationHandle* navigation_handle);
+ 
++  static void RegisterProfilePrefs(PrefRegistrySimple* registry);
++
+  private:
+   explicit HistoryTabHelper(content::WebContents* web_contents);
+   friend class content::WebContentsUserData<HistoryTabHelper>;
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+old mode 100644
+new mode 100755
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -232,6 +232,7 @@
+ #include "components/ntp_tiles/popular_sites_impl.h"
+ #include "components/permissions/contexts/geolocation_permission_context_android.h"
+ #include "components/query_tiles/tile_service_prefs.h"
++#include "chrome/browser/history/history_tab_helper.h"
+ #if BUILDFLAG(ENABLE_FEED_IN_CHROME)
+ #include "components/feed/core/common/pref_names.h"
+ #endif  // BUILDFLAG(ENABLE_FEED_IN_CHROME)
+@@ -978,6 +979,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+   usage_stats::UsageStatsBridge::RegisterProfilePrefs(registry);
+   variations::VariationsService::RegisterProfilePrefs(registry);
+   feed::prefs::RegisterFeedSharedProfilePrefs(registry);
++  HistoryTabHelper::RegisterProfilePrefs(registry);
+ #if BUILDFLAG(ENABLE_FEED_IN_CHROME)
+   feed::RegisterProfilePrefs(registry);
+ #endif  // BUILDFLAG(ENABLE_FEED_IN_CHROME)
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+old mode 100644
+new mode 100755
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -746,6 +746,12 @@ Your Google account may have other forms of browsing history like searches and a
+       <message name="IDS_ALWAYS_INCOGNITO_SUMMARY" desc="Summary for always incognito mode">
+         Opens links in incognito tabs when you click on new tab or on a link
+       </message>
++			<message name="IDS_INCOGNITO_HISTORY_ENABLED_TITLE" desc="Title for always enable history in incognito mode">
++				Enable history in incognito tabs
++			</message>
++			<message name="IDS_INCOGNITO_HISTORY_ENABLED_SUMMARY" desc="Summary for always enable history in incognito mode">
++				Record history even in incognito mode
++			</message>
+       <message name="IDS_CLEAR_BROWSING_HISTORY_SUMMARY_SIGNED_IN" desc="A text explaining other forms of activity for signed in users.">
+         Clears history and autocompletions in the address bar. Your Google Account may have other forms of browsing history at <ph name="BEGIN_LINK">&lt;link&gt;</ph>myactivity.google.com<ph name="END_LINK">&lt;/link&gt;</ph>.
+       </message>
+diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
+old mode 100644
+new mode 100755
+--- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
++++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
+@@ -1011,4 +1011,6 @@ Ad esempio, alcuni siti web potrebbero rispondere alla richiesta mostrando annun
+ <translation id="666268767214822976">Utilizza un servizio di previsione per visualizzare query correlate e siti web popolari durante la digitazione nella barra degli indirizzi</translation>
+ <translation id="8283853025636624853">Sincronizzazione con <ph name="SYNC_ACCOUNT_USER_NAME" /></translation>
+ <translation id="8981454092730389528">Gestione attività di Google</translation>
++<translation id="7889537574758531583">Abilita la cronologia nelle sessioni in incognito</translation>
++<translation id="5713583121562162330">Abilita la registrazione della navigazione nella cronologia anche per le sessioni in incognito</translation>	
+ </translationbundle>
+diff --git a/chrome/common/pref_names.cc b/chrome/common/pref_names.cc
+old mode 100644
+new mode 100755
+--- a/chrome/common/pref_names.cc
++++ b/chrome/common/pref_names.cc
+@@ -2996,4 +2996,9 @@ const char kMediaFeedsSafeSearchEnabled[] = "media_feeds_safe_search_enabled";
+ // TODO(enne): Remove this once AppCache has been removed.
+ const char kAppCacheForceEnabled[] = "app_cache_force_enabled";
+ 
++#if defined(OS_ANDROID)
++const char kIncognitoTabHistoryEnabled[] =
++    "incognito_tab_history_enabled";
++#endif
++
+ }  // namespace prefs
+diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
+old mode 100644
+new mode 100755
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -1064,6 +1064,10 @@ extern const char kMediaFeedsSafeSearchEnabled[];
+ 
+ extern const char kAppCacheForceEnabled[];
+ 
++#if defined(OS_ANDROID)
++extern const char kIncognitoTabHistoryEnabled[];
++#endif
++
+ }  // namespace prefs
+ 
+ #endif  // CHROME_COMMON_PREF_NAMES_H_
+-- 
+2.17.1
+
