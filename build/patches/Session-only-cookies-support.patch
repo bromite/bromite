@@ -1,0 +1,708 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Thu, 6 Aug 2020 14:02:57 +0000
+Subject: Session-only cookies support
+
+---
+ base/android/application_status_listener.cc   |  1 +
+ base/android/application_status_listener.h    |  3 +-
+ .../org/chromium/base/ApplicationStatus.java  |  4 ++
+ .../chrome/browser/ApplicationLifetime.java   |  3 ++
+ .../availability/availability_prober.cc       |  1 +
+ .../four_state_cookie_settings_preference.xml |  7 ++++
+ .../ContentSettingsResources.java             |  9 +++++
+ .../FourStateCookieSettingsPreference.java    | 17 +++++++-
+ .../site_settings/SingleCategorySettings.java | 30 ++++++++++++++
+ .../site_settings/SingleWebsiteSettings.java  | 40 ++++++++++++++-----
+ .../site_settings/SiteSettings.java           |  9 +++++
+ .../strings/android/site_settings.grdp        |  8 +++-
+ .../translations/browser_ui_strings_it.xtb    |  2 +
+ .../core/browser/content_settings_registry.cc |  0
+ .../scheduler/responsiveness/calculator.cc    |  1 +
+ .../base/application_state_mojom_traits.cc    |  7 +++-
+ .../public/mojom/base/application_state.mojom |  1 +
+ services/network/cookie_manager.cc            | 14 +++++++
+ services/network/cookie_manager.h             |  3 ++
+ services/network/network_context.cc           | 17 ++++++++
+ .../network/public/mojom/cookie_manager.mojom |  3 ++
+ .../network/session_cleanup_cookie_store.cc   | 39 ++++++++++++++++++
+ .../network/session_cleanup_cookie_store.h    |  9 +++++
+ 23 files changed, 212 insertions(+), 16 deletions(-)
+ mode change 100644 => 100755 base/android/application_status_listener.cc
+ mode change 100644 => 100755 base/android/application_status_listener.h
+ mode change 100644 => 100755 base/android/java/src/org/chromium/base/ApplicationStatus.java
+ mode change 100644 => 100755 chrome/android/java/src/org/chromium/chrome/browser/ApplicationLifetime.java
+ mode change 100644 => 100755 chrome/browser/availability/availability_prober.cc
+ mode change 100644 => 100755 components/browser_ui/site_settings/android/java/res/layout/four_state_cookie_settings_preference.xml
+ mode change 100644 => 100755 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java
+ mode change 100644 => 100755 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/FourStateCookieSettingsPreference.java
+ mode change 100644 => 100755 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleCategorySettings.java
+ mode change 100644 => 100755 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java
+ mode change 100644 => 100755 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java
+ mode change 100644 => 100755 components/browser_ui/strings/android/site_settings.grdp
+ mode change 100644 => 100755 components/browser_ui/strings/android/translations/browser_ui_strings_it.xtb
+ mode change 100644 => 100755 components/content_settings/core/browser/content_settings_registry.cc
+ mode change 100644 => 100755 content/browser/scheduler/responsiveness/calculator.cc
+ mode change 100644 => 100755 mojo/public/cpp/base/application_state_mojom_traits.cc
+ mode change 100644 => 100755 mojo/public/mojom/base/application_state.mojom
+ mode change 100644 => 100755 services/network/cookie_manager.cc
+ mode change 100644 => 100755 services/network/cookie_manager.h
+ mode change 100644 => 100755 services/network/network_context.cc
+ mode change 100644 => 100755 services/network/public/mojom/cookie_manager.mojom
+ mode change 100644 => 100755 services/network/session_cleanup_cookie_store.cc
+ mode change 100644 => 100755 services/network/session_cleanup_cookie_store.h
+
+diff --git a/base/android/application_status_listener.cc b/base/android/application_status_listener.cc
+old mode 100644
+new mode 100755
+--- a/base/android/application_status_listener.cc
++++ b/base/android/application_status_listener.cc
+@@ -84,6 +84,7 @@ void ApplicationStatusListener::NotifyApplicationStateChange(
+   switch (state) {
+     case APPLICATION_STATE_UNKNOWN:
+     case APPLICATION_STATE_HAS_DESTROYED_ACTIVITIES:
++    case APPLICATION_STATE_EXITING:
+       break;
+     case APPLICATION_STATE_HAS_RUNNING_ACTIVITIES:
+       RecordAction(UserMetricsAction("Android.LifeCycle.HasRunningActivities"));
+diff --git a/base/android/application_status_listener.h b/base/android/application_status_listener.h
+old mode 100644
+new mode 100755
+--- a/base/android/application_status_listener.h
++++ b/base/android/application_status_listener.h
+@@ -30,7 +30,8 @@ enum ApplicationState {
+   APPLICATION_STATE_HAS_RUNNING_ACTIVITIES = 1,
+   APPLICATION_STATE_HAS_PAUSED_ACTIVITIES = 2,
+   APPLICATION_STATE_HAS_STOPPED_ACTIVITIES = 3,
+-  APPLICATION_STATE_HAS_DESTROYED_ACTIVITIES = 4
++  APPLICATION_STATE_HAS_DESTROYED_ACTIVITIES = 4,
++  APPLICATION_STATE_EXITING = 5
+ };
+ 
+ // A native helper class to listen to state changes of the Android
+diff --git a/base/android/java/src/org/chromium/base/ApplicationStatus.java b/base/android/java/src/org/chromium/base/ApplicationStatus.java
+old mode 100644
+new mode 100755
+--- a/base/android/java/src/org/chromium/base/ApplicationStatus.java
++++ b/base/android/java/src/org/chromium/base/ApplicationStatus.java
+@@ -661,6 +661,10 @@ public class ApplicationStatus {
+         return ApplicationState.HAS_DESTROYED_ACTIVITIES;
+     }
+ 
++    public static void sendOnApplicationStateChange(int newState) {
++        ApplicationStatusJni.get().onApplicationStateChange(newState);
++    }
++
+     @NativeMethods
+     interface Natives {
+         // Called to notify the native side of state changes.
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ApplicationLifetime.java b/chrome/android/java/src/org/chromium/chrome/browser/ApplicationLifetime.java
+old mode 100644
+new mode 100755
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ApplicationLifetime.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ApplicationLifetime.java
+@@ -6,6 +6,7 @@ package org.chromium.chrome.browser;
+ 
+ import org.chromium.base.ObserverList;
+ import org.chromium.base.annotations.CalledByNative;
++import org.chromium.base.ApplicationStatus;
+ 
+ /**
+  * Watches for when Chrome is told to restart itself.
+@@ -42,6 +43,8 @@ public class ApplicationLifetime {
+ 
+     @CalledByNative
+     public static void terminate(boolean restart) {
++        ApplicationStatus.sendOnApplicationStateChange(org.chromium.mojo_base.mojom.ApplicationState.APPLICATION_STATE_EXITING);
++
+         for (Observer observer : sObservers) {
+             observer.onTerminate(restart);
+         }
+diff --git a/chrome/browser/availability/availability_prober.cc b/chrome/browser/availability/availability_prober.cc
+old mode 100644
+new mode 100755
+--- a/chrome/browser/availability/availability_prober.cc
++++ b/chrome/browser/availability/availability_prober.cc
+@@ -205,6 +205,7 @@ bool IsInForeground(base::android::ApplicationState state) {
+     case base::android::APPLICATION_STATE_HAS_PAUSED_ACTIVITIES:
+     case base::android::APPLICATION_STATE_HAS_STOPPED_ACTIVITIES:
+     case base::android::APPLICATION_STATE_HAS_DESTROYED_ACTIVITIES:
++    case base::android::APPLICATION_STATE_EXITING:
+       return false;
+   }
+ }
+diff --git a/components/browser_ui/site_settings/android/java/res/layout/four_state_cookie_settings_preference.xml b/components/browser_ui/site_settings/android/java/res/layout/four_state_cookie_settings_preference.xml
+old mode 100644
+new mode 100755
+--- a/components/browser_ui/site_settings/android/java/res/layout/four_state_cookie_settings_preference.xml
++++ b/components/browser_ui/site_settings/android/java/res/layout/four_state_cookie_settings_preference.xml
+@@ -39,6 +39,13 @@
+             app:primaryText="@string/website_settings_category_cookie_block_third_party_title"
+             app:descriptionText="@string/website_settings_category_cookie_block_third_party_addition" />
+ 
++	<org.chromium.components.browser_ui.widget.RadioButtonWithDescription
++            android:id="@+id/session_only"
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            app:primaryText="@string/website_settings_category_cookie_session_only_title"
++            app:descriptionText="@string/website_settings_category_cookie_session_only_addition" />
++
+         <org.chromium.components.browser_ui.widget.RadioButtonWithDescription
+             android:id="@+id/block"
+             android:layout_width="match_parent"
+diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java
+old mode 100644
+new mode 100755
+--- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java
++++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java
+@@ -325,6 +325,8 @@ public class ContentSettingsResources {
+                 return R.string.website_settings_permissions_allow;
+             case ContentSettingValues.BLOCK:
+                 return R.string.website_settings_permissions_block;
++            case ContentSettingValues.SESSION_ONLY:
++                return R.string.website_settings_category_cookie_session_only_title;
+             default:
+                 return 0; // We never show Ask as an option on individual permissions.
+         }
+@@ -412,4 +414,11 @@ public class ContentSettingsResources {
+         assert false;
+         return null;
+     }
++
++    /**
++     * Returns the summary for Cookie content settings when it is session only
++     */
++    public static int getCookieSessionOnlySummary() {
++        return R.string.website_settings_category_cookie_session_only_title;
++    }
+ }
+diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/FourStateCookieSettingsPreference.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/FourStateCookieSettingsPreference.java
+old mode 100644
+new mode 100755
+--- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/FourStateCookieSettingsPreference.java
++++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/FourStateCookieSettingsPreference.java
+@@ -30,7 +30,8 @@ public class FourStateCookieSettingsPreference
+         ALLOW,
+         BLOCK_THIRD_PARTY_INCOGNITO,
+         BLOCK_THIRD_PARTY,
+-        BLOCK
++        BLOCK,
++        SESSION_ONLY
+     }
+ 
+     /**
+@@ -48,6 +49,9 @@ public class FourStateCookieSettingsPreference
+         public boolean cookiesContentSettingEnforced;
+         //  Whether third-party blocking is enforced.
+         public boolean thirdPartyBlockingEnforced;
++
++        //  Whether session-only cookies are enabled.
++        public boolean sessionOnlyCookies;
+     }
+ 
+     // Keeps the params that are applied to the UI if the params are set before the UI is ready.
+@@ -55,6 +59,7 @@ public class FourStateCookieSettingsPreference
+ 
+     // UI Elements.
+     private RadioButtonWithDescription mAllowButton;
++    private RadioButtonWithDescription mSessionOnlyButton;
+     private RadioButtonWithDescription mBlockThirdPartyIncognitoButton;
+     private RadioButtonWithDescription mBlockThirdPartyButton;
+     private RadioButtonWithDescription mBlockButton;
+@@ -98,6 +103,8 @@ public class FourStateCookieSettingsPreference
+ 
+         if (mAllowButton.isChecked()) {
+             return CookieSettingsState.ALLOW;
++        } else if (mSessionOnlyButton.isChecked()) {
++            return CookieSettingsState.SESSION_ONLY;
+         } else if (mBlockThirdPartyIncognitoButton.isChecked()) {
+             return CookieSettingsState.BLOCK_THIRD_PARTY_INCOGNITO;
+         } else if (mBlockThirdPartyButton.isChecked()) {
+@@ -118,6 +125,7 @@ public class FourStateCookieSettingsPreference
+         super.onBindViewHolder(holder);
+ 
+         mAllowButton = (RadioButtonWithDescription) holder.findViewById(R.id.allow);
++        mSessionOnlyButton = (RadioButtonWithDescription) holder.findViewById(R.id.session_only);
+         mBlockThirdPartyIncognitoButton =
+                 (RadioButtonWithDescription) holder.findViewById(R.id.block_third_party_incognito);
+         mBlockThirdPartyButton =
+@@ -144,7 +152,9 @@ public class FourStateCookieSettingsPreference
+         // reflect the only possible states you can be in
+         // (Allow/BlockThirdPartyIncognito/BlockThirdParty/Block), instead of using this
+         // combination of multiple signals.
+-        if (!params.allowCookies) {
++        if (params.sessionOnlyCookies) {
++            return CookieSettingsState.SESSION_ONLY;
++        } else if (!params.allowCookies) {
+             return CookieSettingsState.BLOCK;
+         } else if (params.blockThirdPartyCookies
+                 || params.cookieControlsMode == CookieControlsMode.BLOCK_THIRD_PARTY) {
+@@ -159,6 +169,7 @@ public class FourStateCookieSettingsPreference
+     private void configureRadioButtons(Params params) {
+         assert (mRadioGroup != null);
+         mAllowButton.setEnabled(true);
++        mSessionOnlyButton.setEnabled(true);
+         mBlockThirdPartyIncognitoButton.setEnabled(true);
+         mBlockThirdPartyButton.setEnabled(true);
+         mBlockButton.setEnabled(true);
+@@ -189,6 +200,8 @@ public class FourStateCookieSettingsPreference
+         switch (state) {
+             case ALLOW:
+                 return mAllowButton;
++            case SESSION_ONLY:
++                return mSessionOnlyButton;
+             case BLOCK_THIRD_PARTY_INCOGNITO:
+                 return mBlockThirdPartyIncognitoButton;
+             case BLOCK_THIRD_PARTY:
+diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleCategorySettings.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleCategorySettings.java
+old mode 100644
+new mode 100755
+--- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleCategorySettings.java
++++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleCategorySettings.java
+@@ -568,6 +568,7 @@ public class SingleCategorySettings extends SiteSettingsPreferenceFragment
+ 
+     private void setCookieSettingsPreference(CookieSettingsState state) {
+         boolean allowCookies;
++        boolean sessionOnly;
+         @CookieControlsMode
+         int mode;
+ 
+@@ -575,28 +576,50 @@ public class SingleCategorySettings extends SiteSettingsPreferenceFragment
+             case ALLOW:
+                 allowCookies = true;
+                 mode = CookieControlsMode.OFF;
++                sessionOnly = false;
++                break;
++            case SESSION_ONLY:
++                allowCookies = true;
++                sessionOnly = true;
++                mode = CookieControlsMode.BLOCK_THIRD_PARTY;
+                 break;
+             case BLOCK_THIRD_PARTY_INCOGNITO:
+                 allowCookies = true;
+                 mode = CookieControlsMode.INCOGNITO_ONLY;
++                sessionOnly = false;
+                 break;
+             case BLOCK_THIRD_PARTY:
+                 allowCookies = true;
+                 mode = CookieControlsMode.BLOCK_THIRD_PARTY;
++                sessionOnly = false;
+                 break;
+             case BLOCK:
+                 allowCookies = false;
+                 mode = CookieControlsMode.BLOCK_THIRD_PARTY;
++                sessionOnly = false;
+                 break;
+             default:
+                 return;
+         }
+ 
++        // reset default
++        WebsitePreferenceBridge.setContentSetting(
++                   getSiteSettingsClient().getBrowserContextHandle(), ContentSettingsType.COOKIES, 
++                   ContentSettingValues.DEFAULT);
++
+         WebsitePreferenceBridge.setCategoryEnabled(
+                 getSiteSettingsClient().getBrowserContextHandle(), ContentSettingsType.COOKIES,
+                 allowCookies);
+         getPrefs().setCookieControlsMode(mode);
+         getPrefs().setBlockThirdPartyCookies(mode == CookieControlsMode.BLOCK_THIRD_PARTY);
++
++        // set sessiononly content setting for cookies
++        if(sessionOnly)
++        {
++            WebsitePreferenceBridge.setContentSetting(
++                   getSiteSettingsClient().getBrowserContextHandle(), ContentSettingsType.COOKIES, 
++                   ContentSettingValues.SESSION_ONLY);
++				}
+     }
+ 
+     private boolean cookieSettingsExceptionShouldBlock() {
+@@ -1079,6 +1102,13 @@ public class SingleCategorySettings extends SiteSettingsPreferenceFragment
+         params.cookieControlsMode = getPrefs().getCookieControlsMode();
+         params.cookiesContentSettingEnforced = mCategory.isManaged();
+         params.thirdPartyBlockingEnforced = getPrefs().isBlockThirdPartyCookiesManaged();
++
++        if (WebsitePreferenceBridge.getContentSetting(
++                        getSiteSettingsClient().getBrowserContextHandle(), 
++                        mCategory.getContentSettingsType()) == ContentSettingValues.SESSION_ONLY) {
++              params.sessionOnlyCookies = true;
++        }
++
+         fourStateCookieToggle.setState(params);
+     }
+ 
+diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java
+old mode 100644
+new mode 100755
+--- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java
++++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java
+@@ -69,6 +69,7 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
+     public static final String PREF_RESET_SITE = "reset_site_button";
+ 
+     public static final String TAG = "SingleWebsitePreferences";
++
+     // Website permissions (if adding new, see hasPermissionsPreferences and resetSite below)
+     // All permissions from the permissions preference category must be listed here.
+     private static final String[] PERMISSION_PREFERENCE_KEYS = {
+@@ -746,19 +747,36 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
+         setUpPreferenceCommon(preference);
+         ListPreference listPreference = (ListPreference) preference;
+ 
+-        CharSequence[] keys = new String[2];
+-        CharSequence[] descriptions = new String[2];
+-        keys[0] = ContentSetting.toString(ContentSettingValues.ALLOW);
+-        keys[1] = ContentSetting.toString(ContentSettingValues.BLOCK);
+-        descriptions[0] =
+-                getString(ContentSettingsResources.getSiteSummary(ContentSettingValues.ALLOW));
+-        descriptions[1] =
+-                getString(ContentSettingsResources.getSiteSummary(ContentSettingValues.BLOCK));
+-        listPreference.setEntryValues(keys);
+-        listPreference.setEntries(descriptions);
++        if(getContentSettingsTypeFromPreferenceKey(preference.getKey()) == ContentSettingsType.COOKIES) {
++          CharSequence[] keys = new String[3];
++          CharSequence[] descriptions = new String[3];
++          keys[0] = ContentSetting.toString(ContentSettingValues.ALLOW);
++          keys[1] = ContentSetting.toString(ContentSettingValues.BLOCK);
++          keys[2] = ContentSetting.toString(ContentSettingValues.SESSION_ONLY);
++          descriptions[0] =
++                  getString(ContentSettingsResources.getSiteSummary(ContentSettingValues.ALLOW));
++          descriptions[1] =
++                  getString(ContentSettingsResources.getSiteSummary(ContentSettingValues.BLOCK));
++          descriptions[2] =
++                  getString(ContentSettingsResources.getSiteSummary(ContentSettingValues.SESSION_ONLY));
++          listPreference.setEntryValues(keys);
++          listPreference.setEntries(descriptions);
++        } else {
++          CharSequence[] keys = new String[2];
++          CharSequence[] descriptions = new String[2];
++          keys[0] = ContentSetting.toString(ContentSettingValues.ALLOW);
++          keys[1] = ContentSetting.toString(ContentSettingValues.BLOCK);
++          descriptions[0] =
++                  getString(ContentSettingsResources.getSiteSummary(ContentSettingValues.ALLOW));
++          descriptions[1] =
++                  getString(ContentSettingsResources.getSiteSummary(ContentSettingValues.BLOCK));
++          listPreference.setEntryValues(keys);
++          listPreference.setEntries(descriptions);
++				}
++
+         // TODO(crbug.com/735110): Figure out if this is the correct thing to do - here we are
+         // effectively treating non-ALLOW values as BLOCK.
+-        int index = (value == ContentSettingValues.ALLOW ? 0 : 1);
++        int index = (value == ContentSettingValues.SESSION_ONLY ? 2 : (value == ContentSettingValues.ALLOW ? 0 : 1));
+         listPreference.setValueIndex(index);
+         listPreference.setOnPreferenceChangeListener(this);
+         listPreference.setSummary("%s");
+diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java
+old mode 100644
+new mode 100755
+--- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java
++++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java
+@@ -67,6 +67,8 @@ public class SiteSettings
+             }
+             boolean requiresTriStateSetting =
+                     WebsitePreferenceBridge.requiresTriStateContentSetting(contentType);
++            boolean requiresFourStateContentSetting =
++                    WebsitePreferenceBridge.requiresFourStateContentSetting(contentType);
+ 
+             boolean checked = false;
+             @ContentSettingValues
+@@ -78,6 +80,11 @@ public class SiteSettings
+             } else if (requiresTriStateSetting) {
+                 setting = WebsitePreferenceBridge.getContentSetting(
+                         browserContextHandle, contentType);
++            } else if (requiresFourStateContentSetting) {
++                setting = WebsitePreferenceBridge.getContentSetting(
++                        browserContextHandle, contentType);
++                checked = WebsitePreferenceBridge.isCategoryEnabled(
++                        browserContextHandle, contentType);
+             } else {
+                 checked = WebsitePreferenceBridge.isCategoryEnabled(
+                         browserContextHandle, contentType);
+@@ -95,6 +102,8 @@ public class SiteSettings
+                                .showPermissionBlockedMessage(getActivity())) {
+                 // Show 'disabled' message when permission is not granted in Android.
+                 p.setSummary(ContentSettingsResources.getCategorySummary(contentType, false));
++            } else if (Type.COOKIES == prefCategory && requiresFourStateContentSetting && setting == ContentSettingValues.SESSION_ONLY) {
++                p.setSummary(ContentSettingsResources.getCookieSessionOnlySummary());
+             } else if (Type.COOKIES == prefCategory && checked
+                     && getSiteSettingsClient()
+                                .getSiteSettingsPrefClient()
+diff --git a/components/browser_ui/strings/android/site_settings.grdp b/components/browser_ui/strings/android/site_settings.grdp
+old mode 100644
+new mode 100755
+--- a/components/browser_ui/strings/android/site_settings.grdp
++++ b/components/browser_ui/strings/android/site_settings.grdp
+@@ -333,8 +333,14 @@
+     Cookies are files created by websites you visit. Sites use them to remember your preferences. Third-party cookies are created by other sites. These sites own some of the content, like ads or images, that you see on the webpage you visit.
+   </message>
+ 
+-  <!-- JavaScript -->
++  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_COOKIE_SESSION_ONLY_TITLE" desc="Text used to explain the session-only cookies in settings">
++    Session-only cookies
++  </message>
++  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_COOKIE_SESSION_ONLY_ADDITION" desc="Additional text used to explain the session-only cookies option in settings">
++    Cookies are availables only until the browser is closed. Third-party cookies will be blocked.
++  </message>
+ 
++  <!-- JavaScript -->
+   <message name="IDS_WEBSITE_SETTINGS_CATEGORY_JAVASCRIPT_ALLOWED" desc="Summary text explaining that sites are allowed to run Javascript and that it is the recommended setting.">
+     Allow sites to run JavaScript (recommended)
+   </message>
+diff --git a/components/browser_ui/strings/android/translations/browser_ui_strings_it.xtb b/components/browser_ui/strings/android/translations/browser_ui_strings_it.xtb
+old mode 100644
+new mode 100755
+--- a/components/browser_ui/strings/android/translations/browser_ui_strings_it.xtb
++++ b/components/browser_ui/strings/android/translations/browser_ui_strings_it.xtb
+@@ -238,4 +238,6 @@
+ <translation id="9019902583201351841">Gestito dai genitori</translation>
+ <translation id="945632385593298557">Accesso al microfono</translation>
+ <translation id="965817943346481315">Blocca se il sito mostra annunci invasivi o fuorvianti (consigliato)</translation>
++<translation id="1709693995511170330">Solo cookies di sessione</translation>
++<translation id="1835270207120366221">Mantieni i cookies per la sessione corrente.</translation>
+ </translationbundle>
+\ No newline at end of file
+diff --git a/components/content_settings/core/browser/content_settings_registry.cc b/components/content_settings/core/browser/content_settings_registry.cc
+old mode 100644
+new mode 100755
+diff --git a/content/browser/scheduler/responsiveness/calculator.cc b/content/browser/scheduler/responsiveness/calculator.cc
+old mode 100644
+new mode 100755
+--- a/content/browser/scheduler/responsiveness/calculator.cc
++++ b/content/browser/scheduler/responsiveness/calculator.cc
+@@ -331,6 +331,7 @@ void Calculator::OnApplicationStateChanged(
+       is_application_visible_ = false;
+       break;
+     case base::android::APPLICATION_STATE_UNKNOWN:
++    case base::android::APPLICATION_STATE_EXITING:
+       break;  // Keep in previous state.
+   }
+ }
+diff --git a/mojo/public/cpp/base/application_state_mojom_traits.cc b/mojo/public/cpp/base/application_state_mojom_traits.cc
+old mode 100644
+new mode 100755
+--- a/mojo/public/cpp/base/application_state_mojom_traits.cc
++++ b/mojo/public/cpp/base/application_state_mojom_traits.cc
+@@ -22,6 +22,8 @@ mojo_base::mojom::ApplicationState EnumTraits<
+       return mojo_base::mojom::ApplicationState::HAS_STOPPED_ACTIVITIES;
+     case base::android::APPLICATION_STATE_HAS_DESTROYED_ACTIVITIES:
+       return mojo_base::mojom::ApplicationState::HAS_DESTROYED_ACTIVITIES;
++    case base::android::APPLICATION_STATE_EXITING:
++      return mojo_base::mojom::ApplicationState::APPLICATION_STATE_EXITING;
+   }
+   NOTREACHED();
+   return mojo_base::mojom::ApplicationState::UNKNOWN;
+@@ -52,7 +54,10 @@ bool EnumTraits<mojo_base::mojom::ApplicationState,
+       *output = base::android::ApplicationState::
+           APPLICATION_STATE_HAS_DESTROYED_ACTIVITIES;
+       return true;
+-  }
++    case mojo_base::mojom::ApplicationState::APPLICATION_STATE_EXITING:
++      *output = base::android::ApplicationState::
++          APPLICATION_STATE_EXITING;
++      return true;  }
+   return false;
+ }
+ 
+diff --git a/mojo/public/mojom/base/application_state.mojom b/mojo/public/mojom/base/application_state.mojom
+old mode 100644
+new mode 100755
+--- a/mojo/public/mojom/base/application_state.mojom
++++ b/mojo/public/mojom/base/application_state.mojom
+@@ -11,4 +11,5 @@ enum ApplicationState {
+   HAS_PAUSED_ACTIVITIES,
+   HAS_STOPPED_ACTIVITIES,
+   HAS_DESTROYED_ACTIVITIES,
++  APPLICATION_STATE_EXITING
+ };
+diff --git a/services/network/cookie_manager.cc b/services/network/cookie_manager.cc
+old mode 100644
+new mode 100755
+--- a/services/network/cookie_manager.cc
++++ b/services/network/cookie_manager.cc
+@@ -60,6 +60,10 @@ CookieManager::CookieManager(
+   cookie_store_->SetCookieAccessDelegate(
+       std::make_unique<CookieAccessDelegateImpl>(cookie_access_delegate_type,
+                                                  &cookie_settings_));
++  if(session_cleanup_cookie_store_) {
++    session_cleanup_cookie_store_->SetDefaultDeleteCookiePredicate(
++      cookie_settings_.CreateDeleteCookieOnExitPredicate());
++  }
+ }
+ 
+ CookieManager::~CookieManager() {
+@@ -73,6 +77,16 @@ CookieManager::~CookieManager() {
+   cookie_store_->SetCookieAccessDelegate(nullptr);
+ }
+ 
++void CookieManager::DeleteSessionCookies()
++{
++  // anonymous profile doesn't have a session_cleanup_cookie_store
++  if (session_cleanup_cookie_store_) {
++    session_cleanup_cookie_store_->DeleteSessionCookies(
++        cookie_settings_.CreateDeleteCookieOnExitPredicate());
++  }
++}
++
++
+ void CookieManager::AddReceiver(
+     mojo::PendingReceiver<mojom::CookieManager> receiver) {
+   receivers_.Add(this, std::move(receiver));
+diff --git a/services/network/cookie_manager.h b/services/network/cookie_manager.h
+old mode 100644
+new mode 100755
+--- a/services/network/cookie_manager.h
++++ b/services/network/cookie_manager.h
+@@ -101,6 +101,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieManager
+   // Causes the next call to GetCookieList to crash the process.
+   static void CrashOnGetCookieList();
+ 
++  // launch session_cleanup_cookie_store_()
++  void DeleteSessionCookies() override;
++
+  private:
+   // State associated with a CookieChangeListener.
+   struct ListenerRegistration {
+diff --git a/services/network/network_context.cc b/services/network/network_context.cc
+old mode 100644
+new mode 100755
+--- a/services/network/network_context.cc
++++ b/services/network/network_context.cc
+@@ -289,12 +289,23 @@ class NetworkContextApplicationStatusListener
+   }
+ 
+   void Notify(base::android::ApplicationState state) override {
++    if(cookie_manager_) {
++      if(state == base::android::APPLICATION_STATE_EXITING) {
++        cookie_manager_->DeleteSessionCookies();
++			}
++		}
++
+     if (callback_)
+       callback_.Run(state);
+   }
+ 
++  void SetCookieManager(CookieManager* cookie_manager) {
++    cookie_manager_ = cookie_manager;
++	}
++
+  private:
+   ApplicationStateChangeCallback callback_;
++  CookieManager* cookie_manager_;
+ };
+ #endif
+ 
+@@ -2106,6 +2117,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext() {
+       std::move(session_cleanup_cookie_store),
+       std::move(params_->cookie_manager_params));
+ 
++#if defined(OS_ANDROID)
++
++  (static_cast<NetworkContextApplicationStatusListener*>(app_status_listener_.get()))->SetCookieManager(cookie_manager_.get());
++
++#endif
++
+   if (cert_net_fetcher_)
+     cert_net_fetcher_->SetURLRequestContext(result.url_request_context.get());
+ 
+diff --git a/services/network/public/mojom/cookie_manager.mojom b/services/network/public/mojom/cookie_manager.mojom
+old mode 100644
+new mode 100755
+--- a/services/network/public/mojom/cookie_manager.mojom
++++ b/services/network/public/mojom/cookie_manager.mojom
+@@ -361,4 +361,7 @@ interface CookieManager {
+   // the caller with a callback when settings have been updated.
+   SetStorageAccessGrantSettings(
+       array<content_settings.mojom.ContentSettingPatternSource> settings) => ();
++
++  // launch session_cleanup_cookie_store_()
++  DeleteSessionCookies();
+ };
+diff --git a/services/network/session_cleanup_cookie_store.cc b/services/network/session_cleanup_cookie_store.cc
+old mode 100644
+new mode 100755
+--- a/services/network/session_cleanup_cookie_store.cc
++++ b/services/network/session_cleanup_cookie_store.cc
+@@ -49,6 +49,11 @@ SessionCleanupCookieStore::~SessionCleanupCookieStore() {
+       "SessionCleanupCookieStore");
+ }
+ 
++void SessionCleanupCookieStore::SetDefaultDeleteCookiePredicate(DeleteCookiePredicate delete_cookie_predicate)
++{
++  delete_cookie_predicate_ = delete_cookie_predicate;
++}
++
+ void SessionCleanupCookieStore::DeleteSessionCookies(
+     DeleteCookiePredicate delete_cookie_predicate) {
+   using CookieOrigin = net::SQLitePersistentCookieStore::CookieOrigin;
+@@ -137,6 +142,40 @@ void SessionCleanupCookieStore::OnLoad(
+     ++cookies_per_origin_[origin];
+   }
+ 
++#if defined(OS_ANDROID)
++  // In android delete session cookies is never called because it's in dtor(), launch now at restart
++  using CookieOrigin = net::SQLitePersistentCookieStore::CookieOrigin;
++  if (!force_keep_session_state_ && delete_cookie_predicate_)
++  {
++    std::list<CookieOrigin> session_only_cookies;
++
++    auto cookies_filtered =
++      std::remove_if(
++                 cookies.begin(),
++                 cookies.end(),
++                 [this,&session_only_cookies](const auto& entry) {
++                    bool mustRemoved = false;
++                    CookieOrigin origin(entry->Domain(), entry->IsSecure());
++                    if(cookies_per_origin_cleared_[origin] == false)
++                    {
++                      mustRemoved = delete_cookie_predicate_.Run(origin.first, origin.second);
++                    }
++                    if( mustRemoved ) session_only_cookies.push_back(origin);
++                    return mustRemoved;
++                 });
++
++    cookies.erase(cookies_filtered, cookies.end());
++
++    // We need to remove session by origin once
++    for (const auto& cookie : cookies) {
++      CookieOrigin origin(cookie->Domain(), cookie->IsSecure());
++      cookies_per_origin_cleared_[origin] = true;
++    }
++
++    persistent_store_->DeleteAllInList(session_only_cookies);
++  }
++#endif
++
+   std::move(loaded_callback).Run(std::move(cookies));
+ }
+ 
+diff --git a/services/network/session_cleanup_cookie_store.h b/services/network/session_cleanup_cookie_store.h
+old mode 100644
+new mode 100755
+--- a/services/network/session_cleanup_cookie_store.h
++++ b/services/network/session_cleanup_cookie_store.h
+@@ -59,6 +59,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) SessionCleanupCookieStore
+   // |delete_cookie_predicate| returns true for.
+   void DeleteSessionCookies(DeleteCookiePredicate delete_cookie_predicate);
+ 
++  // Used on android to force deletion of session cookies
++  using CookiesPerOriginClearedMap =
++      std::map<net::SQLitePersistentCookieStore::CookieOrigin, bool>;
++  void SetDefaultDeleteCookiePredicate(DeleteCookiePredicate delete_cookie_predicate);
++
+  protected:
+   ~SessionCleanupCookieStore() override;
+ 
+@@ -80,6 +85,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) SessionCleanupCookieStore
+ 
+   net::NetLogWithSource net_log_;
+ 
++  // Used on android to force deletion of session cookies
++  DeleteCookiePredicate delete_cookie_predicate_;
++  CookiesPerOriginClearedMap cookies_per_origin_cleared_;
++
+   DISALLOW_COPY_AND_ASSIGN(SessionCleanupCookieStore);
+ };
+ 
+-- 
+2.17.1
+

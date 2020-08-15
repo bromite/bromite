@@ -1,3 +1,9 @@
+# 84.0.4147.121
+* removed Qwant search engine
+* fixed zh_CN translations
+* added patch to not embed non-free unrar library (fixes https://github.com/bromite/bromite/issues/674)
+* enable improved cookie controls by default
+
 # 84.0.4147.119
 * update zh_CN translations
 * disable CORS RFC1918 (fixes https://github.com/bromite/bromite/issues/664)
