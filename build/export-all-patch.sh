@@ -15,5 +15,8 @@ for patch in $ALLPATCHS; do
 	sed -i '/^index/d' ~/bromite/build/patches/$PATCH_FILE
 	sed -i '/^From 0000000000000000000000000000000000000000/d' ~/bromite/build/patches/$PATCH_FILE
 	sed -i '/^FILE:/d' ~/bromite/build/patches/$PATCH_FILE
+	sed -i '/^ mode change/d' ~/bromite/build/patches/$PATCH_FILE
+	sed -i '/^old mode /d' ~/bromite/build/patches/$PATCH_FILE
+	sed -i '/^new mode /d' ~/bromite/build/patches/$PATCH_FILE
 
 done
