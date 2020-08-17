@@ -1,3 +1,9 @@
+# 84.0.4147.132
+* fix exit menu item not always working (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/673)
+* session-only cookies site settings option (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/142)
+* add setting to enable history on incognito mode (thanks to @uazo)
+* removed old non-working site settings patches
+
 # 84.0.4147.121
 * removed Qwant search engine
 * fixed zh_CN translations
