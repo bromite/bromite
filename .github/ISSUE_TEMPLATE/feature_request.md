@@ -8,9 +8,10 @@ about: Suggest a privacy-related idea for this project
 Have you searched the issue tracker? https://github.com/bromite/bromite/issues
 Have you read the F.A.Q.s? https://github.com/bromite/bromite/blob/master/FAQ.md
 Have you read the README? https://github.com/bromite/bromite/blob/master/README.md
+Have you read the Wiki? https://github.com/bromite/bromite/wiki
 -->
 
-<!-- Do not submit feature requests for extensions support or clear data on exit. -->
+<!-- Do not submit feature requests for extensions support or adding a search engine. -->
 
 ### Is your feature request related to privacy?
 
