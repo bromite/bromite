@@ -1,3 +1,10 @@
+# 85.0.4183.82
+* disable scroll-to-text-fragment
+* remove NTP blocklisted URLs when adding an URL as bookmark
+* removed duet flags
+* unexpire `#darken-websites-checkbox-in-themes-setting` flag
+* rollback dav1d upgrade which breaks x86
+
 # 84.0.4147.132
 * fix exit menu item not always working (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/673)
 * session-only cookies site settings option (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/142)

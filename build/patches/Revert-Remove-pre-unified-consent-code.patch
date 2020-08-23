@@ -9,10 +9,9 @@ Disable unified consent on Android
 Unified consent miscellanous backport fixes
 ---
  .../java/res/xml/privacy_preferences.xml      | 25 +++++
- .../privacy/settings/PrivacySettings.java     | 97 ++++++++++++++++---
+ .../privacy/settings/PrivacySettings.java     | 95 +++++++++++++++++--
  .../sync/SyncNotificationController.java      |  6 +-
  .../chrome/browser/sync/SyncTestRule.java     | 10 +-
- .../chromium/chrome/browser/sync/UkmTest.java | 50 +++++++++-
  .../strings/android_chrome_strings.grd        | 15 +++
  .../android_chrome_strings_am.xtb             | 19 +++-
  .../android_chrome_strings_ar.xtb             | 19 +++-
@@ -67,7 +66,7 @@ Unified consent miscellanous backport fixes
  .../android_chrome_strings_zh-CN.xtb          | 19 +++-
  .../android_chrome_strings_zh-TW.xtb          | 19 +++-
  .../unified_consent_service_factory.cc        |  5 +-
- 59 files changed, 1121 insertions(+), 75 deletions(-)
+ 58 files changed, 1073 insertions(+), 71 deletions(-)
 
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
 --- a/chrome/android/java/res/xml/privacy_preferences.xml
@@ -107,7 +106,7 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
      <Preference
          android:fragment="org.chromium.chrome.browser.privacy.settings.DoNotTrackSettings"
          android:key="do_not_track"
-@@ -28,6 +49,10 @@
+@@ -32,6 +53,10 @@
          android:title="@string/clear_browsing_data_title"
          android:summary="@string/clear_browsing_data_summary"
          android:fragment="org.chromium.chrome.browser.browsing_data.ClearBrowsingDataTabsFragment" />
@@ -121,7 +120,7 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
-@@ -16,10 +16,12 @@ import androidx.vectordrawable.graphics.drawable.VectorDrawableCompat;
+@@ -16,11 +16,13 @@ import androidx.vectordrawable.graphics.drawable.VectorDrawableCompat;
  
  import org.chromium.base.BuildInfo;
  import org.chromium.chrome.R;
@@ -129,12 +128,13 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
  import org.chromium.chrome.browser.help.HelpAndFeedback;
  import org.chromium.chrome.browser.preferences.Pref;
  import org.chromium.chrome.browser.preferences.PrefServiceBridge;
+ import org.chromium.chrome.browser.privacy.settings.PrivacyPreferencesManager.DohEntry;
  import org.chromium.chrome.browser.profiles.Profile;
 +import org.chromium.chrome.browser.safe_browsing.SafeBrowsingBridge;
  import org.chromium.chrome.browser.settings.ChromeManagedPreferenceDelegate;
  import org.chromium.chrome.browser.settings.SettingsLauncher;
  import org.chromium.chrome.browser.settings.SettingsLauncherImpl;
-@@ -36,18 +38,24 @@ import org.chromium.ui.text.SpanApplier;
+@@ -40,11 +42,19 @@ import java.util.List;
   */
  public class PrivacySettings
          extends PreferenceFragmentCompat implements Preference.OnPreferenceChangeListener {
@@ -145,26 +145,19 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
 +    private static final String PREF_SAFE_BROWSING = "safe_browsing";
      private static final String PREF_CAN_MAKE_PAYMENT = "can_make_payment";
      private static final String PREF_NETWORK_PREDICTIONS = "preload_pages";
+     private static final String PREF_SECURE_DNS = "secure_dns";
 -    private static final String PREF_USAGE_STATS = "usage_stats_reporting";
      private static final String PREF_DO_NOT_TRACK = "do_not_track";
 +    private static final String PREF_CLEAR_BROWSING_DATA = "clear_browsing_data";
 +    private static final String PREF_SYNC_AND_SERVICES_LINK_DIVIDER =
 +            "sync_and_services_link_divider";
-     private static final String PREF_SYNC_AND_SERVICES_LINK = "sync_and_services_link";
 +    private static final String PREF_USAGE_STATS = "usage_stats_reporting";
+     private static final String PREF_SYNC_AND_SERVICES_LINK = "sync_and_services_link";
  
      private ManagedPreferenceDelegate mManagedPreferenceDelegate;
- 
-     @Override
-     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
--        PrivacyPreferencesManager privacyPrefManager = PrivacyPreferencesManager.getInstance();
--        privacyPrefManager.migrateNetworkPredictionPreferences();
-         SettingsUtils.addPreferencesFromResource(this, R.xml.privacy_preferences);
-         getActivity().setTitle(R.string.prefs_privacy);
-         setHasOptionsMenu(true);
-@@ -65,15 +73,30 @@ public class PrivacySettings
-         networkPredictionPref.setOnPreferenceChangeListener(this);
-         networkPredictionPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
+@@ -73,15 +83,30 @@ public class PrivacySettings
+         Preference secureDnsPref = findPreference(PREF_SECURE_DNS);
+         secureDnsPref.setVisible(privacyPrefManager.isDnsOverHttpsUiEnabled());
  
 -        Preference syncAndServicesLink = findPreference(PREF_SYNC_AND_SERVICES_LINK);
 -        NoUnderlineClickableSpan linkSpan = new NoUnderlineClickableSpan(getResources(), view -> {
@@ -202,7 +195,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
  
          updateSummaries();
      }
-@@ -86,6 +109,15 @@ public class PrivacySettings
+@@ -94,6 +119,15 @@ public class PrivacySettings
                      Pref.CAN_MAKE_PAYMENT_ENABLED, (boolean) newValue);
          } else if (PREF_NETWORK_PREDICTIONS.equals(key)) {
              PrivacyPreferencesManager.getInstance().setNetworkPredictionEnabled((boolean) newValue);
@@ -218,7 +211,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
          }
  
          return true;
-@@ -103,6 +135,35 @@ public class PrivacySettings
+@@ -111,6 +145,35 @@ public class PrivacySettings
      public void updateSummaries() {
          PrefServiceBridge prefServiceBridge = PrefServiceBridge.getInstance();
  
@@ -254,7 +247,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
          CheckBoxPreference canMakePaymentPref =
                  (CheckBoxPreference) findPreference(PREF_CAN_MAKE_PAYMENT);
          if (canMakePaymentPref != null) {
-@@ -140,6 +201,18 @@ public class PrivacySettings
+@@ -173,6 +236,18 @@ public class PrivacySettings
      private ChromeManagedPreferenceDelegate createManagedPreferenceDelegate() {
          return preference -> {
              String key = preference.getKey();
@@ -302,7 +295,7 @@ diff --git a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/SyncT
  import org.chromium.chrome.browser.identity.UniqueIdentificationGenerator;
  import org.chromium.chrome.browser.identity.UniqueIdentificationGeneratorFactory;
  import org.chromium.chrome.browser.identity.UuidBasedUniqueIdentificationGenerator;
-@@ -428,9 +429,12 @@ public class SyncTestRule extends ChromeActivityTestRule<ChromeActivity> {
+@@ -430,9 +431,12 @@ public class SyncTestRule extends ChromeActivityTestRule<ChromeActivity> {
                              Assert.fail("Sign-in was aborted");
                          }
                      });
@@ -318,87 +311,10 @@ diff --git a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/SyncT
          });
          if (setFirstSetupComplete) {
              SyncTestUtil.waitForSyncActive();
-diff --git a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/UkmTest.java b/chrome/android/javatests/src/org/chromium/chrome/browser/sync/UkmTest.java
---- a/chrome/android/javatests/src/org/chromium/chrome/browser/sync/UkmTest.java
-+++ b/chrome/android/javatests/src/org/chromium/chrome/browser/sync/UkmTest.java
-@@ -15,10 +15,13 @@ import org.junit.Test;
- import org.junit.runner.RunWith;
- 
- import org.chromium.base.test.util.CommandLineFlags;
-+import org.chromium.chrome.browser.ChromeFeatureList;
- import org.chromium.chrome.browser.flags.ChromeSwitches;
- import org.chromium.chrome.browser.metrics.UmaSessionStats;
- import org.chromium.chrome.browser.tab.Tab;
- import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
-+import org.chromium.chrome.test.util.browser.Features.DisableFeatures;
-+import org.chromium.chrome.test.util.browser.sync.SyncTestUtil;
- import org.chromium.components.sync.ModelType;
- import org.chromium.content_public.browser.test.util.JavaScriptUtils;
- import org.chromium.content_public.browser.test.util.TestThreadUtils;
-@@ -132,6 +135,33 @@ public class UkmTest {
-         Assert.assertTrue("UKM Enabled:", isUkmEnabled(normalTab));
-     }
- 
-+    @Test
-+    @SmallTest
-+    @DisableFeatures(ChromeFeatureList.UNIFIED_CONSENT)
-+    public void secondaryPassphraseCheck() throws Exception {
-+        // Keep in sync with UkmBrowserTest.SecondaryPassphraseCheck in
-+        // chrome/browser/metrics/ukm_browsertest.cc.
-+        // Make sure that UKM is disabled when an secondary passphrase is set.
-+
-+        TestThreadUtils.runOnUiThreadBlocking(
-+                () -> UmaSessionStats.updateMetricsAndCrashReportingForTesting(true));
-+
-+        // Enable a Syncing account.
-+        Account account = mSyncTestRule.setUpTestAccountAndSignIn();
-+        Tab normalTab = mSyncTestRule.getActivity().getActivityTab();
-+        Assert.assertTrue("UKM Enabled:", isUkmEnabled(normalTab));
-+
-+        String clientId = getUkmClientId(normalTab);
-+
-+        // Add a passphrase. This should disable UKM.
-+        SyncTestUtil.encryptWithPassphrase("passphrase");
-+
-+        Assert.assertFalse("UKM Enabled:", isUkmEnabled(normalTab));
-+
-+        // Client ID should have been reset.
-+        Assert.assertNotEquals("Client id:", clientId, getUkmClientId(normalTab));
-+    }
-+
-     @Test
-     @SmallTest
-     public void singleSyncSignoutCheck() throws Exception {
-@@ -178,7 +208,23 @@ public class UkmTest {
-         // Disable Sync for history.
-         mSyncTestRule.disableDataType(ModelType.TYPED_URLS);
- 
--        // Disable history sync does not disable UKM
--        Assert.assertTrue("UKM Enabled:", isUkmEnabled(normalTab));
-+        if (ChromeFeatureList.isEnabled(ChromeFeatureList.UNIFIED_CONSENT)) {
-+            // Disable history sync does not disable UKM when unified consent is
-+            // enabled.
-+            Assert.assertTrue("UKM Enabled:", isUkmEnabled(normalTab));
-+        } else {
-+            Assert.assertFalse("UKM Enabled:", isUkmEnabled(normalTab));
-+
-+            // Client ID should have been reset.
-+            Assert.assertNotEquals("Client id:", originalClientId, getUkmClientId(normalTab));
-+
-+            // Re-enable Sync for history.
-+            mSyncTestRule.enableDataType(ModelType.TYPED_URLS);
-+
-+            Assert.assertTrue("UKM Enabled:", isUkmEnabled(normalTab));
-+
-+            // Client ID should still be different.
-+            Assert.assertNotEquals("Client id:", originalClientId, getUkmClientId(normalTab));
-+        }
-     }
- }
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -671,6 +671,18 @@ CHAR-LIMIT guidelines:
+@@ -681,6 +681,18 @@ CHAR-LIMIT guidelines:
        <message name="IDS_PREFS_PRIVACY" desc="Title for the Privacy preferences. [CHAR-LIMIT=32]">
          Privacy
        </message>
@@ -417,7 +333,7 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
        <message name="IDS_SAFE_BROWSING_SCOUT_REPORTING_TITLE" desc="Title for checkbox that controls reporting data to detect bad apps/sites. Please ensure ‘Safe Browsing’ in this message matches the ‘Safe Browsing’ settings title.">
          Help improve Chrome security
        </message>
-@@ -1098,6 +1110,9 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -1217,6 +1229,9 @@ Your Google account may have other forms of browsing history like searches and a
        <message name="IDS_ACCOUNT_MANAGEMENT_TITLE" desc="Header title for the account management screen. [CHAR-LIMIT=32]">
          Signed in to Google as
        </message>
@@ -430,10 +346,10 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_am.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_am.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_am.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_am.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">ከመስመር ውጪ</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">ሁሉንም ትሮች ይዝጉ</translation>
  <translation id="987264212798334818">አጠቃላይ</translation>
+ <translation id="996149300115483134">የምግብ ካርድ ምናሌ ተዘግቷል</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">ትሮችዎን ከሌሎች መሣሪያዎችዎ ለማግኘት ወደ Chrome ይግቡ።</translation>
@@ -457,10 +373,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ar.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ar.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ar.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ar.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">بلا اتصال</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">إغلاق جميع علامات التبويب</translation>
  <translation id="987264212798334818">عام</translation>
+ <translation id="996149300115483134">قائمة بطاقات الخلاصة مغلقة</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">‏للحصول على علامات التبويب من أجهزتك الأخرى، سجّل الدخول إلى Chrome.</translation>
@@ -484,10 +400,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_bg.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_bg.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_bg.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_bg.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">Офлайн</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">Затваряне на всички раздели</translation>
  <translation id="987264212798334818">Общи</translation>
+ <translation id="996149300115483134">Менюто на картата за емисията е затворено</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Влезте в Chrome, за да получите разделите си от другите си устройства.</translation>
@@ -511,10 +427,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_bn.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_bn.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_bn.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_bn.xtb
-@@ -1002,4 +1002,21 @@
- <translation id="981121421437150478">অফলাইন</translation>
+@@ -1047,4 +1047,21 @@
  <translation id="983192555821071799">সমস্ত ট্যাবগুলি বন্ধ করুন</translation>
  <translation id="987264212798334818">সাধারণ</translation>
+ <translation id="996149300115483134">ফিড কার্ডের মেনু বন্ধ করা আছে</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">আপনার অন্য ডিভাইসগুলি থেকে আপনার ট্যাবগুলি পেতে, Chrome-এ সাইন-ইন করুন।</translation>
@@ -538,10 +454,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ca.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ca.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ca.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ca.xtb
-@@ -1000,4 +1000,21 @@ Per exemple, és possible que alguns llocs web responguin a aquesta sol·licitud
- <translation id="981121421437150478">Sense connexió</translation>
+@@ -1045,4 +1045,21 @@ Per exemple, és possible que alguns llocs web responguin a aquesta sol·licitud
  <translation id="983192555821071799">Tanca totes les pestanyes</translation>
  <translation id="987264212798334818">General</translation>
+ <translation id="996149300115483134">El menú de la targeta del tauler està tancat</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Inicia la sessió a Chrome per accedir a les pestanyes dels altres dispositius que tinguis.</translation>
@@ -565,10 +481,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_cs.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_cs.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_cs.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_cs.xtb
-@@ -1000,4 +1000,21 @@ Některé weby mohou například na tento požadavek reagovat tak, že vám zobr
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Některé weby mohou například na tento požadavek reagovat tak, že vám zobr
  <translation id="983192555821071799">Zavřít všechny karty</translation>
  <translation id="987264212798334818">Všeobecné</translation>
+ <translation id="996149300115483134">Nabídka karty informačních kanálů je zavřená</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Chcete-li získat přístup ke kartám ze svých ostatních zařízení, přihlaste se do Chromu.</translation>
@@ -592,10 +508,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_da.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_da.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_da.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_da.xtb
-@@ -1000,4 +1000,21 @@ Nogle websites kan f.eks. reagere på denne anmodning ved at vise dig annoncer,
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Nogle websites kan f.eks. reagere på denne anmodning ved at vise dig annoncer,
  <translation id="983192555821071799">Luk alle faner</translation>
  <translation id="987264212798334818">Generelt</translation>
+ <translation id="996149300115483134">Feedkortmenuen er lukket</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Log ind på Chrome for at få adgang til dine faner på dine andre enheder.</translation>
@@ -619,10 +535,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_de.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_de.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_de.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_de.xtb
-@@ -1000,4 +1000,21 @@ Einige Websites schalten möglicherweise Werbeanzeigen, deren Auswahl nicht dara
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Einige Websites schalten möglicherweise Werbeanzeigen, deren Auswahl nicht dara
  <translation id="983192555821071799">Alle Tabs schließen</translation>
  <translation id="987264212798334818">Allgemein</translation>
+ <translation id="996149300115483134">Feedkartenmenü ist geschlossen</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Melden Sie sich in Chrome an, um Tabs von Ihren anderen Geräten abzurufen.</translation>
@@ -646,10 +562,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_el.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_el.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_el.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_el.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">Εκτός σύνδεσης</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">Κλείσιμο όλων των καρτελών</translation>
  <translation id="987264212798334818">Γενικά</translation>
+ <translation id="996149300115483134">Το μενού της κάρτας ροής είναι κλειστό</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Για να εμφανίζονται οι καρτέλες από τις άλλες συσκευές σας, συνδεθείτε στο Chrome.</translation>
@@ -673,10 +589,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_en-GB.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_en-GB.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_en-GB.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_en-GB.xtb
-@@ -1000,4 +1000,21 @@ For example, some websites may respond to this request by showing you ads that a
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ For example, some websites may respond to this request by showing you ads that a
  <translation id="983192555821071799">Close all tabs</translation>
  <translation id="987264212798334818">General</translation>
+ <translation id="996149300115483134">Feed card menu is closed</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">To get your tabs from your other devices, sign in to Chrome.</translation>
@@ -700,10 +616,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_es-419.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_es-419.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_es-419.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_es-419.xtb
-@@ -1000,4 +1000,21 @@ Por ejemplo, algunos sitios web pueden responder a la solicitud mediante anuncio
- <translation id="981121421437150478">Sin conexión</translation>
+@@ -1045,4 +1045,21 @@ Por ejemplo, algunos sitios web pueden responder a la solicitud mediante anuncio
  <translation id="983192555821071799">Cerrar todas las pestañas</translation>
  <translation id="987264212798334818">General</translation>
+ <translation id="996149300115483134">Se cerró el menú de la tarjeta de feed</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Accede a Chrome para obtener las pestañas de tus otros dispositivos.</translation>
@@ -727,10 +643,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_es.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_es.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_es.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_es.xtb
-@@ -1000,4 +1000,21 @@ Por ejemplo, algunos sitios web pueden responder a la solicitud mostrándote anu
- <translation id="981121421437150478">Sin conexión</translation>
+@@ -1045,4 +1045,21 @@ Por ejemplo, algunos sitios web pueden responder a la solicitud mostrándote anu
  <translation id="983192555821071799">Cerrar todas las pestañas</translation>
  <translation id="987264212798334818">General</translation>
+ <translation id="996149300115483134">El menú de la tarjeta del feed está cerrado</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Inicia sesión en Chrome para ver las pestañas de tus otros dispositivos.</translation>
@@ -754,10 +670,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_et.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_et.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_et.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_et.xtb
-@@ -1000,4 +1000,21 @@ Näiteks võivad mõned veebisaidid taotlusele reageerida nii, et näitavad teil
- <translation id="981121421437150478">Võrguühenduseta</translation>
+@@ -1045,4 +1045,21 @@ Näiteks võivad mõned veebisaidid taotlusele reageerida nii, et näitavad teil
  <translation id="983192555821071799">Sule kõik vahelehed</translation>
  <translation id="987264212798334818">Üldine</translation>
+ <translation id="996149300115483134">Voo kaardimenüü on suletud</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Vahelehtede hankimiseks oma teistest seadmetest logige Chrome'i sisse.</translation>
@@ -781,10 +697,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fa.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fa.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fa.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fa.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">آفلاین</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">بستن همه برگه‌ها</translation>
  <translation id="987264212798334818">موارد کلی</translation>
+ <translation id="996149300115483134">منوی کارت فید بسته شد</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">‏برای دسترسی به برگه‌هایتان در دستگاه‌های دیگر، به سیستم Chrome وارد شوید.</translation>
@@ -808,10 +724,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fi.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fi.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fi.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fi.xtb
-@@ -1000,4 +1000,21 @@ Jotkin verkkosivustot voivat vastata tähän pyyntöön esimerkiksi näyttämäl
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Jotkin verkkosivustot voivat vastata tähän pyyntöön esimerkiksi näyttämäl
  <translation id="983192555821071799">Sulje kaikki välilehdet</translation>
  <translation id="987264212798334818">Yleistä</translation>
+ <translation id="996149300115483134">Fiidikorttien valikko on suljettu</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Käytä välilehtiä muilta laitteiltasi kirjautumalla Chromeen.</translation>
@@ -835,10 +751,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fil.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fil.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fil.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fil.xtb
-@@ -1000,4 +1000,21 @@ Halimbawa, puwedeng tumugon ang ilang website sa kahilingang ito sa pamamagitan
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Halimbawa, puwedeng tumugon ang ilang website sa kahilingang ito sa pamamagitan
  <translation id="983192555821071799">Isara ang lahat ng tab</translation>
  <translation id="987264212798334818">Pangkalahatan</translation>
+ <translation id="996149300115483134">Nakasara ang menu ng feed card</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Upang makuha ang iyong mga tab mula sa iba mo pang mga device, mag-sign in sa Chrome.</translation>
@@ -862,10 +778,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_fr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_fr.xtb
-@@ -1000,4 +1000,21 @@ Par exemple, certains sites Web peuvent répondre à cette demande en diffusant
- <translation id="981121421437150478">Hors connexion</translation>
+@@ -1045,4 +1045,21 @@ Par exemple, certains sites Web peuvent répondre à cette demande en diffusant
  <translation id="983192555821071799">Fermer tous les onglets</translation>
  <translation id="987264212798334818">Général</translation>
+ <translation id="996149300115483134">Le menu de la carte de flux est fermé</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Connectez-vous à Chrome pour accéder à vos onglets sur vos autres appareils.</translation>
@@ -889,10 +805,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_gu.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_gu.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_gu.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_gu.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">ઑફલાઇન</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">બધા ટેબ્સ બંધ કરો</translation>
  <translation id="987264212798334818">સામાન્ય</translation>
+ <translation id="996149300115483134">ફીડ કાર્ડ મેનૂ બંધ છે</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">તમારા અન્ય ઉપકરણો પરથી તમારા ટૅબ્સ મેળવવા માટે, Chrome માં સાઇન ઇન કરો.</translation>
@@ -916,10 +832,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hi.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hi.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hi.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hi.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">ऑफ़लाइन</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">सभी टैब बंद करें</translation>
  <translation id="987264212798334818">सामान्य</translation>
+ <translation id="996149300115483134">फ़ीड कार्ड मेन्यू बंद हो गया है</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">अपने दूसरे डिवाइस से अपने टैब पाने के लिए, Chrome में साइन इन करें.</translation>
@@ -943,10 +859,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hr.xtb
-@@ -1000,4 +1000,21 @@ Na primjer, neke web-lokacije na taj zahtjev mogu odgovoriti tako da vam prikaž
- <translation id="981121421437150478">Izvanmrežno</translation>
+@@ -1045,4 +1045,21 @@ Na primjer, neke web-lokacije na taj zahtjev mogu odgovoriti tako da vam prikaž
  <translation id="983192555821071799">Zatvori sve kartice</translation>
  <translation id="987264212798334818">Općenito</translation>
+ <translation id="996149300115483134">Izbornik kartice feeda je zatvoren</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Da bi se prikazale kartice s vaših ostalih uređaja, prijavite se na Chrome.</translation>
@@ -970,10 +886,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hu.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hu.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_hu.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_hu.xtb
-@@ -1000,4 +1000,21 @@ Egyes webhelyek például válaszolhatnak rá úgy, hogy olyan hirdetéseket jel
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Egyes webhelyek például válaszolhatnak rá úgy, hogy olyan hirdetéseket jel
  <translation id="983192555821071799">Az összes lap bezárása</translation>
  <translation id="987264212798334818">Általános</translation>
+ <translation id="996149300115483134">A hírcsatornakártya menüje be van csukva</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Ha a többi eszközéről is szeretné elérni a lapjait, jelentkezzen be a Chrome-ba.</translation>
@@ -997,10 +913,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_id.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_id.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_id.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_id.xtb
-@@ -1000,4 +1000,21 @@ Misalnya, beberapa situs web mungkin menanggapi permintaan ini dengan menayangka
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Misalnya, beberapa situs web mungkin menanggapi permintaan ini dengan menayangka
  <translation id="983192555821071799">Tutup semua tab</translation>
  <translation id="987264212798334818">Umum</translation>
+ <translation id="996149300115483134">Menu kartu feed ditutup</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Untuk mengakses tab Anda dari perangkat lainnya, login ke Chrome.</translation>
@@ -1024,10 +940,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_it.xtb
-@@ -1000,4 +1000,21 @@ Ad esempio, alcuni siti web potrebbero rispondere alla richiesta mostrando annun
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Ad esempio, alcuni siti web potrebbero rispondere alla richiesta mostrando annun
  <translation id="983192555821071799">Chiudi tutte le schede</translation>
  <translation id="987264212798334818">Generali</translation>
+ <translation id="996149300115483134">Menu scheda feed chiuso</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Accedi a Chrome per trovare le tue schede degli altri dispositivi.</translation>
@@ -1051,10 +967,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_iw.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_iw.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_iw.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_iw.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">לא מקוון</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">סגירת כל הכרטיסיות</translation>
  <translation id="987264212798334818">כללי</translation>
+ <translation id="996149300115483134">תפריט כרטיס הפיד סגור</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">‏כדי לקבל את הכרטיסיות מהמכשירים האחרים שלך, יש להיכנס ל-Chrome.</translation>
@@ -1078,10 +994,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ja.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ja.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ja.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ja.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">オフライン</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">すべてのタブを閉じる</translation>
  <translation id="987264212798334818">全般</translation>
+ <translation id="996149300115483134">フィードカード メニューは閉じています</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">他のデバイスと同じタブを使用するには、Chrome にログインします。</translation>
@@ -1105,10 +1021,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_kn.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_kn.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_kn.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_kn.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">ಆಫ್‌ಲೈನ್</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">ಎಲ್ಲ ಟ್ಯಾಬ್‌ಗಳನ್ನು ಮುಚ್ಚಿ</translation>
  <translation id="987264212798334818">ಸಾಮಾನ್ಯ</translation>
+ <translation id="996149300115483134">ಫೀಡ್ ಕಾರ್ಡ್ ಮೆನು ಅನ್ನು ಮುಚ್ಚಲಾಗಿದೆ</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">ನಿಮ್ಮ ಇತರ ಸಾಧನಗಳಿಂದ ನಿಮ್ಮ ಟ್ಯಾಬ್‌ಗಳನ್ನು ಪಡೆದುಕೊಳ್ಳಲು, Chrome ಗೆ ಸೈನ್ ಇನ್ ಮಾಡಿ.</translation>
@@ -1132,10 +1048,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ko.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ko.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ko.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ko.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">오프라인</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">탭 모두 닫기</translation>
  <translation id="987264212798334818">일반</translation>
+ <translation id="996149300115483134">피드 카드 메뉴가 닫힘</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">다른 기기에서 탭을 가져오려면 Chrome에 로그인하세요.</translation>
@@ -1159,10 +1075,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_lt.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_lt.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_lt.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_lt.xtb
-@@ -1000,4 +1000,21 @@ Pavyzdžiui, kai kurios svetainės gali atsakyti į šią užklausą rodydamos j
- <translation id="981121421437150478">Neprisijungus</translation>
+@@ -1045,4 +1045,21 @@ Pavyzdžiui, kai kurios svetainės gali atsakyti į šią užklausą rodydamos j
  <translation id="983192555821071799">Uždar. visų skirtukų lapus</translation>
  <translation id="987264212798334818">Bendra</translation>
+ <translation id="996149300115483134">Sklaidos kanalo kortelės meniu uždarytas</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Prisijunkite prie „Chrome“, kad pasiektumėte skirtukus iš kitų įrenginių.</translation>
@@ -1186,10 +1102,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_lv.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_lv.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_lv.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_lv.xtb
-@@ -1000,4 +1000,21 @@ Piemēram, dažas vietnes, reaģējot uz šo pieprasījumu, var rādīt jums rek
- <translation id="981121421437150478">Bezsaistē</translation>
+@@ -1045,4 +1045,21 @@ Piemēram, dažas vietnes, reaģējot uz šo pieprasījumu, var rādīt jums rek
  <translation id="983192555821071799">Aizvērt visas cilnes</translation>
  <translation id="987264212798334818">Vispārīgi</translation>
+ <translation id="996149300115483134">Plūsmas kartītes izvēlne ir aizvērta</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Pierakstieties pārlūkā Chrome, lai būtu pieejamas cilnes no citām jūsu ierīcēm.</translation>
@@ -1213,10 +1129,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ml.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ml.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ml.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ml.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">ഓഫ്‌ലൈൻ</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">ടാബെല്ലാം അടയ്‌ക്കൂ</translation>
  <translation id="987264212798334818">പൊതുവായ</translation>
+ <translation id="996149300115483134">ഫീഡ് കാർഡ് മെനു അടച്ചു</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">നിങ്ങളുടെ മറ്റ് ഉപകരണങ്ങളിൽ നിന്നുള്ള ടാബുകൾ ലഭിക്കാൻ, Chrome-ൽ സൈൻ ഇൻ ചെയ്യുക.</translation>
@@ -1240,10 +1156,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_mr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_mr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_mr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_mr.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">ऑफलाइन</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">सर्व टॅब बंद करा</translation>
  <translation id="987264212798334818">सामान्य</translation>
+ <translation id="996149300115483134">फीड कार्ड मेनू बंद केला गेला आहे</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">आपल्या इतर डिव्हाइसेसवरील तुमचे टॅब प्राप्त करण्यासाठी, Chrome मध्ये साइन इन करा.</translation>
@@ -1267,10 +1183,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ms.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ms.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ms.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ms.xtb
-@@ -1000,4 +1000,21 @@ Sebagai contoh, sesetengah tapak web mungkin memberi respons kepada permintaan i
- <translation id="981121421437150478">Luar talian</translation>
+@@ -1045,4 +1045,21 @@ Sebagai contoh, sesetengah tapak web mungkin memberi respons kepada permintaan i
  <translation id="983192555821071799">Tutup semua tab</translation>
  <translation id="987264212798334818">Umum</translation>
+ <translation id="996149300115483134">Menu kad suapan ditutup</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Log masuk ke Chrome untuk mendapatkan tab daripada peranti anda yang lain.</translation>
@@ -1294,10 +1210,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_nl.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_nl.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_nl.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_nl.xtb
-@@ -1000,4 +1000,21 @@ Zo kunnen sommige websites op dit verzoek reageren door advertenties weer te gev
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Zo kunnen sommige websites op dit verzoek reageren door advertenties weer te gev
  <translation id="983192555821071799">Alle tabbladen sluiten</translation>
  <translation id="987264212798334818">Algemeen</translation>
+ <translation id="996149300115483134">Feedkaartmenu is gesloten</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Log in bij Chrome om de tabbladen van je andere apparaten te bekijken.</translation>
@@ -1321,10 +1237,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_no.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_no.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_no.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_no.xtb
-@@ -1000,4 +1000,21 @@ Noen nettsteder kan for eksempel svare på denne forespørselen ved å vise deg
- <translation id="981121421437150478">Uten nett</translation>
+@@ -1045,4 +1045,21 @@ Noen nettsteder kan for eksempel svare på denne forespørselen ved å vise deg
  <translation id="983192555821071799">Lukk alle faner</translation>
  <translation id="987264212798334818">Generelt</translation>
+ <translation id="996149300115483134">Feedkortmenyen er lukket</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">For å få fanene dine fra de andre enhetene du bruker, logg på Chrome.</translation>
@@ -1348,10 +1264,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pl.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pl.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pl.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pl.xtb
-@@ -1000,4 +1000,21 @@ Na przykład niektóre strony mogą na nie zareagować, wyświetlając reklamy b
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Na przykład niektóre strony mogą na nie zareagować, wyświetlając reklamy b
  <translation id="983192555821071799">Zamknij wszystkie karty</translation>
  <translation id="987264212798334818">Ogólne</translation>
+ <translation id="996149300115483134">Menu karty kanału jest zamknięte</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Aby korzystać z kart ze swoich innych urządzeń, zaloguj się w Chrome.</translation>
@@ -1375,10 +1291,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-BR.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-BR.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-BR.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-BR.xtb
-@@ -1001,4 +1001,21 @@ Por exemplo, alguns sites podem responder a esse pedido mostrando anúncios que
- <translation id="981121421437150478">Off-line</translation>
+@@ -1046,4 +1046,21 @@ Por exemplo, alguns sites podem responder a esse pedido mostrando anúncios que
  <translation id="983192555821071799">Fechar todas as guias</translation>
  <translation id="987264212798334818">Geral</translation>
+ <translation id="996149300115483134">O menu do card do feed está fechado</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Para ver as guias dos seus outros dispositivos, faça login no Chrome.</translation>
@@ -1402,10 +1318,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-PT.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-PT.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-PT.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_pt-PT.xtb
-@@ -1000,4 +1000,21 @@ Por exemplo, alguns Sites podem responder a este pedido ao mostrar-lhe anúncios
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Por exemplo, alguns Sites podem responder a este pedido ao mostrar-lhe anúncios
  <translation id="983192555821071799">Fechar todos os separadores</translation>
  <translation id="987264212798334818">Geral</translation>
+ <translation id="996149300115483134">O menu do cartão do feed está fechado.</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Para obter os separadores dos seus outros dispositivos, inicie sessão no Chrome.</translation>
@@ -1429,10 +1345,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ro.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ro.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ro.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ro.xtb
-@@ -1000,4 +1000,21 @@ De exemplu, unele site-uri pot răspunde la această solicitare afișând anunț
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ De exemplu, unele site-uri pot răspunde la această solicitare afișând anunț
  <translation id="983192555821071799">Închide toate filele</translation>
  <translation id="987264212798334818">General</translation>
+ <translation id="996149300115483134">Meniul cardului din feed este închis</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Pentru a accesa filele de pe alte dispozitive, conectează-te la Chrome.</translation>
@@ -1456,10 +1372,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ru.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ru.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ru.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ru.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">Офлайн</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">Закрыть все вкладки</translation>
  <translation id="987264212798334818">Общие</translation>
+ <translation id="996149300115483134">Меню карточки из ленты закрыто</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Чтобы получить доступ к вкладкам на всех ваших устройствах, войдите в Chrome.</translation>
@@ -1483,10 +1399,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sk.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sk.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sk.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sk.xtb
-@@ -1000,4 +1000,21 @@ Niektoré weby môžu napríklad na túto žiadosť reagovať tak, že vám zobr
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Niektoré weby môžu napríklad na túto žiadosť reagovať tak, že vám zobr
  <translation id="983192555821071799">Zavrieť všetky karty</translation>
  <translation id="987264212798334818">Všeobecné</translation>
+ <translation id="996149300115483134">Ponuka karty feedu je zatvorená</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Ak chcete získať karty z ďalších svojich zariadení, prihláste sa do Chromu.</translation>
@@ -1510,10 +1426,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sl.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sl.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sl.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sl.xtb
-@@ -1000,4 +1000,21 @@ Nekatera spletna mesta se lahko na primer na zahtevo odzovejo tako, da prikažej
- <translation id="981121421437150478">Brez povezave</translation>
+@@ -1045,4 +1045,21 @@ Nekatera spletna mesta se lahko na primer na zahtevo odzovejo tako, da prikažej
  <translation id="983192555821071799">Zapri vse zavihke</translation>
  <translation id="987264212798334818">Splošno</translation>
+ <translation id="996149300115483134">Meni kartice vira je zaprt</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Če želite dostopati do zavihkov v drugih napravah, se prijavite v Chrome.</translation>
@@ -1537,10 +1453,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sr.xtb
-@@ -1000,4 +1000,21 @@ Google налог можда има друге облике историје п
- <translation id="981121421437150478">Офлајн</translation>
+@@ -1045,4 +1045,21 @@ Google налог можда има друге облике историје п
  <translation id="983192555821071799">Затвори све картице</translation>
  <translation id="987264212798334818">Опште</translation>
+ <translation id="996149300115483134">Мени картице фида је затворен</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Да би вам картице биле доступне на другим уређајима, пријавите се у Chrome.</translation>
@@ -1564,10 +1480,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sv.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sv.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sv.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sv.xtb
-@@ -1000,4 +1000,21 @@ Vissa webbplatser kan till exempel svara på begäran genom att visa annonser so
- <translation id="981121421437150478">Offline</translation>
+@@ -1045,4 +1045,21 @@ Vissa webbplatser kan till exempel svara på begäran genom att visa annonser so
  <translation id="983192555821071799">Stäng alla flikar</translation>
  <translation id="987264212798334818">Allmänt</translation>
+ <translation id="996149300115483134">Menyn med flödeskort är stängd</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Logga in i Chrome om du vill ha samma flikar tillgängliga på alla enheter.</translation>
@@ -1591,10 +1507,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sw.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sw.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_sw.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_sw.xtb
-@@ -1000,4 +1000,21 @@ Kwa mfano, baadhi ya tovuti zinaweza kujibu ombi hili kwa kukuonyesha matangazo
- <translation id="981121421437150478">Nje ya mtandao</translation>
+@@ -1045,4 +1045,21 @@ Kwa mfano, baadhi ya tovuti zinaweza kujibu ombi hili kwa kukuonyesha matangazo
  <translation id="983192555821071799">Funga vichupo vyote</translation>
  <translation id="987264212798334818">Jumla</translation>
+ <translation id="996149300115483134">Menyu ya kadi ya mipasho imefungwa</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Ili upate vichupo kutoka kwenye vifaa vyako vingine, ingia katika Chrome.</translation>
@@ -1618,10 +1534,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ta.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ta.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_ta.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_ta.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">ஆஃப்லைன்</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">எல்லா தாவல்களையும் மூடு</translation>
  <translation id="987264212798334818">பொது</translation>
+ <translation id="996149300115483134">ஃபீட் கார்டு மெனு மூடப்பட்டுள்ளது</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">உங்கள் பிற சாதனங்களிலிருந்து தாவல்களைப் பெற, Chrome இல் உள்நுழையவும்.</translation>
@@ -1645,10 +1561,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_te.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_te.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_te.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_te.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">ఆఫ్‌లైన్</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">అన్ని ట్యాబ్‌లను మూసివేయి</translation>
  <translation id="987264212798334818">సాధారణం</translation>
+ <translation id="996149300115483134">ఫీడ్ కార్డ్ మెనూ మూసివేయబడింది</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">మీ ఇతర పరికరాల నుండి మీ ట్యాబ్‌లను పొందడానికి, Chromeకు సైన్ ఇన్ చేయండి.</translation>
@@ -1672,10 +1588,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_th.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_th.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_th.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_th.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">ออฟไลน์</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">ปิดแท็บทั้งหมด</translation>
  <translation id="987264212798334818">ทั่วไป</translation>
+ <translation id="996149300115483134">เมนูของการ์ดฟีดปิดอยู่</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">ลงชื่อเข้าใช้ Chrome เพื่อรับแท็บจากอุปกรณ์เครื่องอื่นๆ ของคุณ</translation>
@@ -1699,10 +1615,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_tr.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_tr.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_tr.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_tr.xtb
-@@ -1000,4 +1000,21 @@ Bu ayarı değiştirmek için <ph name="BEGIN_LINK" />senkronizasyonu sıfırlay
- <translation id="981121421437150478">Çevrimdışı</translation>
+@@ -1045,4 +1045,21 @@ Bu ayarı değiştirmek için <ph name="BEGIN_LINK" />senkronizasyonu sıfırlay
  <translation id="983192555821071799">Tüm sekmeleri kapat</translation>
  <translation id="987264212798334818">Genel</translation>
+ <translation id="996149300115483134">Akış kartı menüsü kapalı</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Diğer cihazlarınızdaki sekmelerinize ulaşmak için Chrome'da oturum açın.</translation>
@@ -1726,10 +1642,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_uk.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_uk.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_uk.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_uk.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">Офлайн</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">Закрити всі вкладки</translation>
  <translation id="987264212798334818">Загальне</translation>
+ <translation id="996149300115483134">Меню картки зі стрічки закрито</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Щоб мати доступ до вкладок з інших пристроїв, увійдіть в обліковий запис Chrome.</translation>
@@ -1753,10 +1669,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_vi.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_vi.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_vi.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_vi.xtb
-@@ -1000,4 +1000,21 @@ Ví dụ: một số trang web có thể phản hồi yêu cầu này bằng cá
- <translation id="981121421437150478">Ngoại tuyến</translation>
+@@ -1045,4 +1045,21 @@ Ví dụ: một số trang web có thể phản hồi yêu cầu này bằng cá
  <translation id="983192555821071799">Đóng tất cả các thẻ</translation>
  <translation id="987264212798334818">Chung</translation>
+ <translation id="996149300115483134">Trình đơn thẻ nguồn cấp dữ liệu đang đóng</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">Để có các tab từ các thiết bị khác của bạn, hãy đăng nhập vào Chrome.</translation>
@@ -1780,10 +1696,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">离线</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">关闭所有标签页</translation>
  <translation id="987264212798334818">常规</translation>
+ <translation id="996149300115483134">动态卡片上的菜单已关闭</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">要访问您在其他设备上的标签页，请登录 Chrome。</translation>
@@ -1807,10 +1723,10 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-@@ -1000,4 +1000,21 @@
- <translation id="981121421437150478">離線</translation>
+@@ -1045,4 +1045,21 @@
  <translation id="983192555821071799">關閉所有分頁</translation>
  <translation id="987264212798334818">一般</translation>
+ <translation id="996149300115483134">已關閉動態消息資訊卡選單</translation>
 -</translationbundle>
 \ No newline at end of file
 +<translation id="1326317727527857210">如要存取您在其他裝置上開啟的分頁，請登入 Chrome。</translation>
