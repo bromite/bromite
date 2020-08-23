@@ -6,6 +6,7 @@ Disable look-alike, metrics, ablation and navigation throttles
 Do not use experiments to enable/disable presets
 Always enable ad filtering
 Download filters by checking Last-Modified header first
+Fix RestoreForeignSessionTab by recreating the tab (issue #681)
 ---
  chrome/browser/after_startup_task_utils.cc    |   5 +
  chrome/browser/browser_process.h              |   7 +
@@ -13,6 +14,7 @@ Download filters by checking Last-Modified header first
  chrome/browser/browser_process_impl.h         |   3 +
  chrome/browser/chrome_browser_main.cc         |   2 +
  .../browser/chrome_content_browser_client.cc  |  16 --
+ .../sessions/session_restore_android.cc       |   4 +-
  components/component_updater/BUILD.gn         |   8 +
  .../adblock_updater_service.cc                | 249 ++++++++++++++++++
  .../adblock_updater_service.h                 |  99 +++++++
@@ -27,7 +29,7 @@ Download filters by checking Last-Modified header first
  .../browser/subresource_filter_features.cc    | 113 +-------
  .../core/common/common_features.cc            |   2 +-
  .../frame_host/navigation_throttle_runner.cc  |   5 -
- 20 files changed, 809 insertions(+), 138 deletions(-)
+ 21 files changed, 812 insertions(+), 139 deletions(-)
  create mode 100644 components/component_updater/adblock_updater_service.cc
  create mode 100644 components/component_updater/adblock_updater_service.h
  create mode 100644 components/component_updater/download_filters_task.cc
@@ -203,6 +205,20 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
    MaybeAddThrottle(PDFIFrameNavigationThrottle::MaybeCreateThrottleFor(handle),
                     &throttles);
  
+diff --git a/chrome/browser/sessions/session_restore_android.cc b/chrome/browser/sessions/session_restore_android.cc
+--- a/chrome/browser/sessions/session_restore_android.cc
++++ b/chrome/browser/sessions/session_restore_android.cc
+@@ -43,7 +43,9 @@ content::WebContents* SessionRestore::RestoreForeignSessionTab(
+   TabAndroid* current_tab = TabAndroid::FromWebContents(web_contents);
+   DCHECK(current_tab);
+   if (disposition == WindowOpenDisposition::CURRENT_TAB) {
+-    current_tab->SwapWebContents(std::move(new_web_contents), false, false);
++    int active_tab_index = tab_model->GetActiveIndex();
++    tab_model->CreateTab(current_tab, new_web_contents.release());
++    tab_model->CloseTabAt(active_tab_index);
+   } else {
+     DCHECK(disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB ||
+            disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB);
 diff --git a/components/component_updater/BUILD.gn b/components/component_updater/BUILD.gn
 --- a/components/component_updater/BUILD.gn
 +++ b/components/component_updater/BUILD.gn
