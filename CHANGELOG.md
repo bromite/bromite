@@ -1,4 +1,5 @@
 # 85.0.4183.82
+* fixes bookmark button not working with always-incognito (fixes https://github.com/bromite/bromite/issues/654)
 * disable scroll-to-text-fragment
 * remove NTP blocklisted URLs when adding an URL as bookmark
 * removed duet flags
