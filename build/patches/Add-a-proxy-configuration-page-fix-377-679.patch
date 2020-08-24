@@ -1,0 +1,236 @@
+From: root <root@ubuntu.cabponte>
+Date: Sun, 23 Aug 2020 20:00:18 +0000
+Subject: fix 377 and 679
+
+---
+ chrome/browser/resources/proxy_config.html |  5 ++-
+ chrome/browser/resources/proxy_config.js   | 24 +++++++----
+ chrome/browser/ui/webui/proxy_config_ui.cc | 46 +++++++++++++++-------
+ net/proxy_resolution/proxy_config.cc       | 16 +++++---
+ 4 files changed, 63 insertions(+), 28 deletions(-)
+ mode change 100644 => 100755 chrome/browser/resources/proxy_config.html
+ mode change 100644 => 100755 chrome/browser/resources/proxy_config.js
+ mode change 100644 => 100755 chrome/browser/ui/webui/proxy_config_ui.cc
+ mode change 100644 => 100755 net/proxy_resolution/proxy_config.cc
+
+diff --git a/chrome/browser/resources/proxy_config.html b/chrome/browser/resources/proxy_config.html
+old mode 100644
+new mode 100755
+index 898716564728630258b4d4c442d21da9d326f1a1..1db228c3bbfe52c35adea95a36fe8190a07d6cbb
+--- a/chrome/browser/resources/proxy_config.html
++++ b/chrome/browser/resources/proxy_config.html
+@@ -44,14 +44,15 @@
+         Reset will update the displayed configuration to match the one currently in use.
+       </div>
+       <div class="section-container">
+-          <input type="radio" id="empty" name="mode" value="empty" checked><label for="empty">None</label><br/>
++          <input type="radio" id="empty" name="mode" value="empty"><label for="empty">System Default</label><br/>
++          <input type="radio" id="direct" name="mode" value="direct"><label for="direct">Direct</label><br/>
+           <input type="radio" id="auto-detect" name="mode" value="auto-detect"><label for="auto-detect">Auto-detect (WPAD DHCP/DNS)</label><br/>
+           <input type="radio" id="use-pac-url" name="mode" value="use-pac-url"><label for="use-pac-url">Use PAC URL: <input id='pac-url' value="" size="40" /></label>
+           <p><input type="checkbox" id="pac-mandatory" name="pac-mandatory"><label for="pac-mandatory">Do not allow fallback to direct connection in case PAC script fails</label></p>
+           <input type="radio" id="use-single-list" name="mode" value="use-single-list"><label for="use-single-list">Use a single proxy list for all schemes (<a target="_blank" href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file#Description">PAC format</a>):
+               <textarea id="single-proxies"></textarea>
+             </label><br/>
+-          <input type="radio" id="use-list-per-scheme" name="mode" value="use-list-per-scheme"><label for="use-list-per-scheme">Use a proxy list per scheme:</label><br/>
++          <input type="radio" id="use-list-per-scheme" name="mode" value="use-list-per-scheme"><label for="use-list-per-scheme">Use a proxy list per scheme (use ; as separator):</label><br/>
+               <label for="use-list-per-scheme">HTTP (<a target="_blank" href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file#Description">PAC format</a>):<br/>
+               <textarea id="http-proxies"></textarea></label><br/>
+               <label for="use-list-per-scheme">HTTPS (<a target="_blank" href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file#Description">PAC format</a>):<br/>
+diff --git a/chrome/browser/resources/proxy_config.js b/chrome/browser/resources/proxy_config.js
+old mode 100644
+new mode 100755
+index 804580cd1bbe0ce7c5c2f70ef59e91d28f1d2e09..a55bd9c1ae666659705d658eb37a93b48e6f56d7
+--- a/chrome/browser/resources/proxy_config.js
++++ b/chrome/browser/resources/proxy_config.js
+@@ -40,6 +40,7 @@ var ProxyConfigView = (function() {
+   var kIdClearButton = 'clear';
+ 
+   var kIdModeEmpty = 'empty';
++  var kIdModeDirect = 'direct';
+   var kIdModeAutoDetect = 'auto-detect';
+   var kIdModeUsePacURL = 'use-pac-url';
+ 
+@@ -125,7 +126,7 @@ var ProxyConfigView = (function() {
+           "rules": {
+             "bypass_rules": "",
+             "reverse_bypass": false,
+-            "type": "empty"
++            "type": "none"
+           }
+         };
+     },
+@@ -138,7 +139,14 @@ var ProxyConfigView = (function() {
+         return {
+           "auto_detect": false,
+           "rules": {
+-            "type": "empty"
++            "type": "none"
++          }
++        };
++      } else if ($(kIdModeDirect).checked) {
++        return {
++          "auto_detect": false,
++          "rules": {
++            "type": "direct"
+           }
+         };
+       } else if ($(kIdModeAutoDetect).checked) {
+@@ -182,15 +190,17 @@ var ProxyConfigView = (function() {
+      * Updates the UI to display the current proxy configuration.
+      */
+     renderConfig_: function() {
+-      if (this.currentConfig.auto_detect)
++      if (this.currentConfig.auto_detect) {
+         $(kIdModeAutoDetect).checked = true;
+-      else if (this.currentConfig.hasOwnProperty('pac_url')) {
++      } else if (this.currentConfig.rules.type == "none") {
++        $(kIdModeEmpty).checked = true;
++      } else if (this.currentConfig.rules.type == "direct") {
++        $(kIdModeDirect).checked = true;
++      } else if (this.currentConfig.hasOwnProperty('pac_url')) {
+         $(kIdPacURL).value = this.currentConfig.pac_url;
+         $(kIdPacMandatory).checked = this.currentConfig.pac_mandatory;
+         $(kIdModeUsePacURL).checked = true;
+-      } else if (this.currentConfig.rules.type == "empty")
+-        $(kIdModeEmpty).checked = true;
+-      else {
++      } else {
+         $(kIdBypassRules).value = this.currentConfig.rules.bypass_rules;
+         $(kIdReverseBypass).checked = this.currentConfig.rules.reverse_bypass;
+ 
+diff --git a/chrome/browser/ui/webui/proxy_config_ui.cc b/chrome/browser/ui/webui/proxy_config_ui.cc
+old mode 100644
+new mode 100755
+index 149d67a0664de693ddf18f7f041f6d13f26ee08f..a2e086ff425a0fe83226b6d1f3dcd1ef6284b8e9
+--- a/chrome/browser/ui/webui/proxy_config_ui.cc
++++ b/chrome/browser/ui/webui/proxy_config_ui.cc
+@@ -155,7 +155,7 @@ void ProxyConfigMessageHandler::OnProxyConfigChanged(
+       encodeConfig(config.value(), state);
+       break;
+     case net::ProxyConfigService::CONFIG_UNSET:
+-      // nothing will be populated
++      state.SetPath({"config", "rules", "type"}, base::Value("none"));
+       break;
+     case net::ProxyConfigService::CONFIG_PENDING:
+       //NOTE: this can only happen when triggered manually first time
+@@ -191,7 +191,7 @@ void ProxyConfigMessageHandler::encodeConfig(const net::ProxyConfig& config, bas
+   const char *type;
+   switch (rules.type) {
+     case net::ProxyConfig::ProxyRules::Type::EMPTY:
+-      type = "empty";
++      type = "direct";
+       break;
+     case net::ProxyConfig::ProxyRules::Type::PROXY_LIST:
+       type = "list";
+@@ -254,13 +254,25 @@ void ProxyConfigMessageHandler::OnEnableNotifyUIWithState(
+ 
+   net::ProxyConfigWithAnnotation config;
+   auto availability = proxy_config_service_->GetLatestProxyConfig(&config);
++
++  const base::DictionaryValue* dict =
++      profile_->GetPrefs()->GetDictionary(proxy_config::prefs::kProxy);
++  ProxyConfigDictionary proxy_dict(dict->Clone());
++  ProxyPrefs::ProxyMode mode;
++  if (!proxy_dict.GetMode(&mode) || mode == ProxyPrefs::MODE_SYSTEM) {
++    availability = net::ProxyConfigService::CONFIG_UNSET;
++  }
++
+   OnProxyConfigChanged(config, availability);
+ }
+ 
+ void ProxyConfigMessageHandler::OnClear(const base::ListValue* list) {
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+ 
+-  profile_->GetPrefs()->ClearPref(proxy_config::prefs::kProxy);
++  const base::Value cfg = ProxyConfigDictionary::CreateSystem();
++  profile_->GetPrefs()->Set(proxy_config::prefs::kProxy, cfg);
++  profile_->GetPrefs()->CommitPendingWrite();
++  OnEnableNotifyUIWithState(nullptr);
+ }
+ 
+ void ProxyConfigMessageHandler::OnApply(const base::ListValue* list) {
+@@ -338,8 +350,11 @@ void ProxyConfigMessageHandler::OnApply(const base::ListValue* list) {
+       proxyConfig.proxy_rules().proxies_for_ftp.SetFromPacString(ftp->GetString());
+       proxyConfig.proxy_rules().fallback_proxies.SetFromPacString(fallback->GetString());
+       readBypass = true;
+-  } else if (t == "empty") {
++  } else if (t == "direct") {
+       proxyConfig.proxy_rules().type = net::ProxyConfig::ProxyRules::Type::EMPTY;
++  } else if (t == "none") {
++      OnClear(nullptr);
++      return;
+   } else {
+      // invalid type
+      LOG(WARNING) << "invalid proxy configuration type";
+@@ -367,20 +382,23 @@ void ProxyConfigMessageHandler::apply(const net::ProxyConfig& proxyConfig) {
+   if (proxyConfig.auto_detect()) {
+     const base::Value cfg = ProxyConfigDictionary::CreateAutoDetect();
+     profile_->GetPrefs()->Set(proxy_config::prefs::kProxy, cfg);
+-    return;
+   } else if (proxyConfig.has_pac_url()) {
+     const base::Value cfg = ProxyConfigDictionary::CreatePacScript(proxyConfig.pac_url().spec(), proxyConfig.pac_mandatory());
+     profile_->GetPrefs()->Set(proxy_config::prefs::kProxy, cfg);
+-    return;
+-  }
+-
+-  auto proxyRulesAsString = proxyConfig.proxy_rules().ToString();
+-  auto bypassRulesAsString = proxyConfig.proxy_rules().bypass_rules.ToString();
++  } else if (proxyConfig.proxy_rules().type == net::ProxyConfig::ProxyRules::Type::EMPTY) {
++    const base::Value cfg = ProxyConfigDictionary::CreateDirect();
++    profile_->GetPrefs()->Set(proxy_config::prefs::kProxy, cfg);
++  } else {
++    auto proxyRulesAsString = proxyConfig.proxy_rules().ToString();
++    auto bypassRulesAsString = proxyConfig.proxy_rules().bypass_rules.ToString();
+ 
+-  // fixed servers
+-  const base::Value cfg = ProxyConfigDictionary::CreateFixedServers(proxyRulesAsString,
+-                          bypassRulesAsString, proxyConfig.proxy_rules().reverse_bypass);
+-  profile_->GetPrefs()->Set(proxy_config::prefs::kProxy, cfg);
++    // fixed servers
++    const base::Value cfg = ProxyConfigDictionary::CreateFixedServers(proxyRulesAsString,
++                            bypassRulesAsString, proxyConfig.proxy_rules().reverse_bypass);
++    profile_->GetPrefs()->Set(proxy_config::prefs::kProxy, cfg);
++  }
++  profile_->GetPrefs()->CommitPendingWrite();
++  OnEnableNotifyUIWithState(nullptr);
+ }
+ 
+ }  // namespace
+diff --git a/net/proxy_resolution/proxy_config.cc b/net/proxy_resolution/proxy_config.cc
+old mode 100644
+new mode 100755
+index 133ff6c46cfcb53938671c6ec4a22b663d00bd29..82cda2455b15a550f805d5620613185b075c5f1d
+--- a/net/proxy_resolution/proxy_config.cc
++++ b/net/proxy_resolution/proxy_config.cc
+@@ -110,7 +110,8 @@ void ProxyConfig::ProxyRules::ParseFromString(const std::string& proxy_rules) {
+                                    &single_proxies,
+                                    ProxyServer::SCHEME_HTTP);
+         type = Type::PROXY_LIST;
+-        return;
++        // bromite #679
++        continue; // was: return; maybe an upstream bug
+       }
+ 
+       // Trim whitespace off the url scheme.
+@@ -148,11 +149,16 @@ std::string ProxyConfig::ProxyRules::ToString() const {
+ 
+   // special case: a single proxy server specified
+   if (type == Type::PROXY_LIST) {
+-    if (single_proxies.size() == 1) {
+-      return single_proxies.Get().ToURI();
++    std::string proxy_list;
++    for (const ProxyServer& proxy_server :
++         single_proxies.GetAll()) {
++      proxy_list += proxy_server.ToURI() + ";";
+     }
+-    // more than 1 proxies or 0 proxies is unexpected
+-    return "";
++    // remove last semicolon
++    if (proxy_list.length() != 0 ) {
++      proxy_list.pop_back();
++    }
++    return proxy_list;
+   }
+ 
+   if (type != Type::PROXY_LIST_PER_SCHEME) {
