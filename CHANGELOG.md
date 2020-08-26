@@ -1,3 +1,6 @@
+# 85.0.4183.86
+* fix LocationBarPhone app crash at startup (fixes https://github.com/bromite/bromite/issues/565)
+
 # 85.0.4183.84
 * fix crash in About page (fixes https://github.com/bromite/bromite/issues/710)
 * fix adding more than one proxy (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/679)
