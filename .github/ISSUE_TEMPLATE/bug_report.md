@@ -8,6 +8,7 @@ about: Create a Bromite bug report
 Have you read the README? https://github.com/bromite/bromite/blob/master/README.md
 Have you searched the issue tracker? https://github.com/bromite/bromite/issues
 Are you sure this is not a Chromium bug? You have to test with Chromium before submitting a bug.
+Are you using the latest version of Bromite?
 -->
 
 ### Bromite version
