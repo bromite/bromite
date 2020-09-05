@@ -1,3 +1,9 @@
+# 85.0.4183.94
+* disable the DIAL repeating discovery
+* removed patch for session-only cookies support
+* add timezone customization patch (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/331)
+* fixed bug happening when configuring proxies in incognito mode (thanks to @uazo)
+
 # 85.0.4183.86
 * fix LocationBarPhone app crash at startup (fixes https://github.com/bromite/bromite/issues/565)
 
