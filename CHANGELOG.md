@@ -1,3 +1,7 @@
+# 85.0.4183.110
+* hardening against incognito mode detection
+* fix background playback issue (fixes https://github.com/bromite/bromite/issues/734)
+
 # 85.0.4183.94
 * disable the DIAL repeating discovery
 * removed patch for session-only cookies support
