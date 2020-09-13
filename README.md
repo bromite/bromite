@@ -147,7 +147,7 @@ Bromite uses an unindexed filter file, which is periodically published at https:
 * [ungoogled-chromium-android](https://github.com/ungoogled-software/ungoogled-chromium-android) for some patches
 * [GrapheneOS](https://github.com/GrapheneOS) for some security patches
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (via ungoogled-chromium)
-* [Brave Browser](https://github.com/brave/browser-android-tabs) for some patches
+* [Brave Browser](https://github.com/brave/brave-core) for some patches
 * [Vadim Pleshkov](http://vadimpleshkov.me/) for Bromite's logo
 
 # Filters credits
