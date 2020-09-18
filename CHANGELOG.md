@@ -1,3 +1,5 @@
+# 85.0.4183.114
+
 # 85.0.4183.110
 * hardening against incognito mode detection
 * fix background playback issue (fixes https://github.com/bromite/bromite/issues/734)
