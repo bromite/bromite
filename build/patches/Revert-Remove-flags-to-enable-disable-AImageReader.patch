@@ -4,14 +4,14 @@ Subject: Revert "Remove flags to enable/disable AImageReader."
 
 This reverts commit 463fa0f2e3b9e418bc26e2c8954463f0b0f76634.
 ---
- .../service/image_reader_gl_owner_unittest.cc          |  5 +++++
- gpu/config/gpu_finch_features.cc                       |  4 ++++
- gpu/config/gpu_finch_features.h                        |  1 +
- gpu/ipc/service/stream_texture_android.cc              | 10 ++++++++--
- media/base/media_switches.cc                           |  4 ++++
- media/base/media_switches.h                            |  1 +
- media/gpu/android/video_frame_factory_impl.cc          |  3 ++-
- 7 files changed, 25 insertions(+), 3 deletions(-)
+ .../service/image_reader_gl_owner_unittest.cc         |  5 +++++
+ gpu/config/gpu_finch_features.cc                      |  4 ++++
+ gpu/config/gpu_finch_features.h                       |  1 +
+ gpu/ipc/service/stream_texture_android.cc             | 11 ++++++++++-
+ media/base/media_switches.cc                          |  4 ++++
+ media/base/media_switches.h                           |  1 +
+ media/gpu/android/video_frame_factory_impl.cc         |  5 ++++-
+ 7 files changed, 29 insertions(+), 2 deletions(-)
 
 diff --git a/gpu/command_buffer/service/image_reader_gl_owner_unittest.cc b/gpu/command_buffer/service/image_reader_gl_owner_unittest.cc
 --- a/gpu/command_buffer/service/image_reader_gl_owner_unittest.cc
@@ -26,10 +26,10 @@ diff --git a/gpu/command_buffer/service/image_reader_gl_owner_unittest.cc b/gpu/
  #include "gpu/command_buffer/service/image_reader_gl_owner.h"
  #include "gpu/command_buffer/service/mock_abstract_texture.h"
 +#include "media/base/media_switches.h"
+ #include "media/base/android/media_codec_util.h"
  #include "testing/gtest/include/gtest/gtest.h"
  #include "ui/gl/gl_bindings.h"
- #include "ui/gl/gl_context_egl.h"
-@@ -30,6 +32,8 @@ class ImageReaderGLOwnerTest : public testing::Test {
+@@ -31,6 +33,8 @@ class ImageReaderGLOwnerTest : public testing::Test {
      if (!IsImageReaderSupported())
        return;
  
@@ -38,7 +38,7 @@ diff --git a/gpu/command_buffer/service/image_reader_gl_owner_unittest.cc b/gpu/
      gl::init::InitializeStaticGLBindingsImplementation(
          gl::kGLImplementationEGLGLES2, false);
      gl::init::InitializeGLOneOffPlatformImplementation(false, false, true);
-@@ -69,6 +73,7 @@ class ImageReaderGLOwnerTest : public testing::Test {
+@@ -70,6 +74,7 @@ class ImageReaderGLOwnerTest : public testing::Test {
      return base::android::AndroidImageReader::GetInstance().IsSupported();
    }
  
@@ -50,16 +50,16 @@ diff --git a/gpu/config/gpu_finch_features.cc b/gpu/config/gpu_finch_features.cc
 --- a/gpu/config/gpu_finch_features.cc
 +++ b/gpu/config/gpu_finch_features.cc
 @@ -13,6 +13,10 @@
+ 
  namespace features {
  
- #if defined(OS_ANDROID)
 +// Use android AImageReader when playing videos with MediaPlayer.
 +const base::Feature kAImageReaderMediaPlayer{"AImageReaderMediaPlayer",
 +                                             base::FEATURE_ENABLED_BY_DEFAULT};
 +
- // Used only by webview to disable SurfaceControl.
- const base::Feature kDisableSurfaceControlForWebview{
-     "DisableSurfaceControlForWebview", base::FEATURE_DISABLED_BY_DEFAULT};
+ #if defined(OS_ANDROID)
+ // Used to limit GL version to 2.0 for skia raster on Android.
+ const base::Feature kUseGles2ForOopR{"UseGles2ForOopR",
 diff --git a/gpu/config/gpu_finch_features.h b/gpu/config/gpu_finch_features.h
 --- a/gpu/config/gpu_finch_features.h
 +++ b/gpu/config/gpu_finch_features.h
@@ -68,33 +68,41 @@ diff --git a/gpu/config/gpu_finch_features.h b/gpu/config/gpu_finch_features.h
  // alongside the definition of their values in the .cc file.
  #if defined(OS_ANDROID)
 +GPU_EXPORT extern const base::Feature kAImageReaderMediaPlayer;
- GPU_EXPORT extern const base::Feature kDisableSurfaceControlForWebview;
- 
  GPU_EXPORT extern const base::Feature kUseGles2ForOopR;
+ GPU_EXPORT extern const base::Feature kAndroidSurfaceControl;
+ GPU_EXPORT extern const base::Feature kAImageReader;
 diff --git a/gpu/ipc/service/stream_texture_android.cc b/gpu/ipc/service/stream_texture_android.cc
 --- a/gpu/ipc/service/stream_texture_android.cc
 +++ b/gpu/ipc/service/stream_texture_android.cc
-@@ -51,8 +51,14 @@ TextureOwner::Mode GetTextureOwnerMode() {
-   const bool a_image_reader_supported =
-       base::android::AndroidImageReader::GetInstance().IsSupported();
+@@ -6,6 +6,7 @@
  
--  return a_image_reader_supported ? TextureOwner::Mode::kAImageReaderInsecure
--                                  : TextureOwner::Mode::kSurfaceTextureInsecure;
+ #include <string.h>
+ 
++#include "base/android/android_image_reader_compat.h"
+ #include "base/android/scoped_hardware_buffer_fence_sync.h"
+ #include "base/bind.h"
+ #include "base/feature_list.h"
+@@ -47,7 +48,15 @@ std::unique_ptr<ui::ScopedMakeCurrent> MakeCurrent(
+ }
+ 
+ TextureOwner::Mode GetTextureOwnerMode() {
+-  return features::IsAImageReaderEnabled()
++  const bool a_image_reader_supported =
++      base::android::AndroidImageReader::GetInstance().IsSupported();
++
 +  // TODO(vikassoni) : Currently we have 2 different flags to enable/disable
 +  // AImageReader - one for MCVD and other for MediaPlayer here. Merge those 2
 +  // flags into a single flag. Keeping the 2 flags separate for now since finch
 +  // experiment using this flag is in progress.
-+  return a_image_reader_supported && base::FeatureList::IsEnabled(
-+                                         features::kAImageReaderMediaPlayer)
-+             ? TextureOwner::Mode::kAImageReaderInsecure
-+             : TextureOwner::Mode::kSurfaceTextureInsecure;
++  return a_image_reader_supported && features::IsAImageReaderEnabled() &&
++             base::FeatureList::IsEnabled(features::kAImageReaderMediaPlayer)
+              ? TextureOwner::Mode::kAImageReaderInsecure
+              : TextureOwner::Mode::kSurfaceTextureInsecure;
  }
- 
- }  // namespace
 diff --git a/media/base/media_switches.cc b/media/base/media_switches.cc
 --- a/media/base/media_switches.cc
 +++ b/media/base/media_switches.cc
-@@ -542,6 +542,10 @@ const base::Feature kMediaDrmPreprovisioning{"MediaDrmPreprovisioning",
+@@ -547,6 +547,10 @@ const base::Feature kMediaDrmPreprovisioning{"MediaDrmPreprovisioning",
  const base::Feature kMediaDrmPreprovisioningAtStartup{
      "MediaDrmPreprovisioningAtStartup", base::FEATURE_ENABLED_BY_DEFAULT};
  
@@ -108,7 +116,7 @@ diff --git a/media/base/media_switches.cc b/media/base/media_switches.cc
 diff --git a/media/base/media_switches.h b/media/base/media_switches.h
 --- a/media/base/media_switches.h
 +++ b/media/base/media_switches.h
-@@ -186,6 +186,7 @@ MEDIA_EXPORT extern const base::Feature kMediaControlsExpandGesture;
+@@ -192,6 +192,7 @@ MEDIA_EXPORT extern const base::Feature kMediaControlsExpandGesture;
  MEDIA_EXPORT extern const base::Feature kMediaDrmPersistentLicense;
  MEDIA_EXPORT extern const base::Feature kMediaDrmPreprovisioning;
  MEDIA_EXPORT extern const base::Feature kMediaDrmPreprovisioningAtStartup;
@@ -119,13 +127,22 @@ diff --git a/media/base/media_switches.h b/media/base/media_switches.h
 diff --git a/media/gpu/android/video_frame_factory_impl.cc b/media/gpu/android/video_frame_factory_impl.cc
 --- a/media/gpu/android/video_frame_factory_impl.cc
 +++ b/media/gpu/android/video_frame_factory_impl.cc
-@@ -41,7 +41,8 @@ gpu::TextureOwner::Mode GetTextureOwnerMode(
+@@ -6,6 +6,7 @@
+ 
+ #include <memory>
+ 
++#include "base/android/android_image_reader_compat.h"
+ #include "base/bind.h"
+ #include "base/bind_helpers.h"
+ #include "base/callback.h"
+@@ -65,7 +66,9 @@ gpu::TextureOwner::Mode GetTextureOwnerMode(
    switch (overlay_mode) {
      case VideoFrameFactory::OverlayMode::kDontRequestPromotionHints:
      case VideoFrameFactory::OverlayMode::kRequestPromotionHints:
--      return a_image_reader_supported
-+      return a_image_reader_supported && base::FeatureList::IsEnabled(
-+                                             media::kAImageReaderVideoOutput)
+-      return features::IsAImageReaderEnabled()
++      return base::android::AndroidImageReader::GetInstance().IsSupported() &&
++             features::IsAImageReaderEnabled() &&
++             base::FeatureList::IsEnabled(media::kAImageReaderVideoOutput)
                   ? gpu::TextureOwner::Mode::kAImageReaderInsecure
                   : gpu::TextureOwner::Mode::kSurfaceTextureInsecure;
      case VideoFrameFactory::OverlayMode::kSurfaceControlSecure:

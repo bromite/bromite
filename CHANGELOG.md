@@ -1,3 +1,13 @@
+# 86.0.4240.55
+* switch to upstream UI for DoH URL customization
+* remove weblayer dependency on Play Services
+* build fixes for password service
+* removed obsolete patch to kill Translate
+* removed timezone customization patch
+* removed patch to revert unified consent code
+* removed patch for dav1d library
+* removed patch for improved cookie controls defaults
+
 # 85.0.4183.114
 
 # 85.0.4183.110
