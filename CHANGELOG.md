@@ -1,3 +1,7 @@
+# 86.0.4240.70
+* fixed crash on unused menu item tap (fixes https://github.com/bromite/bromite/issues/760)
+* fixed issue on new installations without DoH configuration (fixes https://github.com/bromite/bromite/issues/761)
+
 # 86.0.4240.66
 * switch to upstream UI for DoH URL customization
 * remove weblayer dependency on Play Services
