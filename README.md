@@ -156,6 +156,8 @@ Bromite uses an unindexed filter file, which is periodically published at https:
 * [uBlock Origin](https://github.com/uBlockOrigin)
 * [Peter Lowe's Ad and tracking server list](https://pgl.yoyo.org/adservers/)
 
+The URLs of the lists used are available at: https://github.com/bromite/filters/blob/master/lists.txt
+
 # License
 
 The patches published as part of the Bromite project are released under [GNU GPL v3](./LICENSE).
