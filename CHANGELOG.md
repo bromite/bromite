@@ -1,3 +1,7 @@
+# 86.0.4240.73
+* re-introduce ARM64 AImageReader mitigations (fixes https://github.com/bromite/bromite/issues/766)
+* re-introduce menu items for autocomplete, autofill assistant and contextual search (fixes https://github.com/bromite/bromite/issues/763)
+
 # 86.0.4240.70
 * fixed crash on unused menu item tap (fixes https://github.com/bromite/bromite/issues/760)
 * fixed issue on new installations without DoH configuration (fixes https://github.com/bromite/bromite/issues/761)
