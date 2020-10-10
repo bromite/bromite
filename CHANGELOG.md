@@ -1,3 +1,7 @@
+# 86.0.4240.92
+* upstream fix for video playback audio issue (fixes https://github.com/bromite/bromite/issues/755)
+* fix order of entries in privacy settings (fixes https://github.com/bromite/bromite/issues/758)
+ 
 # 86.0.4240.73
 * re-introduce ARM64 AImageReader mitigations (fixes https://github.com/bromite/bromite/issues/766)
 * re-introduce menu items for autocomplete, autofill assistant and contextual search (fixes https://github.com/bromite/bromite/issues/763)
