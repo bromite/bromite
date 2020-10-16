@@ -1,3 +1,5 @@
+# 86.0.4240.99
+
 # 86.0.4240.92
 * upstream fix for video playback audio issue (fixes https://github.com/bromite/bromite/issues/755)
 * fix order of entries in privacy settings (fixes https://github.com/bromite/bromite/issues/758)
