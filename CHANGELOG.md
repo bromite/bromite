@@ -1,3 +1,6 @@
+# 86.0.4240.112
+* fix crash in new overflow menu (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/771)
+
 # 86.0.4240.99
 
 # 86.0.4240.92
