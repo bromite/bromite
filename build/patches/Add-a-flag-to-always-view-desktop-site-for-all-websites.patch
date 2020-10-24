@@ -1,0 +1,361 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Sat, 24 Oct 2020 19:40:04 +0000
+Subject: Add a flag to always view the desktop site for all websites
+
+---
+ .../java/res/xml/homepage_preferences.xml      |  5 +++++
+ .../chrome/browser/WebContentsFactory.java     | 18 ++++++++++++++++--
+ .../homepage/settings/HomepageSettings.java    | 16 ++++++++++++++++
+ .../ChromeSiteSettingsClient.java              | 14 ++++++++++++++
+ .../preferences/ChromePreferenceKeys.java      |  5 ++++-
+ .../java/res/xml/site_settings_preferences.xml |  4 ++++
+ .../browser_ui/site_settings/SiteSettings.java | 14 ++++++++++++++
+ .../site_settings/SiteSettingsClient.java      |  3 +++
+ .../strings/android/browser_ui_strings.grd     |  4 ++++
+ .../navigation_controller_android.cc           |  7 +++++++
+ .../frame_host/navigation_controller_android.h |  4 ++++
+ .../frame_host/navigation_controller_impl.cc   |  6 ++++++
+ .../frame_host/navigation_controller_impl.h    |  4 ++++
+ .../framehost/NavigationControllerImpl.java    | 11 +++++++++++
+ .../browser/NavigationController.java          |  2 ++
+ 15 files changed, 114 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/android/java/res/xml/homepage_preferences.xml b/chrome/android/java/res/xml/homepage_preferences.xml
+--- a/chrome/android/java/res/xml/homepage_preferences.xml
++++ b/chrome/android/java/res/xml/homepage_preferences.xml
+@@ -12,6 +12,11 @@
+         android:summaryOn="@string/text_on"
+         android:summaryOff="@string/text_off" />
+ 
++    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
++        android:key="always_desktop_mode_switch"
++        android:summaryOn="@string/text_always_desktop_mode"
++        android:summaryOff="@string/text_always_desktop_mode" />
++
+     <Preference
+         android:key="homepage_edit"
+         android:title="@string/options_homepage_edit_label"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/WebContentsFactory.java b/chrome/android/java/src/org/chromium/chrome/browser/WebContentsFactory.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/WebContentsFactory.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/WebContentsFactory.java
+@@ -7,6 +7,8 @@ package org.chromium.chrome.browser;
+ import org.chromium.base.annotations.NativeMethods;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.content_public.browser.WebContents;
++import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
++import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
+ 
+ import javax.inject.Inject;
+ 
+@@ -44,14 +46,18 @@ public class WebContentsFactory {
+      */
+     // TODO(https://crbug.com/1099138): Remove static for unit-testability.
+     public static WebContents createWebContents(Profile profile, boolean initiallyHidden) {
+-        return WebContentsFactoryJni.get().createWebContents(profile, initiallyHidden, false);
++        WebContents webContents = WebContentsFactoryJni.get().createWebContents(profile, initiallyHidden, false);
++        setUseDesktopUserAgent(webContents);
++        return webContents;
+     }
+ 
+     // TODO(https://crbug.com/1033955): Remove after check discard error is fixed.
+     private static WebContents createWebContents(
+             Profile profile, boolean initiallyHidden, boolean initializeRenderer) {
+-        return WebContentsFactoryJni.get().createWebContents(
++        WebContents webContents = WebContentsFactoryJni.get().createWebContents(
+                 profile, initiallyHidden, initializeRenderer);
++        setUseDesktopUserAgent(webContents);
++        return webContents;
+     }
+ 
+     /**
+@@ -67,6 +73,14 @@ public class WebContentsFactory {
+         return createWebContents(profile, initiallyHidden, true);
+     }
+ 
++    private static void setUseDesktopUserAgent(WebContents webContents) {
++        boolean enabled = SharedPreferencesManager.getInstance().readBoolean(
++            ChromePreferenceKeys.NAVIGATION_ALWAYS_DESKTOP_MODE, false);
++        if (enabled) {
++            webContents.getNavigationController().setShouldOverrideUserAgentForNewEntry(true);
++        }
++    }
++
+     @NativeMethods
+     interface Natives {
+         WebContents createWebContents(
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/homepage/settings/HomepageSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/homepage/settings/HomepageSettings.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/homepage/settings/HomepageSettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/homepage/settings/HomepageSettings.java
+@@ -25,6 +25,8 @@ import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
+ import org.chromium.components.browser_ui.settings.SettingsUtils;
+ import org.chromium.components.browser_ui.settings.TextMessagePreference;
+ import org.chromium.components.url_formatter.UrlFormatter;
++import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
++import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
+ 
+ /**
+  * Fragment that allows the user to configure homepage related preferences.
+@@ -38,6 +40,7 @@ public class HomepageSettings extends PreferenceFragmentCompat {
+     public static final String PREF_HOMEPAGE_RADIO_GROUP = "homepage_radio_group";
+     @VisibleForTesting
+     public static final String PREF_TEXT_MANAGED = "text_managed";
++    public static final String PREF_ALWAYS_DESKTOP_MODE_SWITCH = "always_desktop_mode_switch";
+ 
+     /**
+      * Delegate used to mark that the homepage is being managed.
+@@ -91,6 +94,19 @@ public class HomepageSettings extends PreferenceFragmentCompat {
+             });
+         }
+ 
++        ChromeSwitchPreference alwaysDesktopModeSwitch =
++                (ChromeSwitchPreference) findPreference(PREF_ALWAYS_DESKTOP_MODE_SWITCH);
++        if (alwaysDesktopModeSwitch != null) {
++            boolean enabled = SharedPreferencesManager.getInstance().readBoolean(
++                ChromePreferenceKeys.NAVIGATION_ALWAYS_DESKTOP_MODE, false);
++            alwaysDesktopModeSwitch.setChecked(enabled);
++            alwaysDesktopModeSwitch.setOnPreferenceChangeListener((preference, newValue) -> {
++                SharedPreferencesManager.getInstance().writeBoolean(
++                    ChromePreferenceKeys.NAVIGATION_ALWAYS_DESKTOP_MODE, (boolean) newValue);
++                return true;
++            });
++        }
++
+         RecordUserAction.record("Settings.Homepage.Opened");
+ 
+         // Update preference views and state.
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/site_settings/ChromeSiteSettingsClient.java b/chrome/android/java/src/org/chromium/chrome/browser/site_settings/ChromeSiteSettingsClient.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/site_settings/ChromeSiteSettingsClient.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/site_settings/ChromeSiteSettingsClient.java
+@@ -32,6 +32,8 @@ import org.chromium.components.embedder_support.browser_context.BrowserContextHa
+ import org.chromium.components.embedder_support.util.Origin;
+ import org.chromium.content_public.browser.ContentFeatureList;
+ import org.chromium.content_public.common.ContentSwitches;
++import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
++import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
+ 
+ /**
+  * A SiteSettingsClient instance that contains Chrome-specific Site Settings logic.
+@@ -199,4 +201,16 @@ public class ChromeSiteSettingsClient implements SiteSettingsClient {
+ 
+         return null;
+     }
++
++    @Override
++    public boolean IsAlwaysDesktopModeEnabled() {
++        return SharedPreferencesManager.getInstance().readBoolean(
++            ChromePreferenceKeys.NAVIGATION_ALWAYS_DESKTOP_MODE, false);
++    }
++
++    @Override
++    public void SetAlwaysDesktopModeEnabled(boolean enabled) {
++        SharedPreferencesManager.getInstance().writeBoolean(
++            ChromePreferenceKeys.NAVIGATION_ALWAYS_DESKTOP_MODE, enabled);
++    }
+ }
+diff --git a/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java b/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java
+--- a/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java
++++ b/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java
+@@ -778,6 +778,8 @@ public final class ChromePreferenceKeys {
+     public static final KeyPrefix KEY_ZERO_SUGGEST_HEADER_GROUP_COLLAPSED_BY_DEFAULT_PREFIX =
+             new KeyPrefix("zero_suggest_header_group_collapsed_by_default*");
+ 
++    public static final String NAVIGATION_ALWAYS_DESKTOP_MODE = "Chrome.Navigation.AlwaysDesktopMode";
++
+     /**
+      * These values are currently used as SharedPreferences keys, along with the keys in
+      * {@link GrandfatheredChromePreferenceKeys#getKeysInUse()}. Add new SharedPreferences keys
+@@ -820,7 +822,8 @@ public final class ChromePreferenceKeys {
+                 PROMO_TIMES_SEEN.pattern(),
+                 SETTINGS_SAFETY_CHECK_LAST_RUN_TIMESTAMP,
+                 SETTINGS_SAFETY_CHECK_RUN_COUNTER,
+-                TWA_DISCLOSURE_SEEN_PACKAGES
++                TWA_DISCLOSURE_SEEN_PACKAGES,
++                NAVIGATION_ALWAYS_DESKTOP_MODE
+         );
+         // clang-format on
+     }
+diff --git a/components/browser_ui/site_settings/android/java/res/xml/site_settings_preferences.xml b/components/browser_ui/site_settings/android/java/res/xml/site_settings_preferences.xml
+--- a/components/browser_ui/site_settings/android/java/res/xml/site_settings_preferences.xml
++++ b/components/browser_ui/site_settings/android/java/res/xml/site_settings_preferences.xml
+@@ -105,4 +105,8 @@
+     <org.chromium.components.browser_ui.settings.ChromeBasePreference
+         android:fragment="org.chromium.components.browser_ui.site_settings.SingleCategorySettings"
+         android:key="augmented_reality" />
++    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
++        android:key="always_desktop_mode_switch"
++        android:summaryOn="@string/text_always_desktop_mode"
++        android:summaryOff="@string/text_always_desktop_mode" />
+ </PreferenceScreen>
+diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java
+--- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java
++++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java
+@@ -15,6 +15,7 @@ import org.chromium.components.browser_ui.site_settings.SiteSettingsCategory.Typ
+ import org.chromium.components.content_settings.ContentSettingValues;
+ import org.chromium.components.embedder_support.browser_context.BrowserContextHandle;
+ import org.chromium.components.user_prefs.UserPrefs;
++import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
+ 
+ /**
+  * The main Site Settings screen, which shows all the site settings categories: All sites, Location,
+@@ -27,11 +28,24 @@ public class SiteSettings
+     // The keys for each category shown on the Site Settings page
+     // are defined in the SiteSettingsCategory.
+ 
++    private static final String PREF_ALWAYS_DESKTOP_MODE_SWITCH = "always_desktop_mode_switch";
++
+     @Override
+     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
+         SettingsUtils.addPreferencesFromResource(this, R.xml.site_settings_preferences);
+         getActivity().setTitle(R.string.prefs_site_settings);
+ 
++        ChromeSwitchPreference alwaysDesktopModeSwitch =
++                (ChromeSwitchPreference) findPreference(PREF_ALWAYS_DESKTOP_MODE_SWITCH);
++        if (alwaysDesktopModeSwitch != null) {
++            boolean enabled = getSiteSettingsClient().IsAlwaysDesktopModeEnabled();
++            alwaysDesktopModeSwitch.setChecked(enabled);
++            alwaysDesktopModeSwitch.setOnPreferenceChangeListener((preference, newValue) -> {
++                getSiteSettingsClient().SetAlwaysDesktopModeEnabled((boolean)newValue);
++                return true;
++            });
++        }
++
+         configurePreferences();
+         updatePreferenceStates();
+     }
+diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsClient.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsClient.java
+--- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsClient.java
++++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsClient.java
+@@ -87,4 +87,7 @@ public interface SiteSettingsClient {
+      */
+     @Nullable
+     String getDelegatePackageNameForOrigin(Origin origin, @ContentSettingsType int type);
++
++    boolean IsAlwaysDesktopModeEnabled();
++    void SetAlwaysDesktopModeEnabled(boolean enabled);
+ }
+diff --git a/components/browser_ui/strings/android/browser_ui_strings.grd b/components/browser_ui/strings/android/browser_ui_strings.grd
+--- a/components/browser_ui/strings/android/browser_ui_strings.grd
++++ b/components/browser_ui/strings/android/browser_ui_strings.grd
+@@ -353,6 +353,10 @@
+         This page is dangerous. Site information
+       </message>
+ 
++      <message name="IDS_TEXT_ALWAYS_DESKTOP_MODE" desc="Text indicating always desktop view mode. [CHAR-LIMIT=20]">
++        Always desktop view
++      </message>
++      
+       <!-- Cookie controls UI -->
+       <message name="IDS_COOKIE_CONTROLS_BLOCKED_COOKIES" desc="Text showing the number of blocked cookies on a site.">
+         {COOKIE_COUNT, plural,
+diff --git a/content/browser/frame_host/navigation_controller_android.cc b/content/browser/frame_host/navigation_controller_android.cc
+--- a/content/browser/frame_host/navigation_controller_android.cc
++++ b/content/browser/frame_host/navigation_controller_android.cc
+@@ -351,6 +351,13 @@ bool NavigationControllerAndroid::GetUseDesktopUserAgent(
+   return entry && entry->GetIsOverridingUserAgent();
+ }
+ 
++void NavigationControllerAndroid::ShouldOverrideUserAgentForNewEntry(
++    JNIEnv* env,
++    const JavaParamRef<jobject>& obj,
++    jboolean enabled) {
++  navigation_controller_->ShouldOverrideUserAgentForNewEntry(enabled);
++}
++
+ void NavigationControllerAndroid::SetUseDesktopUserAgent(
+     JNIEnv* env,
+     const JavaParamRef<jobject>& obj,
+diff --git a/content/browser/frame_host/navigation_controller_android.h b/content/browser/frame_host/navigation_controller_android.h
+--- a/content/browser/frame_host/navigation_controller_android.h
++++ b/content/browser/frame_host/navigation_controller_android.h
+@@ -135,6 +135,10 @@ class CONTENT_EXPORT NavigationControllerAndroid {
+       JNIEnv* env,
+       const base::android::JavaParamRef<jobject>& obj,
+       jint index);
++   void ShouldOverrideUserAgentForNewEntry(
++      JNIEnv* env,
++      const base::android::JavaParamRef<jobject>& obj,
++      jboolean enabled);
+ 
+  private:
+   NavigationControllerImpl* navigation_controller_;
+diff --git a/content/browser/frame_host/navigation_controller_impl.cc b/content/browser/frame_host/navigation_controller_impl.cc
+--- a/content/browser/frame_host/navigation_controller_impl.cc
++++ b/content/browser/frame_host/navigation_controller_impl.cc
+@@ -2989,6 +2989,8 @@ void NavigationControllerImpl::NavigateWithoutEntry(
+   // CreateNavigationRequestFromLoadURLParams.
+   bool override_user_agent = ShouldOverrideUserAgent(params.override_user_agent,
+                                                      GetLastCommittedEntry());
++  if (should_override_useragent_for_new_entry_ == true)
++    override_user_agent = true;
+ 
+   // Don't allow an entry replacement if there is no entry to replace.
+   // http://crbug.com/457149
+@@ -3758,4 +3760,8 @@ void NavigationControllerImpl::PendingEntryRefDeleted(PendingEntryRef* ref) {
+   delegate_->NotifyNavigationStateChanged(INVALIDATE_TYPE_URL);
+ }
+ 
++void NavigationControllerImpl::ShouldOverrideUserAgentForNewEntry(bool enabled) {
++  should_override_useragent_for_new_entry_ = enabled;
++}
++
+ }  // namespace content
+diff --git a/content/browser/frame_host/navigation_controller_impl.h b/content/browser/frame_host/navigation_controller_impl.h
+--- a/content/browser/frame_host/navigation_controller_impl.h
++++ b/content/browser/frame_host/navigation_controller_impl.h
+@@ -333,6 +333,8 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
+       scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
+       bool should_replace_entry);
+ 
++   void ShouldOverrideUserAgentForNewEntry(bool enabled);
++
+  private:
+   friend class RestoreHelper;
+ 
+@@ -701,6 +703,8 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
+   // go back into place after any subsequent commit.
+   std::unique_ptr<NavigationEntryImpl> entry_replaced_by_post_commit_error_;
+ 
++  bool should_override_useragent_for_new_entry_ = false;
++
+   // NOTE: This must be the last member.
+   base::WeakPtrFactory<NavigationControllerImpl> weak_factory_{this};
+ 
+diff --git a/content/public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java b/content/public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java
+--- a/content/public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java
++++ b/content/public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java
+@@ -224,6 +224,15 @@ import org.chromium.content_public.common.ResourceRequestBody;
+         }
+     }
+ 
++    @Override
++    public void setShouldOverrideUserAgentForNewEntry(boolean enabled) {
++        if (mNativeNavigationControllerAndroid != 0) {
++                NavigationControllerImplJni.get().ShouldOverrideUserAgentForNewEntry(
++                        mNativeNavigationControllerAndroid, NavigationControllerImpl.this,
++                        enabled);
++        }
++    }
++
+     @Override
+     public NavigationEntry getEntryAtIndex(int index) {
+         if (mNativeNavigationControllerAndroid != 0) {
+@@ -378,5 +387,7 @@ import org.chromium.content_public.common.ResourceRequestBody;
+                 NavigationControllerImpl caller, int index, String key, String value);
+         boolean isEntryMarkedToBeSkipped(
+                 long nativeNavigationControllerAndroid, NavigationControllerImpl caller, int index);
++        void ShouldOverrideUserAgentForNewEntry(long nativeNavigationControllerAndroid, 
++                NavigationControllerImpl caller, boolean enabled);
+     }
+ }
+diff --git a/content/public/android/java/src/org/chromium/content_public/browser/NavigationController.java b/content/public/android/java/src/org/chromium/content_public/browser/NavigationController.java
+--- a/content/public/android/java/src/org/chromium/content_public/browser/NavigationController.java
++++ b/content/public/android/java/src/org/chromium/content_public/browser/NavigationController.java
+@@ -138,6 +138,8 @@ public interface NavigationController {
+      */
+     public void setUseDesktopUserAgent(boolean override, boolean reloadOnChange);
+ 
++    public void setShouldOverrideUserAgentForNewEntry(boolean enabled);
++
+     /**
+      * Return the NavigationEntry at the given index.
+      * @param index Index to retrieve the NavigationEntry for.
