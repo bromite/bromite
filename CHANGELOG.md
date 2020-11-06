@@ -1,3 +1,6 @@
+# 86.0.4240.181
+* allow sticky desktop mode for all tabs (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/780)
+
 # 86.0.4240.112
 * fix crash in new overflow menu (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/771)
 
