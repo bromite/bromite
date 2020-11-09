@@ -1,3 +1,9 @@
+# 86.0.4240.194
+* fix native pages displaying incorrectly with the sticky desktop mode (thanks to @uazo)
+* re-introduce simplified NTP (fixes https://github.com/bromite/bromite/issues/701)
+* re-introduce site settings to block autoplay (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/791)
+* fix Omnibox flag not working (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/789)
+
 # 86.0.4240.181
 * allow sticky desktop mode for all tabs (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/780)
 
