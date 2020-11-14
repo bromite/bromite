@@ -9,18 +9,18 @@ This patch is based on Iridium's 'net: add "trk:" scheme and help identify URLs 
  .../chrome_autocomplete_scheme_classifier.cc  |  1 +
  chrome/browser/history/history_utils.cc       |  1 +
  chrome/browser/ui/singleton_tabs.cc           |  3 +-
- .../omnibox/browser/autocomplete_input.cc     |  7 ++--
+ .../omnibox/browser/autocomplete_input.cc     |  7 +++--
  components/url_formatter/url_fixer.cc         |  4 +++
  .../child_process_security_policy_impl.cc     |  1 +
  net/BUILD.gn                                  |  2 ++
- net/url_request/trk_protocol_handler.cc       | 26 +++++++++++++++
- net/url_request/trk_protocol_handler.h        | 33 +++++++++++++++++++
+ net/url_request/trk_protocol_handler.cc       | 25 +++++++++++++++
+ net/url_request/trk_protocol_handler.h        | 31 +++++++++++++++++++
  net/url_request/url_request.cc                |  8 +++++
  .../url_request_context_builder.cc            |  3 ++
  url/url_constants.cc                          |  1 +
  url/url_constants.h                           |  1 +
  url/url_util.cc                               |  2 ++
- 14 files changed, 90 insertions(+), 3 deletions(-)
+ 14 files changed, 87 insertions(+), 3 deletions(-)
  create mode 100644 net/url_request/trk_protocol_handler.cc
  create mode 100644 net/url_request/trk_protocol_handler.h
 
@@ -86,7 +86,7 @@ diff --git a/components/omnibox/browser/autocomplete_input.cc b/components/omnib
 diff --git a/components/url_formatter/url_fixer.cc b/components/url_formatter/url_fixer.cc
 --- a/components/url_formatter/url_fixer.cc
 +++ b/components/url_formatter/url_fixer.cc
-@@ -557,6 +557,10 @@ GURL FixupURL(const std::string& text, const std::string& desired_tld) {
+@@ -560,6 +560,10 @@ GURL FixupURL(const std::string& text, const std::string& desired_tld) {
      }
    }
  
@@ -100,7 +100,7 @@ diff --git a/components/url_formatter/url_fixer.cc b/components/url_formatter/ur
 diff --git a/content/browser/child_process_security_policy_impl.cc b/content/browser/child_process_security_policy_impl.cc
 --- a/content/browser/child_process_security_policy_impl.cc
 +++ b/content/browser/child_process_security_policy_impl.cc
-@@ -672,6 +672,7 @@ ChildProcessSecurityPolicyImpl::ChildProcessSecurityPolicyImpl() {
+@@ -760,6 +760,7 @@ ChildProcessSecurityPolicyImpl::ChildProcessSecurityPolicyImpl() {
  #endif  // BUILDFLAG(ENABLE_WEBSOCKETS)
    RegisterWebSafeScheme(url::kFtpScheme);
    RegisterWebSafeScheme(url::kDataScheme);
@@ -111,7 +111,7 @@ diff --git a/content/browser/child_process_security_policy_impl.cc b/content/bro
 diff --git a/net/BUILD.gn b/net/BUILD.gn
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -1092,6 +1092,8 @@ component("net") {
+@@ -1095,6 +1095,8 @@ component("net") {
        "url_request/report_sender.h",
        "url_request/static_http_user_agent_settings.cc",
        "url_request/static_http_user_agent_settings.h",
@@ -124,7 +124,7 @@ diff --git a/net/url_request/trk_protocol_handler.cc b/net/url_request/trk_proto
 new file mode 100644
 --- /dev/null
 +++ b/net/url_request/trk_protocol_handler.cc
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,25 @@
 +// Copyright (c) 2018 The ungoogled-chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -139,11 +139,10 @@ new file mode 100644
 +
 +TrkProtocolHandler::TrkProtocolHandler() = default;
 +
-+URLRequestJob* TrkProtocolHandler::MaybeCreateJob(
-+    URLRequest* request, NetworkDelegate* network_delegate) const {
++std::unique_ptr<URLRequestJob> TrkProtocolHandler::CreateJob(
++    URLRequest* request) const {
 +  LOG(ERROR) << "Blocked URL in TrkProtocolHandler: " << request->original_url();
-+  return new URLRequestErrorJob(
-+      request, network_delegate, ERR_BLOCKED_BY_CLIENT);
++  return std::make_unique<URLRequestErrorJob>(request, ERR_BLOCKED_BY_CLIENT);
 +}
 +
 +bool TrkProtocolHandler::IsSafeRedirectTarget(const GURL& location) const {
@@ -155,7 +154,7 @@ diff --git a/net/url_request/trk_protocol_handler.h b/net/url_request/trk_protoc
 new file mode 100644
 --- /dev/null
 +++ b/net/url_request/trk_protocol_handler.h
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,31 @@
 +// Copyright (c) 2018 The ungoogled-chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -177,9 +176,7 @@ new file mode 100644
 +    : public URLRequestJobFactory::ProtocolHandler {
 + public:
 +  TrkProtocolHandler();
-+  URLRequestJob* MaybeCreateJob(
-+      URLRequest* request,
-+      NetworkDelegate* network_delegate) const override;
++  std::unique_ptr<URLRequestJob> CreateJob(URLRequest* request) const override;
 +  bool IsSafeRedirectTarget(const GURL& location) const override;
 +
 + private:
@@ -208,7 +205,7 @@ diff --git a/net/url_request/url_request.cc b/net/url_request/url_request.cc
  
  using base::Time;
  using std::string;
-@@ -570,6 +572,12 @@ URLRequest::URLRequest(const GURL& url,
+@@ -566,6 +568,12 @@ URLRequest::URLRequest(const GURL& url,
    // Sanity check out environment.
    DCHECK(base::ThreadTaskRunnerHandle::IsSet());
  
@@ -231,7 +228,7 @@ diff --git a/net/url_request/url_request_context_builder.cc b/net/url_request/ur
 +#include "net/url_request/trk_protocol_handler.h"
  #include "net/url_request/url_request_context.h"
  #include "net/url_request/url_request_context_storage.h"
- #include "net/url_request/url_request_job_factory_impl.h"
+ #include "net/url_request/url_request_job_factory.h"
 @@ -614,6 +615,8 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
      job_factory->SetProtocolHandler(scheme_handler.first,
                                      std::move(scheme_handler.second));
