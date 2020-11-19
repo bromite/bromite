@@ -1,4 +1,5 @@
 # 87.0.4280.67
+* fix disable-scroll-to-text-fragment patch (fixes https://github.com/bromite/bromite/issues/803)
 
 # 86.0.4240.194
 * fix native pages displaying incorrectly with the sticky desktop mode (thanks to @uazo)
