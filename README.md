@@ -73,6 +73,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * timezone customization
 * sticky desktop mode setting
 * disable video autoplay by default
+* mobile/desktop user agent customization
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 

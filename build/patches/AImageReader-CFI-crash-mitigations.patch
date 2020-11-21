@@ -1,0 +1,276 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Tue, 5 May 2020 07:22:20 +0200
+Subject: AImageReader CFI crash mitigations
+
+Revert "gpu/android: Remove setup for disabling AImageReader."
+This reverts commit dcd5a39518246eb999f1cc63bf1ec95d93fd5b2f.
+
+Revert "Remove flags to enable/disable AImageReader."
+This reverts commit 463fa0f2e3b9e418bc26e2c8954463f0b0f76634.
+
+Disable AImageReader for ARM64/P and ARM64/Q
+
+Restore GPU bug blacklist for AImageReader on ARM and Qualcomm CPUs
+
+Restore the AImageReader blacklist for ARM/ARM64/Qualcomm chipsets which causes
+crashes on Android 9 and 10 (at different code locations).
+
+See discussions at:
+* https://github.com/bromite/bromite/issues/445
+* https://github.com/bromite/bromite/issues/814
+---
+ base/android/android_image_reader_compat.cc |  8 +++++-
+ base/android/android_image_reader_compat.h  |  4 +++
+ gpu/config/gpu_driver_bug_list.json         | 32 +++++++++++++++++++++
+ gpu/config/gpu_finch_features.cc            |  8 ++++++
+ gpu/config/gpu_finch_features.h             |  1 +
+ gpu/config/gpu_util.cc                      |  8 ++++++
+ gpu/config/gpu_workaround_list.txt          |  1 +
+ gpu/ipc/service/gpu_init.cc                 | 11 +++++++
+ gpu/ipc/service/stream_texture_android.cc   | 11 ++++++-
+ media/base/media_switches.cc                |  8 ++++++
+ media/base/media_switches.h                 |  1 +
+ 11 files changed, 91 insertions(+), 2 deletions(-)
+
+diff --git a/base/android/android_image_reader_compat.cc b/base/android/android_image_reader_compat.cc
+--- a/base/android/android_image_reader_compat.cc
++++ b/base/android/android_image_reader_compat.cc
+@@ -23,6 +23,8 @@
+ namespace base {
+ namespace android {
+ 
++bool AndroidImageReader::disable_support_ = false;
++
+ AndroidImageReader& AndroidImageReader::GetInstance() {
+   // C++11 static local variable initialization is
+   // thread-safe.
+@@ -30,8 +32,12 @@ AndroidImageReader& AndroidImageReader::GetInstance() {
+   return *instance;
+ }
+ 
++void AndroidImageReader::DisableSupport() {
++  disable_support_ = true;
++}
++
+ bool AndroidImageReader::IsSupported() {
+-  return is_supported_;
++  return !disable_support_ && is_supported_;
+ }
+ 
+ // static
+diff --git a/base/android/android_image_reader_compat.h b/base/android/android_image_reader_compat.h
+--- a/base/android/android_image_reader_compat.h
++++ b/base/android/android_image_reader_compat.h
+@@ -22,6 +22,9 @@ class BASE_EXPORT AndroidImageReader {
+   // Thread safe GetInstance.
+   static AndroidImageReader& GetInstance();
+ 
++  // Disable image reader support.
++  static void DisableSupport();
++
+   // Check if the image reader usage is supported. This function returns TRUE
+   // if android version is >=OREO, image reader support is not disabled and all
+   // the required functions are loaded.
+@@ -64,6 +67,7 @@ class BASE_EXPORT AndroidImageReader {
+   jobject ANativeWindow_toSurface(JNIEnv* env, ANativeWindow* window);
+ 
+  private:
++  static bool disable_support_;
+   friend class base::NoDestructor<AndroidImageReader>;
+ 
+   AndroidImageReader();
+diff --git a/gpu/config/gpu_driver_bug_list.json b/gpu/config/gpu_driver_bug_list.json
+--- a/gpu/config/gpu_driver_bug_list.json
++++ b/gpu/config/gpu_driver_bug_list.json
+@@ -3287,6 +3287,38 @@
+         "dont_delete_source_texture_for_egl_image"
+       ]
+     },
++    {
++      "id":335,
++      "cr_bugs": [1051705],
++      "description": "Disable AImageReader on ARM GPUs",
++      "os": {
++        "type": "android",
++        "version": {
++          "op": "<",
++          "value": "10"
++        }
++      },
++      "gl_vendor": "ARM.*",
++      "features": [
++        "disable_aimagereader"
++      ]
++    },
++    {
++      "id":330,
++      "cr_bugs": [1051705],
++      "description": "Disable AImageReader on Qualcomm GPUs",
++      "os": {
++        "type": "android",
++        "version": {
++          "op": "<",
++          "value": "10"
++        }
++      },
++      "gl_vendor": "Qualcomm.*",
++      "features": [
++        "disable_aimagereader"
++      ]
++    },
+     {
+       "id": 336,
+       "cr_bugs": [625785],
+diff --git a/gpu/config/gpu_finch_features.cc b/gpu/config/gpu_finch_features.cc
+--- a/gpu/config/gpu_finch_features.cc
++++ b/gpu/config/gpu_finch_features.cc
+@@ -13,6 +13,14 @@
+ 
+ namespace features {
+ 
++// Use android AImageReader when playing videos with MediaPlayer.
++const base::Feature kAImageReaderMediaPlayer{"AImageReaderMediaPlayer",
++#ifdef ARCH_CPU_ARM64
++                                             base::FEATURE_DISABLED_BY_DEFAULT};
++#else
++                                             base::FEATURE_ENABLED_BY_DEFAULT};
++#endif
++
+ #if defined(OS_ANDROID)
+ // Used to limit GL version to 2.0 for skia raster on Android.
+ const base::Feature kUseGles2ForOopR{"UseGles2ForOopR",
+diff --git a/gpu/config/gpu_finch_features.h b/gpu/config/gpu_finch_features.h
+--- a/gpu/config/gpu_finch_features.h
++++ b/gpu/config/gpu_finch_features.h
+@@ -17,6 +17,7 @@ namespace features {
+ // All features in alphabetical order. The features should be documented
+ // alongside the definition of their values in the .cc file.
+ #if defined(OS_ANDROID)
++GPU_EXPORT extern const base::Feature kAImageReaderMediaPlayer;
+ GPU_EXPORT extern const base::Feature kUseGles2ForOopR;
+ GPU_EXPORT extern const base::Feature kAndroidSurfaceControl;
+ GPU_EXPORT extern const base::Feature kAImageReader;
+diff --git a/gpu/config/gpu_util.cc b/gpu/config/gpu_util.cc
+--- a/gpu/config/gpu_util.cc
++++ b/gpu/config/gpu_util.cc
+@@ -111,6 +111,9 @@ GpuFeatureStatus GetAndroidSurfaceControlFeatureStatus(
+ #if !defined(OS_ANDROID)
+   return kGpuFeatureStatusDisabled;
+ #else
++  if (blocklisted_features.count(GPU_FEATURE_TYPE_ANDROID_SURFACE_CONTROL))
++    return kGpuFeatureStatusBlocklisted;
++
+   if (!gpu_preferences.enable_android_surface_control)
+     return kGpuFeatureStatusDisabled;
+ 
+@@ -374,6 +377,11 @@ void AdjustGpuFeatureStatusToWorkarounds(GpuFeatureInfo* gpu_feature_info) {
+     gpu_feature_info->status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGL2] =
+         kGpuFeatureStatusBlocklisted;
+   }
++
++  if (gpu_feature_info->IsWorkaroundEnabled(DISABLE_AIMAGEREADER)) {
++    gpu_feature_info->status_values[GPU_FEATURE_TYPE_ANDROID_SURFACE_CONTROL] =
++        kGpuFeatureStatusBlocklisted;
++  }
+ }
+ 
+ // Estimates roughly user total disk space by counting in the drives where
+diff --git a/gpu/config/gpu_workaround_list.txt b/gpu/config/gpu_workaround_list.txt
+--- a/gpu/config/gpu_workaround_list.txt
++++ b/gpu/config/gpu_workaround_list.txt
+@@ -13,6 +13,7 @@ decode_encode_srgb_for_generatemipmap
+ depth_stencil_renderbuffer_resize_emulation
+ disable_2d_canvas_auto_flush
+ disable_accelerated_av1_decode
++disable_aimagereader
+ disable_accelerated_vp8_decode
+ disable_accelerated_vp8_encode
+ disable_accelerated_vp9_decode
+diff --git a/gpu/ipc/service/gpu_init.cc b/gpu/ipc/service/gpu_init.cc
+--- a/gpu/ipc/service/gpu_init.cc
++++ b/gpu/ipc/service/gpu_init.cc
+@@ -727,6 +727,12 @@ void GpuInit::InitializeInProcess(base::CommandLine* command_line,
+     AdjustInfoToSwiftShader();
+   }
+ 
++#if defined(OS_ANDROID)
++  // Disable AImageReader if the workaround is enabled.
++  if (gpu_feature_info_.IsWorkaroundEnabled(DISABLE_AIMAGEREADER)) {
++    base::android::AndroidImageReader::DisableSupport();
++  }
++#endif
+ #if defined(USE_OZONE)
+   if (features::IsUsingOzonePlatform()) {
+     const std::vector<gfx::BufferFormat>
+@@ -746,6 +752,11 @@ void GpuInit::InitializeInProcess(base::CommandLine* command_line,
+     gl::DirectCompositionSurfaceWin::DisableDecodeSwapChain();
+ #endif
+ 
++  // Disable AImageReader if the workaround is enabled.
++  if (gpu_feature_info_.IsWorkaroundEnabled(DISABLE_AIMAGEREADER)) {
++    base::android::AndroidImageReader::DisableSupport();
++  }
++
+   UMA_HISTOGRAM_ENUMERATION("GPU.GLImplementation", gl::GetGLImplementation());
+ }
+ #endif  // OS_ANDROID
+diff --git a/gpu/ipc/service/stream_texture_android.cc b/gpu/ipc/service/stream_texture_android.cc
+--- a/gpu/ipc/service/stream_texture_android.cc
++++ b/gpu/ipc/service/stream_texture_android.cc
+@@ -6,6 +6,7 @@
+ 
+ #include <string.h>
+ 
++#include "base/android/android_image_reader_compat.h"
+ #include "base/android/scoped_hardware_buffer_fence_sync.h"
+ #include "base/bind.h"
+ #include "base/feature_list.h"
+@@ -47,7 +48,15 @@ std::unique_ptr<ui::ScopedMakeCurrent> MakeCurrent(
+ }
+ 
+ TextureOwner::Mode GetTextureOwnerMode() {
+-  return features::IsAImageReaderEnabled()
++  const bool a_image_reader_supported =
++      base::android::AndroidImageReader::GetInstance().IsSupported();
++
++  // TODO(vikassoni) : Currently we have 2 different flags to enable/disable
++  // AImageReader - one for MCVD and other for MediaPlayer here. Merge those 2
++  // flags into a single flag. Keeping the 2 flags separate for now since finch
++  // experiment using this flag is in progress.
++  return a_image_reader_supported && features::IsAImageReaderEnabled() &&
++             base::FeatureList::IsEnabled(features::kAImageReaderMediaPlayer)
+              ? TextureOwner::Mode::kAImageReaderInsecure
+              : TextureOwner::Mode::kSurfaceTextureInsecure;
+ }
+diff --git a/media/base/media_switches.cc b/media/base/media_switches.cc
+--- a/media/base/media_switches.cc
++++ b/media/base/media_switches.cc
+@@ -566,6 +566,14 @@ const base::Feature kMediaDrmPreprovisioning{"MediaDrmPreprovisioning",
+ const base::Feature kMediaDrmPreprovisioningAtStartup{
+     "MediaDrmPreprovisioningAtStartup", base::FEATURE_ENABLED_BY_DEFAULT};
+ 
++// Enables the Android Image Reader path for Video decoding(for AVDA and MCVD)
++const base::Feature kAImageReaderVideoOutput{"AImageReaderVideoOutput",
++#ifdef ARCH_CPU_ARM64
++                                             base::FEATURE_DISABLED_BY_DEFAULT};
++#else
++                                             base::FEATURE_ENABLED_BY_DEFAULT};
++#endif
++
+ // Prevents using SurfaceLayer for videos. This is meant to be used by embedders
+ // that cannot support SurfaceLayer at the moment.
+ const base::Feature kDisableSurfaceLayerForVideo{
+diff --git a/media/base/media_switches.h b/media/base/media_switches.h
+--- a/media/base/media_switches.h
++++ b/media/base/media_switches.h
+@@ -198,6 +198,7 @@ MEDIA_EXPORT extern const base::Feature kMediaControlsExpandGesture;
+ MEDIA_EXPORT extern const base::Feature kMediaDrmPersistentLicense;
+ MEDIA_EXPORT extern const base::Feature kMediaDrmPreprovisioning;
+ MEDIA_EXPORT extern const base::Feature kMediaDrmPreprovisioningAtStartup;
++MEDIA_EXPORT extern const base::Feature kAImageReaderVideoOutput;
+ MEDIA_EXPORT extern const base::Feature kDisableSurfaceLayerForVideo;
+ MEDIA_EXPORT extern const base::Feature kCanPlayHls;
+ MEDIA_EXPORT extern const base::Feature kPictureInPictureAPI;
+-- 
+2.17.1
+

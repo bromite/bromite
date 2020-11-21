@@ -1,7 +1,11 @@
 From: uazo <uazo@users.noreply.github.com>
 Date: Mon, 26 Oct 2020 16:50:15 +0000
-Subject: Add flag to always view the desktop site for all websites
+Subject: User agent customization
 
+Add flag to always view the desktop site for all websites
+Add possibility to define a custom User agent for mobile and desktop mode.
+Add possibility to reactivate the metatag view for desktop mode, allowing users to choose
+to use the flag in the hamburger menu to navigate with a custom useragent leaving the standard navigation unchanged.
 ---
  base/base_switches.cc                         |   2 +
  base/base_switches.h                          |   2 +
@@ -10,10 +14,10 @@ Subject: Add flag to always view the desktop site for all websites
  .../layout/custom_useragent_preferences.xml   | 108 +++++++++++
  .../android/java/res/xml/main_preferences.xml |   5 +
  .../java/res/xml/useragent_preferences.xml    |  31 +++
- .../chrome/browser/app/ChromeActivity.java    |  21 ++-
+ .../chrome/browser/app/ChromeActivity.java    |  20 +-
  .../settings/PrivacyPreferencesManager.java   |  30 +++
- .../settings/UserAgentPreferences.java        | 178 ++++++++++++++++++
- .../chromium/chrome/browser/tab/TabImpl.java  |  83 +++++++-
+ .../settings/UserAgentPreferences.java        | 176 ++++++++++++++++++
+ .../chromium/chrome/browser/tab/TabImpl.java  |  83 ++++++++-
  .../browser/tabmodel/TabWindowManager.java    |  23 +++
  .../browser/android/content/content_utils.cc  |  64 +++++--
  .../preferences/browser_prefs_android.cc      |   7 +
@@ -25,13 +29,13 @@ Subject: Add flag to always view the desktop site for all websites
  .../strings/android_chrome_strings.grd        |  35 ++++
  chrome/common/pref_names.cc                   |  13 ++
  chrome/common/pref_names.h                    |   8 +
- .../android/browser_startup_controller.cc     |  35 ++++
+ .../android/browser_startup_controller.cc     |  34 ++++
  .../navigation_controller_android.cc          |   6 +-
  .../navigation_controller_android.h           |   3 +-
  .../renderer_host/render_process_host_impl.cc |   1 +
  .../browser/web_contents/web_contents_impl.cc |   4 +-
  .../framehost/NavigationControllerImpl.java   |   6 +-
- 28 files changed, 748 insertions(+), 30 deletions(-)
+ 28 files changed, 744 insertions(+), 30 deletions(-)
  create mode 100644 chrome/android/java/res/layout/custom_useragent_preferences.xml
  create mode 100644 chrome/android/java/res/xml/useragent_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/UserAgentPreferences.java
@@ -71,14 +75,14 @@ diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_ja
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
-@@ -1308,6 +1308,7 @@ chrome_java_sources = [
-   "java/src/org/chromium/chrome/browser/photo_picker/DecoderService.java",
-   "java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java",
-   "java/src/org/chromium/chrome/browser/settings/AdBlockPreferences.java",
+@@ -1295,6 +1295,7 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/payments/ui/DimmingDialog.java",
+   "java/src/org/chromium/chrome/browser/payments/ui/LineItem.java",
+   "java/src/org/chromium/chrome/browser/payments/ui/PaymentAppComparator.java",
 +  "java/src/org/chromium/chrome/browser/settings/UserAgentPreferences.java",
-   "java/src/org/chromium/chrome/browser/policy/EnterpriseInfo.java",
-   "java/src/org/chromium/chrome/browser/policy/PolicyAuditor.java",
-   "java/src/org/chromium/chrome/browser/prerender/ChromePrerenderService.java",
+   "java/src/org/chromium/chrome/browser/payments/ui/PaymentInformation.java",
+   "java/src/org/chromium/chrome/browser/payments/ui/PaymentRequestBottomBar.java",
+   "java/src/org/chromium/chrome/browser/payments/ui/PaymentRequestHeader.java",
 diff --git a/chrome/android/java/res/layout/custom_useragent_preferences.xml b/chrome/android/java/res/layout/custom_useragent_preferences.xml
 new file mode 100644
 --- /dev/null
@@ -260,7 +264,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
  
  import org.chromium.url.GURL;
  
-@@ -2038,11 +2045,19 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
+@@ -2038,11 +2045,18 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
          } else if (id == R.id.view_source_id) {
              currentTab.getWebContents().getNavigationController().loadUrl(new LoadUrlParams("view-source:"+currentTab.getUrlString()));
          } else if (id == R.id.request_desktop_site_id || id == R.id.request_desktop_site_check_id) {
@@ -276,8 +280,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
 +                    ChromePreferenceKeys.USERAGENT_STICKY_DESKTOP_MODE, false);
 +            if (stickyDesktopModeEnabled) {
 +                TabWindowManager.getInstance().SetOverrideUserAgentForAllTabs(!usingDesktopUserAgent);
-+            }
-+            else {
++            } else {
 +                currentTab.SetOverrideUserAgent(!usingDesktopUserAgent);
 +            }
              RecordUserAction.record("MobileMenuRequestDesktopSite");
@@ -333,7 +336,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/UserAg
 new file mode 100644
 --- /dev/null
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/UserAgentPreferences.java
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,176 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -386,7 +389,7 @@ new file mode 100644
 +/**
 + * Fragment that allows the user to configure User Agent related preferences.
 + */
-+public class UserAgentPreferences 
++public class UserAgentPreferences
 +        extends PreferenceFragmentCompat implements RadioGroup.OnCheckedChangeListener {
 +
 +    private static final String PREF_STICK_DESKTOP_MODE_SWITCH = "desktop_mode_switch";
@@ -480,7 +483,7 @@ new file mode 100644
 +
 +        return viewGroup;
 +    }
-+    
++
 +    private void UpdateAllTabs() {
 +        final boolean alwaysDesktopModeEnabled = SharedPreferencesManager.getInstance().readBoolean(
 +            ChromePreferenceKeys.USERAGENT_ALWAYS_DESKTOP_MODE, false);
@@ -491,18 +494,16 @@ new file mode 100644
 +    public void onCheckedChanged(RadioGroup group, int checkedId) {
 +        if (useDefaultAgentSwitch.isChecked()) {
 +            PrivacyPreferencesManager.getInstance().setOverrideUserAgentEnabled(false, false);
-+        }
-+        else if (useCustomAgentSwitch.isChecked()) {
++        } else if (useCustomAgentSwitch.isChecked()) {
 +            PrivacyPreferencesManager.getInstance().setOverrideUserAgentEnabled(true, false);
 +        }
-+        
++
 +        if (useDefaultAgentSwitchDesktopMode.isChecked()) {
 +            PrivacyPreferencesManager.getInstance().setOverrideUserAgentEnabled(false, true);
-+        }
-+        else if (useCustomAgentSwitchDesktopMode.isChecked()) {
++        } else if (useCustomAgentSwitchDesktopMode.isChecked()) {
 +            PrivacyPreferencesManager.getInstance().setOverrideUserAgentEnabled(true, true);
 +        }
-+        
++
 +        UpdateAllTabs();
 +    }
 +
@@ -1044,7 +1045,7 @@ diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
 diff --git a/content/browser/android/browser_startup_controller.cc b/content/browser/android/browser_startup_controller.cc
 --- a/content/browser/android/browser_startup_controller.cc
 +++ b/content/browser/android/browser_startup_controller.cc
-@@ -10,11 +10,46 @@
+@@ -10,11 +10,45 @@
  #include "content/browser/browser_main_loop.h"
  #include "content/public/android/content_jni_headers/BrowserStartupControllerImpl_jni.h"
  
@@ -1063,7 +1064,7 @@ diff --git a/content/browser/android/browser_startup_controller.cc b/content/bro
  
  void BrowserStartupComplete(int result) {
 +
-+  LOG(INFO) << "---Checking user agent override status";
++  LOG(INFO) << "BrowserStartup: checking user agent override status";
 +
 +  base::CommandLine* parsed_command_line =
 +      base::CommandLine::ForCurrentProcess();
@@ -1078,9 +1079,8 @@ diff --git a/content/browser/android/browser_startup_controller.cc b/content/bro
 +    if (net::HttpUtil::IsValidHeaderValue(ua)) {
 +      parsed_command_line->AppendSwitchASCII(switches::kUserAgent,
 +                                             ua);
-+    }
-+    else {
-+      LOG(INFO) << "Ignored invalid value for ua --" << ua;
++    } else {
++      LOG(INFO) << "BrowserStartup: ignoring invalid value for custom user agent";
 +    }
 +
 +    parsed_command_line->RemoveSwitch(switches::kDesktopModeViewportMetaEnabled);

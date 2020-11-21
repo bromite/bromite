@@ -1,5 +1,10 @@
-# 87.0.4280.67
+# 87.0.4280.68
+* user agent customization (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/798)
+* fix for Qualcomm AImageReader crashes on A9 (fixes https://github.com/bromite/bromite/issues/814)
 * fix disable-scroll-to-text-fragment patch (fixes https://github.com/bromite/bromite/issues/803)
+* fix for intent handling for local apps on Android 11 (https://github.com/bromite/bromite/pull/816)
+
+# 87.0.4280.67
 
 # 86.0.4240.194
 * fix native pages displaying incorrectly with the sticky desktop mode (thanks to @uazo)
