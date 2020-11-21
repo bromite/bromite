@@ -24,18 +24,18 @@ to use the flag in the hamburger menu to navigate with a custom useragent leavin
  .../privacy_preferences_manager.cc            |  93 +++++++++
  chrome/browser/android/tab_android.cc         |   5 +-
  chrome/browser/android/tab_android.h          |   3 +-
+ .../browser/chrome_content_browser_client.cc  |  12 ++
  .../preferences/ChromePreferenceKeys.java     |   7 +-
  .../org/chromium/chrome/browser/tab/Tab.java  |   2 +
  .../strings/android_chrome_strings.grd        |  35 ++++
  chrome/common/pref_names.cc                   |  13 ++
  chrome/common/pref_names.h                    |   8 +
- .../android/browser_startup_controller.cc     |  34 ++++
  .../navigation_controller_android.cc          |   6 +-
  .../navigation_controller_android.h           |   3 +-
  .../renderer_host/render_process_host_impl.cc |   1 +
  .../browser/web_contents/web_contents_impl.cc |   4 +-
  .../framehost/NavigationControllerImpl.java   |   6 +-
- 28 files changed, 744 insertions(+), 30 deletions(-)
+ 28 files changed, 722 insertions(+), 30 deletions(-)
  create mode 100644 chrome/android/java/res/layout/custom_useragent_preferences.xml
  create mode 100644 chrome/android/java/res/xml/useragent_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/UserAgentPreferences.java
@@ -922,6 +922,28 @@ diff --git a/chrome/browser/android/tab_android.h b/chrome/browser/android/tab_a
    void SetActiveNavigationEntryTitleForUrl(
        JNIEnv* env,
        const base::android::JavaParamRef<jobject>& obj,
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -2310,6 +2310,18 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+             blink::switches::kUserAgentClientHintDisable);
+       }
+ 
++      bool overrideUserAgentEnabled =
++        local_state->GetBoolean(prefs::kOverrideUserAgentEnabled);
++      if (overrideUserAgentEnabled) {
++        std::string ua = local_state->GetString(prefs::kOverrideUserAgent);
++        if (net::HttpUtil::IsValidHeaderValue(ua)) {
++          command_line->RemoveSwitch(switches::kUserAgent);
++          command_line->AppendSwitchASCII(switches::kUserAgent, ua);
++        } else {
++          LOG(WARNING) << "Ignoring invalid value for custom user agent";
++        }
++      }
++
+ #if defined(OS_ANDROID)
+       // Communicating to content/ for BackForwardCache.
+       if (prefs->HasPrefPath(policy::policy_prefs::kBackForwardCacheEnabled) &&
 diff --git a/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java b/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java
 --- a/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java
 +++ b/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java
@@ -1042,55 +1064,6 @@ diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
  }  // namespace prefs
  
  #endif  // CHROME_COMMON_PREF_NAMES_H_
-diff --git a/content/browser/android/browser_startup_controller.cc b/content/browser/android/browser_startup_controller.cc
---- a/content/browser/android/browser_startup_controller.cc
-+++ b/content/browser/android/browser_startup_controller.cc
-@@ -10,11 +10,45 @@
- #include "content/browser/browser_main_loop.h"
- #include "content/public/android/content_jni_headers/BrowserStartupControllerImpl_jni.h"
- 
-+#include "base/logging.h"
-+#include "base/command_line.h"
-+#include "base/base_switches.h"
-+#include "components/prefs/pref_service.h"
-+#include "chrome/browser/browser_process.h"
-+#include "chrome/common/pref_names.h"
-+#include "chrome/common/chrome_switches.h"
-+#include "net/http/http_util.h"
-+
- using base::android::JavaParamRef;
- 
- namespace content {
- 
- void BrowserStartupComplete(int result) {
-+
-+  LOG(INFO) << "BrowserStartup: checking user agent override status";
-+
-+  base::CommandLine* parsed_command_line =
-+      base::CommandLine::ForCurrentProcess();
-+
-+  parsed_command_line->RemoveSwitch(switches::kUserAgent);
-+
-+  PrefService* local_state = g_browser_process->local_state();
-+  bool overrideUserAgentEnabled =
-+    local_state->GetBoolean(prefs::kOverrideUserAgentEnabled);
-+  if (overrideUserAgentEnabled) {
-+    std::string ua = local_state->GetString(prefs::kOverrideUserAgent);
-+    if (net::HttpUtil::IsValidHeaderValue(ua)) {
-+      parsed_command_line->AppendSwitchASCII(switches::kUserAgent,
-+                                             ua);
-+    } else {
-+      LOG(INFO) << "BrowserStartup: ignoring invalid value for custom user agent";
-+    }
-+
-+    parsed_command_line->RemoveSwitch(switches::kDesktopModeViewportMetaEnabled);
-+    if (local_state->GetBoolean(prefs::kDesktopModeViewportMetaEnabled))
-+      parsed_command_line->AppendSwitch(switches::kDesktopModeViewportMetaEnabled);
-+  }
-+
-   JNIEnv* env = base::android::AttachCurrentThread();
-   Java_BrowserStartupControllerImpl_browserStartupComplete(env, result);
- }
 diff --git a/content/browser/renderer_host/navigation_controller_android.cc b/content/browser/renderer_host/navigation_controller_android.cc
 --- a/content/browser/renderer_host/navigation_controller_android.cc
 +++ b/content/browser/renderer_host/navigation_controller_android.cc
