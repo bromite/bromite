@@ -11,31 +11,33 @@ to use the flag in the hamburger menu to navigate with a custom useragent leavin
  base/base_switches.h                          |   2 +
  chrome/android/chrome_java_resources.gni      |   2 +
  chrome/android/chrome_java_sources.gni        |   1 +
- .../layout/custom_useragent_preferences.xml   | 108 +++++++++++
+ .../layout/custom_useragent_preferences.xml   | 108 ++++++++++
  .../android/java/res/xml/main_preferences.xml |   5 +
  .../java/res/xml/useragent_preferences.xml    |  31 +++
  .../chrome/browser/app/ChromeActivity.java    |  20 +-
- .../settings/PrivacyPreferencesManager.java   |  30 +++
- .../settings/UserAgentPreferences.java        | 176 ++++++++++++++++++
- .../chromium/chrome/browser/tab/TabImpl.java  |  83 ++++++++-
+ .../init/ChromeBrowserInitializer.java        |   3 +
+ .../settings/PrivacyPreferencesManager.java   |  35 ++++
+ .../settings/UserAgentPreferences.java        | 184 ++++++++++++++++++
+ .../chromium/chrome/browser/tab/TabImpl.java  |  83 +++++++-
  .../browser/tabmodel/TabWindowManager.java    |  23 +++
- .../browser/android/content/content_utils.cc  |  64 +++++--
+ .../browser/android/content/content_utils.cc  |  29 +++
  .../preferences/browser_prefs_android.cc      |   7 +
- .../privacy_preferences_manager.cc            |  93 +++++++++
+ .../privacy_preferences_manager.cc            | 113 +++++++++++
  chrome/browser/android/tab_android.cc         |   5 +-
  chrome/browser/android/tab_android.h          |   3 +-
- .../browser/chrome_content_browser_client.cc  |  12 ++
+ .../browser/chrome_content_browser_client.cc  |   8 +
  .../preferences/ChromePreferenceKeys.java     |   7 +-
  .../org/chromium/chrome/browser/tab/Tab.java  |   2 +
  .../strings/android_chrome_strings.grd        |  35 ++++
  chrome/common/pref_names.cc                   |  13 ++
  chrome/common/pref_names.h                    |   8 +
+ .../widget/RadioButtonWithEditText.java       |  11 ++
  .../navigation_controller_android.cc          |   6 +-
  .../navigation_controller_android.h           |   3 +-
  .../renderer_host/render_process_host_impl.cc |   1 +
  .../browser/web_contents/web_contents_impl.cc |   4 +-
  .../framehost/NavigationControllerImpl.java   |   6 +-
- 28 files changed, 722 insertions(+), 30 deletions(-)
+ 30 files changed, 747 insertions(+), 13 deletions(-)
  create mode 100644 chrome/android/java/res/layout/custom_useragent_preferences.xml
  create mode 100644 chrome/android/java/res/xml/useragent_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/UserAgentPreferences.java
@@ -286,13 +288,42 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
              RecordUserAction.record("MobileMenuRequestDesktopSite");
          } else if (id == R.id.reader_mode_prefs_id) {
              DomDistillerUIUtils.openSettings(currentTab.getWebContents());
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/init/ChromeBrowserInitializer.java b/chrome/android/java/src/org/chromium/chrome/browser/init/ChromeBrowserInitializer.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/init/ChromeBrowserInitializer.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/init/ChromeBrowserInitializer.java
+@@ -48,6 +48,7 @@ import org.chromium.content_public.browser.SpeechRecognition;
+ import org.chromium.content_public.browser.UiThreadTaskTraits;
+ import org.chromium.net.NetworkChangeNotifier;
+ import org.chromium.ui.resources.ResourceExtractor;
++import org.chromium.chrome.browser.privacy.settings.PrivacyPreferencesManager;
+ 
+ import java.io.File;
+ import java.util.ArrayList;
+@@ -324,11 +325,13 @@ public class ChromeBrowserInitializer {
+ 
+                         @Override
+                         public void onSuccess() {
++                            PrivacyPreferencesManager.getInstance().UpdateOverrideUserAgent();
+                             tasks.start(false);
+                         }
+                     });
+         } else {
+             startChromeBrowserProcessesSync();
++            PrivacyPreferencesManager.getInstance().UpdateOverrideUserAgent();
+             tasks.start(true);
+         }
+     }
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacyPreferencesManager.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacyPreferencesManager.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacyPreferencesManager.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacyPreferencesManager.java
-@@ -315,6 +315,30 @@ public class PrivacyPreferencesManager implements CrashReportingPermissionManage
+@@ -315,6 +315,34 @@ public class PrivacyPreferencesManager implements CrashReportingPermissionManage
          return PrivacyPreferencesManagerJni.get().isMetricsReportingManaged();
      }
  
++    public void UpdateOverrideUserAgent() {
++        PrivacyPreferencesManagerJni.get().updateOverrideUserAgent();
++    }
++
 +    public boolean isOverrideUserAgentEnabled(boolean desktopMode) {
 +        return PrivacyPreferencesManagerJni.get().isOverrideUserAgentEnabled(desktopMode);
 +    }
@@ -320,10 +351,11 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
      @NativeMethods
      public interface Natives {
          boolean canPrefetchAndPrerender();
-@@ -325,5 +349,11 @@ public class PrivacyPreferencesManager implements CrashReportingPermissionManage
+@@ -325,5 +353,12 @@ public class PrivacyPreferencesManager implements CrashReportingPermissionManage
          boolean isMetricsReportingEnabled();
          void setMetricsReportingEnabled(boolean enabled);
          boolean isMetricsReportingManaged();
++        void updateOverrideUserAgent();
 +        boolean isOverrideUserAgentEnabled(boolean desktopMode);
 +        void setOverrideUserAgentEnabled(boolean enabled, boolean desktopMode);
 +        String getOverrideUserAgentValue(boolean desktopMode);
@@ -336,7 +368,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/UserAg
 new file mode 100644
 --- /dev/null
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/UserAgentPreferences.java
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,184 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -470,6 +502,10 @@ new file mode 100644
 +                    newText.toString(), false);
 +            }
 +        });
++        useCustomAgentSwitch.setFocusChangeListener( hasFocus -> {
++            if( hasFocus )
++                PrivacyPreferencesManager.getInstance().setOverrideUserAgentEnabled(true, false);
++        });
 +
 +        useCustomAgentSwitchDesktopMode.setPrimaryText(
 +            PrivacyPreferencesManager.getInstance().getOverrideUserAgentValue(true));
@@ -479,6 +515,10 @@ new file mode 100644
 +                PrivacyPreferencesManager.getInstance().setOverrideUserAgentValue(
 +                    newText.toString(), true);
 +            }
++        });
++        useCustomAgentSwitchDesktopMode.setFocusChangeListener( hasFocus -> {
++            if( hasFocus )
++                PrivacyPreferencesManager.getInstance().setOverrideUserAgentEnabled(true, true);
 +        });
 +
 +        return viewGroup;
@@ -703,52 +743,15 @@ diff --git a/chrome/browser/android/content/content_utils.cc b/chrome/browser/an
  static base::android::ScopedJavaLocalRef<jstring>
  JNI_ContentUtils_GetBrowserUserAgent(JNIEnv* env) {
    return base::android::ConvertUTF8ToJavaString(env, GetUserAgent());
-@@ -17,21 +31,37 @@ JNI_ContentUtils_GetBrowserUserAgent(JNIEnv* env) {
+@@ -17,6 +31,21 @@ JNI_ContentUtils_GetBrowserUserAgent(JNIEnv* env) {
  static void JNI_ContentUtils_SetUserAgentOverride(
      JNIEnv* env,
      const base::android::JavaParamRef<jobject>& jweb_contents) {
--  const char kLinuxInfoStr[] = "X11; Linux x86_64";
--  std::string product = version_info::GetProductNameAndVersionForUserAgent();
--
--  blink::UserAgentOverride spoofed_ua;
--  spoofed_ua.ua_string_override =
--      content::BuildUserAgentFromOSAndProduct(kLinuxInfoStr, product);
--  spoofed_ua.ua_metadata_override = ::GetUserAgentMetadata();
--  spoofed_ua.ua_metadata_override->platform = "Linux";
--  spoofed_ua.ua_metadata_override->platform_version =
--      std::string();  // match content::GetOSVersion(false) on Linux
--  spoofed_ua.ua_metadata_override->architecture = "x86";
--  spoofed_ua.ua_metadata_override->model = std::string();
--  spoofed_ua.ua_metadata_override->mobile = false;
--
--  content::WebContents* web_contents =
--      content::WebContents::FromJavaWebContents(jweb_contents);
--  web_contents->SetUserAgentOverride(spoofed_ua, false);
 +
 +  bool enabled =
 +    g_browser_process->local_state()->GetBoolean(prefs::kOverrideUserAgentDesktopModeEnabled);
 +
-+  if (enabled == false) {
-+    const char kLinuxInfoStr[] = "X11; Linux x86_64";
-+    std::string product = version_info::GetProductNameAndVersionForUserAgent();
-+
-+    blink::UserAgentOverride spoofed_ua;
-+    spoofed_ua.ua_string_override =
-+        content::BuildUserAgentFromOSAndProduct(kLinuxInfoStr, product);
-+    spoofed_ua.ua_metadata_override = ::GetUserAgentMetadata();
-+    spoofed_ua.ua_metadata_override->platform = "Linux";
-+    spoofed_ua.ua_metadata_override->platform_version =
-+        std::string();  // match content::GetOSVersion(false) on Linux
-+    spoofed_ua.ua_metadata_override->architecture = "x86";
-+    spoofed_ua.ua_metadata_override->model = std::string();
-+    spoofed_ua.ua_metadata_override->mobile = false;
-+
-+    content::WebContents* web_contents =
-+        content::WebContents::FromJavaWebContents(jweb_contents);
-+    web_contents->SetUserAgentOverride(spoofed_ua, false);
-+  }
-+  else
-+  {
++  if (enabled == true) {
 +    std::string ua = g_browser_process->local_state()->GetString(prefs::kOverrideUserAgentDesktopMode);
 +    blink::UserAgentOverride spoofed_ua;
 +    spoofed_ua.ua_string_override = ua;
@@ -756,8 +759,12 @@ diff --git a/chrome/browser/android/content/content_utils.cc b/chrome/browser/an
 +    content::WebContents* web_contents =
 +        content::WebContents::FromJavaWebContents(jweb_contents);
 +    web_contents->SetUserAgentOverride(spoofed_ua, false);
++    return;
 +  }
- }
++
+   const char kLinuxInfoStr[] = "X11; Linux x86_64";
+   std::string product = version_info::GetProductNameAndVersionForUserAgent();
+ 
 diff --git a/chrome/browser/android/preferences/browser_prefs_android.cc b/chrome/browser/android/preferences/browser_prefs_android.cc
 --- a/chrome/browser/android/preferences/browser_prefs_android.cc
 +++ b/chrome/browser/android/preferences/browser_prefs_android.cc
@@ -783,13 +790,16 @@ diff --git a/chrome/browser/android/preferences/browser_prefs_android.cc b/chrom
 diff --git a/chrome/browser/android/preferences/privacy_preferences_manager.cc b/chrome/browser/android/preferences/privacy_preferences_manager.cc
 --- a/chrome/browser/android/preferences/privacy_preferences_manager.cc
 +++ b/chrome/browser/android/preferences/privacy_preferences_manager.cc
-@@ -11,6 +11,22 @@
+@@ -11,6 +11,25 @@
  #include "chrome/common/pref_names.h"
  #include "components/metrics/metrics_pref_names.h"
  #include "components/prefs/pref_service.h"
 +#include "base/command_line.h"
 +#include "base/base_switches.h"
 +#include "chrome/common/chrome_switches.h"
++#include "content/browser/renderer_host/render_process_host_impl.h"
++#include "content/common/renderer.mojom.h"
++#include "chrome/browser/chrome_content_browser_client.h"
 +
 +#include "base/android/jni_android.h"
 +#include "base/android/jni_array.h"
@@ -806,12 +816,12 @@ diff --git a/chrome/browser/android/preferences/privacy_preferences_manager.cc b
  
  namespace {
  
-@@ -74,3 +90,80 @@ JNI_PrivacyPreferencesManager_ObsoleteNetworkPredictionOptionsHasUserSetting(
+@@ -74,3 +93,97 @@ JNI_PrivacyPreferencesManager_ObsoleteNetworkPredictionOptionsHasUserSetting(
    return GetPrefService()->GetUserPrefValue(prefs::kNetworkPredictionOptions) !=
           nullptr;
  }
 +
-+static void UpdateCommandLine() {
++static void UpdateOverrideUserAgent() {
 +  bool overrideUserAgentEnabled =
 +    g_browser_process->local_state()->GetBoolean(prefs::kOverrideUserAgentEnabled);
 +  std::string ua = g_browser_process->local_state()->GetString(prefs::kOverrideUserAgent);
@@ -823,9 +833,26 @@ diff --git a/chrome/browser/android/preferences/privacy_preferences_manager.cc b
 +    parsed_command_line->AppendSwitchASCII(switches::kUserAgent, ua);
 +  }
 +
++  for (auto iter = content::RenderProcessHost::AllHostsIterator(); !iter.IsAtEnd();
++      iter.Advance()) {
++    if (iter.GetCurrentValue()->IsInitializedAndNotDead()) {
++      if (overrideUserAgentEnabled) {
++        iter.GetCurrentValue()->GetRendererInterface()->SetUserAgent(ua);
++      } else {
++        iter.GetCurrentValue()->GetRendererInterface()->SetUserAgent(
++           ChromeContentBrowserClient().GetUserAgent());
++      }
++    }
++  }
++
 +  parsed_command_line->RemoveSwitch(switches::kDesktopModeViewportMetaEnabled);
 +  if (g_browser_process->local_state()->GetBoolean(prefs::kDesktopModeViewportMetaEnabled))
 +    parsed_command_line->AppendSwitch(switches::kDesktopModeViewportMetaEnabled);
++}
++
++static void JNI_PrivacyPreferencesManager_UpdateOverrideUserAgent(
++    JNIEnv* env) {
++  UpdateOverrideUserAgent();
 +}
 +
 +static jboolean JNI_PrivacyPreferencesManager_IsOverrideUserAgentEnabled(
@@ -842,7 +869,7 @@ diff --git a/chrome/browser/android/preferences/privacy_preferences_manager.cc b
 +  if (desktopMode == false) {
 +    g_browser_process->local_state()->SetBoolean(prefs::kOverrideUserAgentEnabled,
 +                                                enabled);
-+    UpdateCommandLine();
++    UpdateOverrideUserAgent();
 +  } else {
 +    g_browser_process->local_state()->SetBoolean(prefs::kOverrideUserAgentDesktopModeEnabled,
 +                                                enabled);
@@ -856,7 +883,7 @@ diff --git a/chrome/browser/android/preferences/privacy_preferences_manager.cc b
 +  if (desktopMode == false) {
 +    g_browser_process->local_state()->SetString(prefs::kOverrideUserAgent,
 +                                                new_ua);
-+    UpdateCommandLine();
++    UpdateOverrideUserAgent();
 +  } else {
 +    g_browser_process->local_state()->SetString(prefs::kOverrideUserAgentDesktopMode,
 +                                                new_ua);
@@ -885,7 +912,7 @@ diff --git a/chrome/browser/android/preferences/privacy_preferences_manager.cc b
 +    jboolean enabled) {
 +  g_browser_process->local_state()->SetBoolean(prefs::kDesktopModeViewportMetaEnabled,
 +                                              enabled);
-+  UpdateCommandLine();
++  UpdateOverrideUserAgent();
 +}
 diff --git a/chrome/browser/android/tab_android.cc b/chrome/browser/android/tab_android.cc
 --- a/chrome/browser/android/tab_android.cc
@@ -925,21 +952,24 @@ diff --git a/chrome/browser/android/tab_android.h b/chrome/browser/android/tab_a
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -2310,6 +2310,18 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+@@ -1236,6 +1236,13 @@ std::string GetUserAgent() {
+ blink::UserAgentMetadata GetUserAgentMetadata() {
+   blink::UserAgentMetadata metadata;
+ 
++  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(switches::kUserAgent)) {
++    std::string ua = command_line->GetSwitchValueASCII(switches::kUserAgent);
++
++    return metadata;
++  }
++
+   metadata.brand_version_list = GetBrandVersionList();
+   metadata.full_version = version_info::GetVersionNumber();
+   metadata.platform = version_info::GetOSType();
+@@ -2310,6 +2317,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
              blink::switches::kUserAgentClientHintDisable);
        }
  
-+      bool overrideUserAgentEnabled =
-+        local_state->GetBoolean(prefs::kOverrideUserAgentEnabled);
-+      if (overrideUserAgentEnabled) {
-+        std::string ua = local_state->GetString(prefs::kOverrideUserAgent);
-+        if (net::HttpUtil::IsValidHeaderValue(ua)) {
-+          command_line->RemoveSwitch(switches::kUserAgent);
-+          command_line->AppendSwitchASCII(switches::kUserAgent, ua);
-+        } else {
-+          LOG(WARNING) << "Ignoring invalid value for custom user agent";
-+        }
-+      }
 +
  #if defined(OS_ANDROID)
        // Communicating to content/ for BackForwardCache.
@@ -1064,6 +1094,27 @@ diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
  }  // namespace prefs
  
  #endif  // CHROME_COMMON_PREF_NAMES_H_
+diff --git a/components/browser_ui/widget/android/java/src/org/chromium/components/browser_ui/widget/RadioButtonWithEditText.java b/components/browser_ui/widget/android/java/src/org/chromium/components/browser_ui/widget/RadioButtonWithEditText.java
+--- a/components/browser_ui/widget/android/java/src/org/chromium/components/browser_ui/widget/RadioButtonWithEditText.java
++++ b/components/browser_ui/widget/android/java/src/org/chromium/components/browser_ui/widget/RadioButtonWithEditText.java
+@@ -167,6 +167,17 @@ public class RadioButtonWithEditText extends RadioButtonWithDescription {
+             mEditText.setCursorVisible(false);
+             KeyboardVisibilityDelegate.getInstance().hideKeyboard(mEditText);
+         }
++        if (mRadioButtonWithEditTextFocusListener != null) {
++            mRadioButtonWithEditTextFocusListener.onRadioButtonWithEditTextFocusChanged(hasFocus);
++        }
++    }
++
++    public interface RadioButtonWithEditTextFocusListener {
++        void onRadioButtonWithEditTextFocusChanged(boolean hasFocus);
++    }
++    private RadioButtonWithEditTextFocusListener mRadioButtonWithEditTextFocusListener;
++    public void setFocusChangeListener(RadioButtonWithEditTextFocusListener listener) {
++        mRadioButtonWithEditTextFocusListener = listener;
+     }
+ 
+     /**
 diff --git a/content/browser/renderer_host/navigation_controller_android.cc b/content/browser/renderer_host/navigation_controller_android.cc
 --- a/content/browser/renderer_host/navigation_controller_android.cc
 +++ b/content/browser/renderer_host/navigation_controller_android.cc
