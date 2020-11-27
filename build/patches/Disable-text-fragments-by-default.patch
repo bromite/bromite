@@ -1,0 +1,160 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sat, 22 Aug 2020 12:46:20 +0200
+Subject: Disable text fragments by default
+
+Revert "[Text Fragment] Unflag fragment directive removal."
+---
+ chrome/browser/about_flags.cc                 |  1 +
+ chrome/browser/flag-metadata.json             |  2 +-
+ chrome/browser/ui/prefs/prefs_tab_helper.cc   |  2 +-
+ content/child/runtime_features.cc             |  1 +
+ third_party/blink/common/features.cc          |  2 +-
+ .../blink/renderer/core/dom/document.cc       |  5 ++++
+ .../text_fragment_anchor_metrics_test.cc      | 29 +++++++------------
+ .../platform/runtime_enabled_features.json5   |  3 +-
+ 8 files changed, 21 insertions(+), 24 deletions(-)
+
+diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
+--- a/chrome/browser/about_flags.cc
++++ b/chrome/browser/about_flags.cc
+@@ -5239,6 +5239,7 @@ const FeatureEntry kFeatureEntries[] = {
+      flag_descriptions::kEnableCSSOMViewScrollCoordinatesDescription, kOsAll,
+      FEATURE_VALUE_TYPE(blink::features::kCSSOMViewScrollCoordinates)},
+ 
++     // will override runtime text fragment identifiers setting too
+     {"enable-text-fragment-anchor",
+      flag_descriptions::kEnableTextFragmentAnchorName,
+      flag_descriptions::kEnableTextFragmentAnchorDescription, kOsAll,
+diff --git a/chrome/browser/flag-metadata.json b/chrome/browser/flag-metadata.json
+--- a/chrome/browser/flag-metadata.json
++++ b/chrome/browser/flag-metadata.json
+@@ -2221,7 +2221,7 @@
+   {
+     "name": "enable-text-fragment-anchor",
+     "owners": [ "bokan", "input-dev" ],
+-    "expiry_milestone": 83
++    "expiry_milestone": -1
+   },
+   {
+     "name": "enable-tls13-early-data",
+diff --git a/chrome/browser/ui/prefs/prefs_tab_helper.cc b/chrome/browser/ui/prefs/prefs_tab_helper.cc
+--- a/chrome/browser/ui/prefs/prefs_tab_helper.cc
++++ b/chrome/browser/ui/prefs/prefs_tab_helper.cc
+@@ -357,7 +357,7 @@ void PrefsTabHelper::RegisterProfilePrefs(
+       prefs::kEnableReferrers,
+       !base::FeatureList::IsEnabled(features::kNoReferrers));
+   registry->RegisterBooleanPref(prefs::kEnableEncryptedMedia, true);
+-  registry->RegisterBooleanPref(prefs::kScrollToTextFragmentEnabled, true);
++  registry->RegisterBooleanPref(prefs::kScrollToTextFragmentEnabled, false);
+ #if defined(OS_ANDROID)
+   registry->RegisterDoublePref(prefs::kWebKitFontScaleFactor, 1.0);
+   registry->RegisterBooleanPref(prefs::kWebKitForceEnableZoom,
+diff --git a/content/child/runtime_features.cc b/content/child/runtime_features.cc
+--- a/content/child/runtime_features.cc
++++ b/content/child/runtime_features.cc
+@@ -269,6 +269,7 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
+     {wf::EnableImplicitRootScroller, blink::features::kImplicitRootScroller},
+     {wf::EnableCSSOMViewScrollCoordinates,
+      blink::features::kCSSOMViewScrollCoordinates},
++    // will set the TextFragmentIdentifiers runtime feature
+     {wf::EnableTextFragmentAnchor, blink::features::kTextFragmentAnchor},
+     {wf::EnableBackgroundFetch, features::kBackgroundFetch},
+     {wf::EnableForcedColors, features::kForcedColors},
+diff --git a/third_party/blink/common/features.cc b/third_party/blink/common/features.cc
+--- a/third_party/blink/common/features.cc
++++ b/third_party/blink/common/features.cc
+@@ -286,7 +286,7 @@ const base::Feature kStorageAccessAPI{"StorageAccessAPI",
+ 
+ // Enable text snippets in URL fragments. https://crbug.com/919204.
+ const base::Feature kTextFragmentAnchor{"TextFragmentAnchor",
+-                                        base::FEATURE_ENABLED_BY_DEFAULT};
++                                        base::FEATURE_DISABLED_BY_DEFAULT};
+ 
+ // File handling integration. https://crbug.com/829689
+ const base::Feature kFileHandlingAPI{"FileHandlingAPI",
+diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
+--- a/third_party/blink/renderer/core/dom/document.cc
++++ b/third_party/blink/renderer/core/dom/document.cc
+@@ -4432,6 +4432,10 @@ void Document::SetURL(const KURL& url) {
+     }
+   }
+ 
++  // If text fragment identifiers are enabled, we strip the fragment directive
++  // from the URL fragment.
++  // E.g. "#id:~:text=a" --> "#id"
++  if (RuntimeEnabledFeatures::TextFragmentIdentifiersEnabled(domWindow())) {
+   // Strip the fragment directive from the URL fragment. E.g. "#id:~:text=a"
+   // --> "#id". See https://github.com/WICG/scroll-to-text-fragment.
+   String fragment = new_url.FragmentIdentifier();
+@@ -4445,6 +4449,7 @@ void Document::SetURL(const KURL& url) {
+     else
+       new_url.SetFragmentIdentifier(fragment.Substring(0, start_pos));
+   }
++  }
+ 
+   url_ = new_url;
+   access_entry_from_url_ = nullptr;
+diff --git a/third_party/blink/renderer/core/page/scrolling/text_fragment_anchor_metrics_test.cc b/third_party/blink/renderer/core/page/scrolling/text_fragment_anchor_metrics_test.cc
+--- a/third_party/blink/renderer/core/page/scrolling/text_fragment_anchor_metrics_test.cc
++++ b/third_party/blink/renderer/core/page/scrolling/text_fragment_anchor_metrics_test.cc
+@@ -952,34 +952,25 @@ TEST_P(TextFragmentRelatedMetricTest, ElementIdSuccessFailureCounts) {
+   // result of the element-id fragment if a text directive is successfully
+   // parsed. If the feature is off we treat the text directive as an element-id
+   // and should count the result.
++  const int kUncountedOrNotFound = GetParam() ? kUncounted : kNotFound;
+   const int kUncountedOrFound = GetParam() ? kUncounted : kFound;
+ 
+-  // Note: We'll strip the fragment directive (i.e. anything after :~:) leaving
+-  // just the element anchor. The fragment directive stripping behavior is now
+-  // shipped unflagged so it should always be performed.
++  // When the TextFragmentAnchors feature is on, we'll strip the fragment
++  // directive (i.e. anything after :~:) leaving just the element anchor.
++  const int kFoundIfDirectiveStripped = GetParam() ? kFound : kNotFound;
+ 
+   Vector<std::pair<String, int>> test_cases = {
+       {"", kUncounted},
+       {"#element", kFound},
+       {"#doesntExist", kNotFound},
+-      // `:~:foo` will be stripped so #element will be found and #doesntexist
+-      // ##element will be not found.
+-      {"#element:~:foo", kFound},
++      {"#element:~:foo", kFoundIfDirectiveStripped},
+       {"#doesntexist:~:foo", kNotFound},
+       {"##element", kNotFound},
+-      // If the feature  is on, `:~:text=` will parse so we shouldn't count.
+-      // Otherwise, it'll just be stripped so #element will be found.
+-      {"#element:~:text=doesntexist", kUncountedOrFound},
+-      {"#element:~:text=page", kUncountedOrFound},
+-      // If the feature is on, `:~:text` is parsed so we don't count. If it's
+-      // off the entire fragment is a directive that's stripped so no search is
+-      // performed either.
+-      {"#:~:text=doesntexist", kUncounted},
+-      {"#:~:text=page", kUncounted},
+-      {"#:~:text=name", kUncounted},
+-      // If the feature is enabled, `:~:text` parses and we don't count the
+-      // element-id. If the feature is off, we still strip the :~: directive
+-      // and the remaining fragment does match an element id.
++      {"#element:~:text=doesntexist", kUncountedOrNotFound},
++      {"#element:~:text=page", kUncountedOrNotFound},
++      {"#:~:text=doesntexist", kUncountedOrNotFound},
++      {"#:~:text=page", kUncountedOrNotFound},
++      {"#:~:text=name", kUncountedOrFound},
+       {"#element:~:text=name", kUncountedOrFound}};
+ 
+   const int kNotFoundSample = 0;
+diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+--- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
++++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+@@ -1862,8 +1862,7 @@
+     },
+     {
+       name: "TextFragmentIdentifiers",
+-      origin_trial_feature_name: "TextFragmentIdentifiers",
+-      status: "stable",
++      origin_trial_feature_name: "TextFragmentIdentifiers"
+     },
+     {
+       name: "ThirdPartyOriginTrials",
+-- 
+2.17.1
+

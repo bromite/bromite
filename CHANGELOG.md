@@ -1,7 +1,12 @@
+# 87.0.4280.81
+* fix text fragment not disabled by default, unexpire flag (fixes https://github.com/bromite/bromite/issues/803)
+* turn AImageReader off by default on ARM64 (fixes https://github.com/bromite/bromite/issues/814)
+* fix issue with global autoplay settings (thanks to @uazo, https://github.com/bromite/bromite/pull/825)
+* fix issues with user agent customization (thanks to @uazo, https://github.com/bromite/bromite/pull/823)
+* updated zh_CN translations (thanks to @zhmars, https://github.com/bromite/bromite/pull/821)
+
 # 87.0.4280.68
 * user agent customization (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/798)
-* fix for Qualcomm AImageReader crashes on A9 (fixes https://github.com/bromite/bromite/issues/814)
-* fix disable-scroll-to-text-fragment patch (fixes https://github.com/bromite/bromite/issues/803)
 * fix for intent handling for local apps on Android 11 (https://github.com/bromite/bromite/pull/816)
 
 # 87.0.4280.67
