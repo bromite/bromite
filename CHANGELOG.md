@@ -1,3 +1,10 @@
+# 87.0.4280.106
+* enable SplitCacheByNetworkIsolationKey (fixes https://github.com/bromite/bromite/issues/836)
+* fix random timezone option (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/828)
+* disable autofill server communication by default
+* ask permission to play protected media by default
+* disable SystemWebView variations support
+
 # 87.0.4280.81
 * fix text fragment not disabled by default, unexpire flag (fixes https://github.com/bromite/bromite/issues/803)
 * turn AImageReader off by default on ARM64 (fixes https://github.com/bromite/bromite/issues/814)
