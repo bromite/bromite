@@ -1,7 +1,6 @@
 From: csagan5 <32685696+csagan5@users.noreply.github.com>
 Date: Fri, 30 Mar 2018 10:09:03 +0200
-Subject: Multiple fingerprinting mitigations for canvas, text and client
- rectangles
+Subject: Multiple fingerprinting mitigations
 
 1. getClientRects, getBoundingClientRect, measureText: add fingerprinting mitigation
 
@@ -30,7 +29,7 @@ Added flag --fingerprinting-canvas-image-data-noise to disable Canvas image data
  content/browser/BUILD.gn                      |   1 +
  .../renderer_host/render_process_host_impl.cc |   4 +
  content/child/BUILD.gn                        |   1 +
- content/child/runtime_features.cc             |   8 +
+ content/child/runtime_features.cc             |   9 +
  .../public/platform/web_runtime_features.h    |   3 +
  .../blink/renderer/core/dom/document.cc       |  18 ++
  .../blink/renderer/core/dom/document.h        |   7 +
@@ -42,13 +41,13 @@ Added flag --fingerprinting-canvas-image-data-noise to disable Canvas image data
  third_party/blink/renderer/platform/BUILD.gn  |   5 +-
  .../platform/exported/web_runtime_features.cc |  12 ++
  .../platform/graphics/image_data_buffer.cc    |   7 +
- .../platform/graphics/static_bitmap_image.cc  | 159 ++++++++++++++++++
+ .../platform/graphics/static_bitmap_image.cc  | 160 ++++++++++++++++++
  .../platform/graphics/static_bitmap_image.h   |   2 +
  .../platform/runtime_enabled_features.json5   |   9 +
  third_party/ungoogled/BUILD.gn                |  10 ++
  third_party/ungoogled/ungoogled_switches.cc   |  18 ++
  third_party/ungoogled/ungoogled_switches.h    |  18 ++
- 23 files changed, 341 insertions(+), 3 deletions(-)
+ 23 files changed, 343 insertions(+), 3 deletions(-)
  create mode 100644 third_party/ungoogled/BUILD.gn
  create mode 100644 third_party/ungoogled/ungoogled_switches.cc
  create mode 100644 third_party/ungoogled/ungoogled_switches.h
@@ -56,7 +55,7 @@ Added flag --fingerprinting-canvas-image-data-noise to disable Canvas image data
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -2132,6 +2132,7 @@ static_library("browser") {
+@@ -2212,6 +2212,7 @@ static_library("browser") {
      "//services/device/public/cpp:device_features",
      "//services/device/public/cpp/serial:switches",
      "//services/device/public/cpp/usb",
@@ -75,7 +74,7 @@ diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
  #include "storage/browser/quota/quota_features.h"
  #include "third_party/blink/public/common/experiments/memory_ablation_experiment.h"
  #include "third_party/blink/public/common/features.h"
-@@ -2281,12 +2282,24 @@ const FeatureEntry kFeatureEntries[] = {
+@@ -2523,6 +2524,18 @@ const FeatureEntry kFeatureEntries[] = {
      {"enable-webrtc-srtp-aes-gcm", flag_descriptions::kWebrtcSrtpAesGcmName,
       flag_descriptions::kWebrtcSrtpAesGcmDescription, kOsAll,
       SINGLE_VALUE_TYPE(switches::kEnableWebRtcSrtpAesGcm)},
@@ -83,12 +82,6 @@ diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 +     "Disable Canvas image data fingerprint deception",
 +     "Slightly modifies at most 20 pixels in Canvas image data extracted via JS APIs",
 +     kOsAll, SINGLE_DISABLE_VALUE_TYPE(switches::kFingerprintingCanvasImageDataNoise)},
-     {"enable-webrtc-stun-origin", flag_descriptions::kWebrtcStunOriginName,
-      flag_descriptions::kWebrtcStunOriginDescription, kOsAll,
-      SINGLE_VALUE_TYPE(switches::kEnableWebRtcStunOrigin)},
-     {"enable-webrtc-hybrid-agc", flag_descriptions::kWebrtcHybridAgcName,
-      flag_descriptions::kWebrtcHybridAgcDescription, kOsAll,
-      FEATURE_VALUE_TYPE(features::kWebRtcHybridAgc)},
 +    {"fingerprinting-client-rects-noise",
 +     "Disable get*ClientRects() fingerprint deception",
 +     "Scale the output values of Range::getClientRects() and Element::getBoundingClientRect() with a randomly selected factor in the range -0.0003% to 0.0003%, which are recomputed on every document initialization.",
@@ -97,13 +90,13 @@ diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 +     "Disable Canvas::measureText() fingerprint deception",
 +     "Scale the output values of Canvas::measureText() with a randomly selected factor in the range -0.0003% to 0.0003%, which are recomputed on every document initialization.",
 +     kOsAll, SINGLE_DISABLE_VALUE_TYPE(switches::kFingerprintingCanvasMeasureTextNoise)},
-     {"enable-webrtc-new-encode-cpu-load-estimator",
-      flag_descriptions::kWebrtcNewEncodeCpuLoadEstimatorName,
-      flag_descriptions::kWebrtcNewEncodeCpuLoadEstimatorDescription, kOsAll,
+     {"enable-webrtc-stun-origin", flag_descriptions::kWebrtcStunOriginName,
+      flag_descriptions::kWebrtcStunOriginDescription, kOsAll,
+      SINGLE_VALUE_TYPE(switches::kEnableWebRtcStunOrigin)},
 diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
 --- a/content/browser/BUILD.gn
 +++ b/content/browser/BUILD.gn
-@@ -221,6 +221,7 @@ source_set("browser") {
+@@ -227,6 +227,7 @@ source_set("browser") {
      "//third_party/libyuv",
      "//third_party/re2",
      "//third_party/sqlite",
@@ -114,7 +107,7 @@ diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
 diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
 --- a/content/browser/renderer_host/render_process_host_impl.cc
 +++ b/content/browser/renderer_host/render_process_host_impl.cc
-@@ -223,6 +223,7 @@
+@@ -221,6 +221,7 @@
  #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
  #include "third_party/blink/public/mojom/disk_allocator.mojom.h"
  #include "third_party/blink/public/public_buildflags.h"
@@ -122,8 +115,8 @@ diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content
  #include "third_party/skia/include/core/SkBitmap.h"
  #include "ui/accessibility/accessibility_switches.h"
  #include "ui/base/ui_base_switches.h"
-@@ -3333,6 +3334,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
-     switches::kDisablePreferCompositingToLCDText,
+@@ -3324,6 +3325,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+     switches::kDisableBreakpad,
      switches::kDisableDatabases,
      switches::kDisableFileSystem,
 +    switches::kFingerprintingClientRectsNoise,
@@ -135,7 +128,7 @@ diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content
 diff --git a/content/child/BUILD.gn b/content/child/BUILD.gn
 --- a/content/child/BUILD.gn
 +++ b/content/child/BUILD.gn
-@@ -125,6 +125,7 @@ target(link_target_type, "child") {
+@@ -130,6 +130,7 @@ target(link_target_type, "child") {
      "//third_party/blink/public/common",
      "//third_party/blink/public/strings",
      "//third_party/ced",
@@ -146,15 +139,16 @@ diff --git a/content/child/BUILD.gn b/content/child/BUILD.gn
 diff --git a/content/child/runtime_features.cc b/content/child/runtime_features.cc
 --- a/content/child/runtime_features.cc
 +++ b/content/child/runtime_features.cc
-@@ -28,6 +28,7 @@
- #include "services/network/public/cpp/features.h"
- #include "services/network/public/cpp/network_switches.h"
- #include "third_party/blink/public/common/features.h"
+@@ -36,6 +36,8 @@
+ #include "ui/gl/gl_switches.h"
+ #include "ui/native_theme/native_theme_features.h"
+ 
 +#include "third_party/ungoogled/ungoogled_switches.h"
- #include "third_party/blink/public/common/switches.h"
- #include "third_party/blink/public/platform/web_runtime_features.h"
- #include "ui/accessibility/accessibility_features.h"
-@@ -582,6 +583,13 @@ void SetCustomizedRuntimeFeaturesFromCombinedArgs(
++
+ #if defined(OS_ANDROID)
+ #include "base/android/build_info.h"
+ #endif
+@@ -532,6 +534,13 @@ void SetCustomizedRuntimeFeaturesFromCombinedArgs(
    // They're moved here to distinguish them from actual base checks
    WebRuntimeFeatures::EnableOverlayScrollbars(ui::IsOverlayScrollbarEnabled());
  
@@ -165,9 +159,9 @@ diff --git a/content/child/runtime_features.cc b/content/child/runtime_features.
 +  WebRuntimeFeatures::EnableFingerprintingCanvasImageDataNoise(
 +      !command_line.HasSwitch(switches::kFingerprintingCanvasImageDataNoise));
 +
-   if (base::FeatureList::GetInstance()->IsFeatureOverriddenFromCommandLine(
-           blink::features::kNativeFileSystemAPI.name,
-           base::FeatureList::OVERRIDE_ENABLE_FEATURE)) {
+   if (base::FeatureList::IsEnabled(blink::features::kFileHandlingAPI)) {
+     WebRuntimeFeatures::EnableFeatureFromString("FileHandling", true);
+   }
 diff --git a/third_party/blink/public/platform/web_runtime_features.h b/third_party/blink/public/platform/web_runtime_features.h
 --- a/third_party/blink/public/platform/web_runtime_features.h
 +++ b/third_party/blink/public/platform/web_runtime_features.h
@@ -192,7 +186,7 @@ diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink
  #include "base/time/time.h"
  #include "cc/input/overscroll_behavior.h"
  #include "cc/input/scroll_snap_data.h"
-@@ -2475,6 +2476,23 @@ void Document::UpdateStyleAndLayoutTree() {
+@@ -2489,6 +2490,23 @@ void Document::UpdateStyleAndLayoutTree() {
  #if DCHECK_IS_ON()
    AssertLayoutTreeUpdated(*this);
  #endif
@@ -215,11 +209,11 @@ diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink
 +  return noise_factor_y_;
  }
  
- void Document::UpdateActiveStyle() {
+ void Document::InvalidateStyleAndLayoutForFontUpdates() {
 diff --git a/third_party/blink/renderer/core/dom/document.h b/third_party/blink/renderer/core/dom/document.h
 --- a/third_party/blink/renderer/core/dom/document.h
 +++ b/third_party/blink/renderer/core/dom/document.h
-@@ -438,6 +438,10 @@ class CORE_EXPORT Document : public ContainerNode,
+@@ -447,6 +447,10 @@ class CORE_EXPORT Document : public ContainerNode,
      has_xml_declaration_ = has_xml_declaration ? 1 : 0;
    }
  
@@ -227,10 +221,10 @@ diff --git a/third_party/blink/renderer/core/dom/document.h b/third_party/blink/
 +  double GetNoiseFactorX();
 +  double GetNoiseFactorY();
 +
-   String visibilityState() const;
+   AtomicString visibilityState() const;
    bool IsPageVisible() const;
    bool hidden() const;
-@@ -1943,6 +1947,9 @@ class CORE_EXPORT Document : public ContainerNode,
+@@ -1969,6 +1973,9 @@ class CORE_EXPORT Document : public ContainerNode,
  
    base::ElapsedTimer start_time_;
  
@@ -243,7 +237,7 @@ diff --git a/third_party/blink/renderer/core/dom/document.h b/third_party/blink/
 diff --git a/third_party/blink/renderer/core/dom/element.cc b/third_party/blink/renderer/core/dom/element.cc
 --- a/third_party/blink/renderer/core/dom/element.cc
 +++ b/third_party/blink/renderer/core/dom/element.cc
-@@ -2019,6 +2019,11 @@ DOMRectList* Element::getClientRects() {
+@@ -2049,6 +2049,11 @@ DOMRectList* Element::getClientRects() {
    DCHECK(element_layout_object);
    GetDocument().AdjustFloatQuadsForScrollAndAbsoluteZoom(
        quads, *element_layout_object);
@@ -255,7 +249,7 @@ diff --git a/third_party/blink/renderer/core/dom/element.cc b/third_party/blink/
    return MakeGarbageCollected<DOMRectList>(quads);
  }
  
-@@ -2036,6 +2041,9 @@ DOMRect* Element::getBoundingClientRect() {
+@@ -2066,6 +2071,9 @@ DOMRect* Element::getBoundingClientRect() {
    DCHECK(element_layout_object);
    GetDocument().AdjustFloatRectForScrollAndAbsoluteZoom(result,
                                                          *element_layout_object);
@@ -268,7 +262,7 @@ diff --git a/third_party/blink/renderer/core/dom/element.cc b/third_party/blink/
 diff --git a/third_party/blink/renderer/core/dom/range.cc b/third_party/blink/renderer/core/dom/range.cc
 --- a/third_party/blink/renderer/core/dom/range.cc
 +++ b/third_party/blink/renderer/core/dom/range.cc
-@@ -1614,6 +1614,12 @@ DOMRectList* Range::getClientRects() const {
+@@ -1615,6 +1615,12 @@ DOMRectList* Range::getClientRects() const {
    Vector<FloatQuad> quads;
    GetBorderAndTextQuads(quads);
  
@@ -281,7 +275,7 @@ diff --git a/third_party/blink/renderer/core/dom/range.cc b/third_party/blink/re
    return MakeGarbageCollected<DOMRectList>(quads);
  }
  
-@@ -1741,7 +1747,11 @@ FloatRect Range::BoundingRect() const {
+@@ -1742,7 +1748,11 @@ FloatRect Range::BoundingRect() const {
  
    // If all rects are empty, return the first rect.
    if (result.IsEmpty() && !quads.IsEmpty())
@@ -337,7 +331,7 @@ diff --git a/third_party/blink/renderer/core/html/canvas/text_metrics.h b/third_
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.cc
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.cc
-@@ -835,9 +835,15 @@ TextMetrics* CanvasRenderingContext2D::measureText(const String& text) {
+@@ -838,9 +838,15 @@ TextMetrics* CanvasRenderingContext2D::measureText(const String& text) {
    else
      direction = ToTextDirection(GetState().GetDirection(), canvas());
  
@@ -357,7 +351,7 @@ diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering
 diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/renderer/platform/BUILD.gn
 --- a/third_party/blink/renderer/platform/BUILD.gn
 +++ b/third_party/blink/renderer/platform/BUILD.gn
-@@ -1548,7 +1548,9 @@ component("platform") {
+@@ -1575,7 +1575,9 @@ component("platform") {
      "//third_party/blink/renderer:non_test_config",
    ]
  
@@ -366,9 +360,9 @@ diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/re
 +    "//third_party/skia/include/private", # For shuffler in graphics/static_bitmap_image.cc
 +  ]
  
-   public_deps = [
-     ":blink_platform_public_deps",
-@@ -1592,6 +1594,7 @@ component("platform") {
+   allow_circular_includes_from = [
+     "//third_party/blink/renderer/platform/blob",
+@@ -1635,6 +1637,7 @@ component("platform") {
      "//third_party/blink/public/strings",
      "//third_party/blink/renderer/platform/wtf",
      "//third_party/ced",
@@ -379,7 +373,7 @@ diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/re
 diff --git a/third_party/blink/renderer/platform/exported/web_runtime_features.cc b/third_party/blink/renderer/platform/exported/web_runtime_features.cc
 --- a/third_party/blink/renderer/platform/exported/web_runtime_features.cc
 +++ b/third_party/blink/renderer/platform/exported/web_runtime_features.cc
-@@ -729,4 +729,16 @@ void WebRuntimeFeatures::EnableConversionMeasurementInfraSupport(bool enable) {
+@@ -731,4 +731,16 @@ void WebRuntimeFeatures::EnableConversionMeasurementInfraSupport(bool enable) {
    RuntimeEnabledFeatures::SetConversionMeasurementInfraSupportEnabled(enable);
  }
  
@@ -408,7 +402,7 @@ diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b
  #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
  #include "third_party/blink/renderer/platform/image-encoders/image_encoder.h"
  #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-@@ -137,6 +139,11 @@ bool ImageDataBuffer::EncodeImageInternal(const ImageEncodingMimeType mime_type,
+@@ -145,6 +147,11 @@ bool ImageDataBuffer::EncodeImageInternal(const ImageEncodingMimeType mime_type,
                                            const SkPixmap& pixmap) const {
    DCHECK(is_valid_);
  
@@ -432,21 +426,17 @@ diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.cc
  #include "base/numerics/checked_math.h"
  #include "gpu/command_buffer/client/gles2_interface.h"
  #include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
-@@ -11,11 +13,13 @@
- #include "third_party/blink/renderer/platform/graphics/image_observer.h"
- #include "third_party/blink/renderer/platform/graphics/paint/paint_image.h"
- #include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
-+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
- #include "third_party/skia/include/core/SkCanvas.h"
- #include "third_party/skia/include/core/SkImage.h"
- #include "third_party/skia/include/core/SkPaint.h"
+@@ -17,6 +19,9 @@
  #include "third_party/skia/include/core/SkSurface.h"
- #include "third_party/skia/include/gpu/GrContext.h"
-+#include "third_party/skia/include/private/SkColorData.h"
  #include "v8/include/v8.h"
  
++#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
++#include "third_party/skia/include/private/SkColorData.h"
++
  namespace blink {
-@@ -129,7 +133,162 @@ bool StaticBitmapImage::CopyToByteArray(
+ 
+ scoped_refptr<StaticBitmapImage> StaticBitmapImage::Create(
+@@ -128,7 +133,162 @@ bool StaticBitmapImage::CopyToByteArray(
                .bounds()
                .intersect(SkIRect::MakeXYWH(rect.X(), rect.Y(), info.width(),
                                             info.height())));
@@ -624,7 +614,7 @@ diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.h 
 diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
 --- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
 +++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -795,6 +795,15 @@
+@@ -808,6 +808,15 @@
        origin_trial_feature_name: "FeaturePolicyReporting",
        status: "experimental"
      },

@@ -52,6 +52,8 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
 * security enhancement patches from [GrapheneOS](https://github.com/GrapheneOS) project
 * disable scroll-to-text-fragment
+* reduced referer granularity
+* block gateway attacks via websockets
 
 ## Features not related to privacy
 * import/export bookmarks
@@ -66,6 +68,12 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * do not ignore save prompt for users without SD cards
 * disable articles and increase number of icons on new tab page
 * adding an URL as bookmark will clear its blocked status for the NTP tiles
+* history support in incognito mode
+* view source of pages
+* timezone customization
+* sticky desktop mode setting
+* disable video autoplay by default
+* mobile/desktop user agent customization
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 
@@ -77,6 +85,8 @@ Flags which have been retired from upstream Chromium but are still available in 
 * `#pull-to-refresh`
 * `#enable-search-ready-omnibox`
 * `#darken-websites-checkbox-in-themes-setting`
+* `#simplified-ntp`
+* `#enable-text-fragment-anchor`
 
 New flags:
 

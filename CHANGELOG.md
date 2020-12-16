@@ -1,3 +1,29 @@
+# 87.0.4280.106
+* enable SplitCacheByNetworkIsolationKey (fixes https://github.com/bromite/bromite/issues/836)
+* fix random timezone option (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/828)
+* disable autofill server communication by default
+* ask permission to play protected media by default
+* disable SystemWebView variations support
+
+# 87.0.4280.81
+* fix text fragment not disabled by default, unexpire flag (fixes https://github.com/bromite/bromite/issues/803)
+* turn AImageReader off by default on ARM64 (fixes https://github.com/bromite/bromite/issues/814)
+* fix issue with global autoplay settings (thanks to @uazo, https://github.com/bromite/bromite/pull/825)
+* fix issues with user agent customization (thanks to @uazo, https://github.com/bromite/bromite/pull/823)
+* updated zh_CN translations (thanks to @zhmars, https://github.com/bromite/bromite/pull/821)
+
+# 87.0.4280.68
+* user agent customization (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/798)
+* fix for intent handling for local apps on Android 11 (https://github.com/bromite/bromite/pull/816)
+
+# 87.0.4280.67
+
+# 86.0.4240.194
+* fix native pages displaying incorrectly with the sticky desktop mode (thanks to @uazo)
+* re-introduce simplified NTP (fixes https://github.com/bromite/bromite/issues/701)
+* re-introduce site settings to block autoplay (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/791)
+* fix Omnibox flag not working (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/789)
+
 # 86.0.4240.181
 * allow sticky desktop mode for all tabs (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/780)
 
