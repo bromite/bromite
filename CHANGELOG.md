@@ -1,3 +1,6 @@
+# 87.0.4280.131
+* disable unified autoplay feature (fixes https://github.com/bromite/bromite/issues/804)
+
 # 87.0.4280.106
 * enable SplitCacheByNetworkIsolationKey (fixes https://github.com/bromite/bromite/issues/836)
 * fix random timezone option (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/828)
