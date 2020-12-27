@@ -1,4 +1,5 @@
 # 87.0.4280.131
+* enable all network isolation features (fixes https://github.com/bromite/bromite/issues/836)
 * disable unified autoplay feature (fixes https://github.com/bromite/bromite/issues/804)
 
 # 87.0.4280.106
