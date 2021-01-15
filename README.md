@@ -149,6 +149,12 @@ See upstream documentation: https://github.com/chromium/chromium/blob/master/com
 
 Bromite uses an unindexed filter file, which is periodically published at https://github.com/bromite/filters
 
+# Contributing
+
+Please submit issues following the issue template; beware that GitHub does not display the templates from mobile.
+
+Patches are welcome and accepted if they match the project goals; if you are willing to contribute you can open an issue to discuss patches submission.
+
 # Credits
 
 * [Chromium project](https://www.chromium.org/Home) and developers
