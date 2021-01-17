@@ -1,5 +1,5 @@
 From: uazo <uazo@users.noreply.github.com>
-Date: Mon, 28 Dec 2020 12:29:56 +0000
+Date: Sun, 17 Jan 2021 16:08:15 +0000
 Subject: Experimental user scripts support preview
 
 ---
@@ -17,8 +17,8 @@ Subject: Experimental user scripts support preview
  ...hrome_browser_main_extra_parts_profiles.cc |   4 +
  chrome/browser/profiles/profile_manager.cc    |   9 +
  chrome/renderer/BUILD.gn                      |   1 +
- .../chrome_content_renderer_client.cc         |  32 +
- .../browser_ui/settings/SettingsUtils.java    |  44 +
+ .../chrome_content_renderer_client.cc         |  33 +
+ .../browser_ui/settings/SettingsUtils.java    |  41 +
  components/components_strings.grd             |   1 +
  components/user_scripts/android/BUILD.gn      |  83 ++
  .../java/res/drawable-hdpi/userscript_off.png | Bin 0 -> 161 bytes
@@ -34,19 +34,19 @@ Subject: Experimental user scripts support preview
  .../components/user_scripts/ScriptInfo.java   |  31 +
  .../user_scripts/ScriptListBaseAdapter.java   | 186 ++++
  .../user_scripts/ScriptListPreference.java    | 151 ++++
- .../user_scripts/UserScriptsBridge.java       | 145 ++++
- .../user_scripts/UserScriptsPreferences.java  | 141 +++
+ .../user_scripts/UserScriptsBridge.java       | 146 ++++
+ .../user_scripts/UserScriptsPreferences.java  | 144 ++++
  .../user_scripts/android/java_sources.gni     |  18 +
- .../android/user_scripts_bridge.cc            | 178 ++++
+ .../android/user_scripts_bridge.cc            | 179 ++++
  .../android/user_scripts_bridge.h             |  31 +
  components/user_scripts/browser/BUILD.gn      |  68 ++
  .../user_scripts/browser/file_task_runner.cc  |  40 +
  .../user_scripts/browser/file_task_runner.h   |  34 +
- .../browser/user_script_loader.cc             | 650 ++++++++++++++
+ .../browser/user_script_loader.cc             | 646 ++++++++++++++
  .../user_scripts/browser/user_script_loader.h | 173 ++++
  .../browser/user_script_pref_info.cc          |  34 +
  .../browser/user_script_pref_info.h           |  58 ++
- .../user_scripts/browser/user_script_prefs.cc | 241 ++++++
+ .../user_scripts/browser/user_script_prefs.cc | 240 ++++++
  .../user_scripts/browser/user_script_prefs.h  |  55 ++
  .../browser/userscripts_browser_client.cc     |  79 ++
  .../browser/userscripts_browser_client.h      |  62 ++
@@ -80,18 +80,18 @@ Subject: Experimental user scripts support preview
  .../user_scripts_renderer_resources.grd       |  14 +
  .../user_scripts/renderer/script_context.cc   | 213 +++++
  .../user_scripts/renderer/script_context.h    |  70 ++
- .../user_scripts/renderer/script_injection.cc | 350 ++++++++
+ .../user_scripts/renderer/script_injection.cc | 344 ++++++++
  .../user_scripts/renderer/script_injection.h  | 160 ++++
  .../renderer/script_injection_callback.cc     |  26 +
  .../renderer/script_injection_callback.h      |  38 +
- .../renderer/script_injection_manager.cc      | 407 +++++++++
+ .../renderer/script_injection_manager.cc      | 417 +++++++++
  .../renderer/script_injection_manager.h       | 102 +++
  .../user_scripts/renderer/script_injector.h   |  96 +++
  .../user_scripts/renderer/scripts_run_info.cc |  31 +
  .../user_scripts/renderer/scripts_run_info.h  |  70 ++
- .../renderer/user_script_injector.cc          | 229 +++++
+ .../renderer/user_script_injector.cc          | 228 +++++
  .../renderer/user_script_injector.h           |  86 ++
- .../user_scripts/renderer/user_script_set.cc  | 260 ++++++
+ .../user_scripts/renderer/user_script_set.cc  | 258 ++++++
  .../user_scripts/renderer/user_script_set.h   | 102 +++
  .../renderer/user_script_set_manager.cc       |  77 ++
  .../renderer/user_script_set_manager.h        |  62 ++
@@ -104,7 +104,7 @@ Subject: Experimental user scripts support preview
  .../strings/userscripts_strings.grdp          |  50 ++
  tools/gritsettings/resource_ids.spec          |   3 +
  .../chromium/ui/base/SelectFileDialog.java    |   3 +-
- 101 files changed, 8902 insertions(+), 4 deletions(-)
+ 101 files changed, 8901 insertions(+), 4 deletions(-)
  create mode 100755 components/user_scripts/android/BUILD.gn
  create mode 100755 components/user_scripts/android/java/res/drawable-hdpi/userscript_off.png
  create mode 100755 components/user_scripts/android/java/res/drawable-hdpi/userscript_on.png
@@ -459,15 +459,16 @@ diff --git a/chrome/renderer/BUILD.gn b/chrome/renderer/BUILD.gn
 diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
 --- a/chrome/renderer/chrome_content_renderer_client.cc
 +++ b/chrome/renderer/chrome_content_renderer_client.cc
-@@ -166,6 +166,7 @@
+@@ -166,6 +166,8 @@
  
  #if defined(OS_ANDROID)
  #include "chrome/renderer/sandbox_status_extension_android.h"
++#include "components/user_scripts/common/user_scripts_features.h"
 +#include "components/user_scripts/renderer/user_scripts_renderer_client.h"
  #else
  #include "chrome/renderer/media/chrome_speech_recognition_client.h"
  #include "chrome/renderer/searchbox/search_bouncer.h"
-@@ -363,6 +364,12 @@ void ChromeContentRendererClient::RenderThreadStarted() {
+@@ -363,6 +365,12 @@ void ChromeContentRendererClient::RenderThreadStarted() {
    ChromeExtensionsRendererClient::GetInstance()->RenderThreadStarted();
  #endif
  
@@ -480,7 +481,7 @@ diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer
  #if BUILDFLAG(ENABLE_SPELLCHECK)
    if (!spellcheck_)
      InitSpellCheck();
-@@ -502,6 +509,13 @@ void ChromeContentRendererClient::RenderFrameCreated(
+@@ -502,6 +510,13 @@ void ChromeContentRendererClient::RenderFrameCreated(
        render_frame, registry);
  #endif
  
@@ -494,7 +495,7 @@ diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer
  #if BUILDFLAG(ENABLE_PLUGINS)
    new PepperHelper(render_frame);
  #endif
-@@ -1455,6 +1469,12 @@ void ChromeContentRendererClient::RunScriptsAtDocumentStart(
+@@ -1455,6 +1470,12 @@ void ChromeContentRendererClient::RunScriptsAtDocumentStart(
        render_frame);
    // |render_frame| might be dead by now.
  #endif
@@ -507,7 +508,7 @@ diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer
  }
  
  void ChromeContentRendererClient::RunScriptsAtDocumentEnd(
-@@ -1464,6 +1484,12 @@ void ChromeContentRendererClient::RunScriptsAtDocumentEnd(
+@@ -1464,6 +1485,12 @@ void ChromeContentRendererClient::RunScriptsAtDocumentEnd(
        render_frame);
    // |render_frame| might be dead by now.
  #endif
@@ -520,7 +521,7 @@ diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer
  }
  
  void ChromeContentRendererClient::RunScriptsAtDocumentIdle(
-@@ -1473,6 +1499,12 @@ void ChromeContentRendererClient::RunScriptsAtDocumentIdle(
+@@ -1473,6 +1500,12 @@ void ChromeContentRendererClient::RunScriptsAtDocumentIdle(
        render_frame);
    // |render_frame| might be dead by now.
  #endif
@@ -549,7 +550,7 @@ diff --git a/components/browser_ui/settings/android/java/src/org/chromium/compon
  /**
   * A helper class for Settings.
   */
-@@ -118,4 +124,42 @@ public class SettingsUtils {
+@@ -118,4 +124,39 @@ public class SettingsUtils {
          ImageView imageButton = (ImageView) button;
          return imageButton.getDrawable() == parentMenu.getOverflowIcon();
      }
@@ -561,12 +562,9 @@ diff --git a/components/browser_ui/settings/android/java/src/org/chromium/compon
 +
 +        for(int count=0; count < fields.length; count++) {
 +            String assetName = fields[count].getName();
-+            //Log.i("found ", assetName);
 +            if (assetName.startsWith(name)) {
-+                //int resId = resources.getIdentifier(assetName, "xml", packageName);
 +                try {
 +                    int resId = fields[count].getInt(null);
-+                    //Log.i("inflating ", Integer.toString(resId));
 +                    return SettingsUtils.inflatePreferencesFromResource(preferenceFragment, resId);
 +                } catch (IllegalAccessException e) {}
 +            }
@@ -1462,7 +1460,7 @@ diff --git a/components/user_scripts/android/java/src/org/chromium/components/us
 new file mode 100644
 --- /dev/null
 +++ b/components/user_scripts/android/java/src/org/chromium/components/user_scripts/UserScriptsBridge.java
-@@ -0,0 +1,145 @@
+@@ -0,0 +1,146 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1541,12 +1539,13 @@ new file mode 100644
 +        List<ScriptInfo> list = new ArrayList<>();
 +        try {
 +            String json = UserScriptsBridgeJni.get().getScriptsInfo();
-+            Log.i("User Scripts Loaded", json);
 +
 +            JSONObject jsonObject = new JSONObject(json);
 +
 +            JSONArray scripts = jsonObject.names();
 +            if (scripts != null) {
++                Log.i("User Scripts Loaded", json);
++                Log.i("Totals scripts", Integer.toString(scripts.length()));
 +                for (int i = 0; i < scripts.length(); i++) {
 +                    String key = (String) scripts.get(i);
 +                    JSONObject script = jsonObject.getJSONObject(key);
@@ -1562,7 +1561,7 @@ new file mode 100644
 +                }
 +            }
 +        } catch (Exception e) {
-+            Log.i("User Scripts Load Error", e.toString());
++            Log.e("User Scripts Load Error", e.toString());
 +        }
 +        return list;
 +    }
@@ -1613,7 +1612,7 @@ diff --git a/components/user_scripts/android/java/src/org/chromium/components/us
 new file mode 100755
 --- /dev/null
 +++ b/components/user_scripts/android/java/src/org/chromium/components/user_scripts/UserScriptsPreferences.java
-@@ -0,0 +1,141 @@
+@@ -0,0 +1,144 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1677,16 +1676,19 @@ new file mode 100755
 +
 +        ChromeSwitchPreference enabledSwitch =
 +                (ChromeSwitchPreference) findPreference(PREF_ENABLED_SWITCH);
++        ScriptListPreference listPreference =
++                (ScriptListPreference) findPreference(PREF_SCRIPTLISTPREFERENCE);
++
 +        boolean enabled = UserScriptsBridge.isUserEnabled();
 +        enabledSwitch.setChecked(enabled);
++        listPreference.setEnabled(enabled);
 +        enabledSwitch.setOnPreferenceChangeListener((preference, newValue) -> {
 +            UserScriptsBridge.setUserEnabled((boolean) newValue);
++            listPreference.setEnabled((boolean) newValue);
 +            return true;
 +        });
 +
 +        mwindowAndroid = new FragmentWindowAndroid(getContext(), this);
-+        ScriptListPreference listPreference =
-+                (ScriptListPreference) findPreference(PREF_SCRIPTLISTPREFERENCE);
 +        listPreference.setWindowAndroid(mwindowAndroid);
 +
 +        if (UserScriptsBridge.isFeatureEnabled() == false) {
@@ -1782,7 +1784,7 @@ diff --git a/components/user_scripts/android/user_scripts_bridge.cc b/components
 new file mode 100644
 --- /dev/null
 +++ b/components/user_scripts/android/user_scripts_bridge.cc
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,179 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1875,6 +1877,7 @@ new file mode 100644
 +  user_scripts::UserScriptsBrowserClient* client = GetUserScriptsBrowserClient();
 +  if (client == NULL) return;
 +  client->GetPrefs()->SetEnabled(is_enabled);
++  client->GetLoader()->StartLoad();
 +}
 +
 +static base::android::ScopedJavaLocalRef<jstring> JNI_UserScriptsBridge_GetScriptsInfo(
@@ -2160,7 +2163,7 @@ diff --git a/components/user_scripts/browser/user_script_loader.cc b/components/
 new file mode 100755
 --- /dev/null
 +++ b/components/user_scripts/browser/user_script_loader.cc
-@@ -0,0 +1,650 @@
+@@ -0,0 +1,646 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -2215,6 +2218,7 @@ new file mode 100755
 +#include "chrome/browser/ui/chrome_select_file_policy.h"
 +#include "ui/android/window_android.h"
 +
++#include "../common/user_scripts_features.h"
 +#include "../common/extension_messages.h"
 +#include "file_task_runner.h"
 +#include "user_script_prefs.h"
@@ -2372,7 +2376,8 @@ new file mode 100755
 +
 +    std::string content;
 +    if (user_script_path.IsContentUri()) {
-+      //LOG(INFO) << "---Path " << user_script_path << " is a content uri";
++      if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts))
++        LOG(INFO) << "UserScriptLoader: path " << user_script_path << " is a content uri";
 +
 +      base::FilePath tempFilePath;
 +      if( base::CreateTemporaryFile(&tempFilePath) == false ) {
@@ -2434,15 +2439,15 @@ new file mode 100755
 +// static
 +bool GetOrCreatePath(base::FilePath& path) {
 +  base::PathService::Get(base::DIR_ANDROID_APP_DATA, &path);
-+  path = path.AppendASCII("snippets");
++  path = path.AppendASCII("userscripts");
 +
 +  // create snippets directory if not exists
 +  if(!base::PathExists(path)) {
 +    LOG(INFO) << "Path " << path << " doesn't exists. Creating";
 +    base::File::Error error = base::File::FILE_OK;
 +    if( !base::CreateDirectoryAndGetError(path, &error) ) {
-+      LOG(INFO) <<
-+               "ERROR: failed to create directory: " << path
++      LOG(ERROR) <<
++               "UserScriptLoader: failed to create directory: " << path
 +               << " with error code " << error;
 +      return false;
 +    }
@@ -2467,12 +2472,14 @@ new file mode 100755
 +
 +    base::string16 error;
 +    if (LoadUserScriptFromFile(full_name, GURL(), userscript, &error)) {
-+      LOG(INFO) << "Found user script " << userscript->name() <<
-+                                    "-" << userscript->version() <<
-+                                    "-" << userscript->description();
++      if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts))
++        LOG(INFO) << "UserScriptLoader: Found user script " << userscript->name() <<
++              "-" << userscript->version() <<
++              "-" << userscript->description();
++
 +      user_scripts->push_back(std::move(userscript));
 +    } else {
-+      LOG(INFO) << "User script load error " << error;
++      LOG(ERROR) << "UserScriptLoader: load error " << error;
 +    }
 +  }
 +}
@@ -2497,19 +2504,14 @@ new file mode 100755
 +}
 +
 +void UserScriptLoader::AttemptLoad() {
-+  // if (ready_ && ScriptsMayHaveChanged()) {
-+  //   if (is_loading())
-+  //     queued_load_ = true;
-+  //   else
-+      StartLoad();
-+  // }
++  StartLoad();
 +}
 +
 +void UserScriptLoader::StartLoad() {
 +  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-+  // DCHECK(!is_loading());
 +
-+  // LOG(INFO) << "---UserScriptLoader::StartLoad";
++  if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts))
++    LOG(INFO) << "UserScriptLoader: StartLoad";
 +
 +  // Reload any loaded scripts, and clear out |loaded_scripts_| to indicate that
 +  // the scripts aren't currently ready.
@@ -2574,7 +2576,9 @@ new file mode 100755
 +void UserScriptLoader::OnScriptsLoaded(
 +    std::unique_ptr<UserScriptList> user_scripts,
 +    base::ReadOnlySharedMemoryRegion shared_memory) {
-+  // LOG(INFO) << "---UserScriptLoader::OnScriptsLoaded";
++
++  if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts))
++    LOG(INFO) << "UserScriptLoader: OnScriptsLoaded";
 +
 +  // Check user preferences for loaded user scripts
 +  prefs_->CompareWithPrefs(*user_scripts);
@@ -2595,8 +2599,6 @@ new file mode 100755
 +    return;
 +  }
 +
-+  // LOG(INFO) << "---UserScriptLoader::OnScriptsLoaded 2";
-+
 +  // We've got scripts ready to go.
 +  shared_memory_ = std::move(shared_memory);
 +
@@ -2613,7 +2615,8 @@ new file mode 100755
 +void UserScriptLoader::SendUpdate(
 +    content::RenderProcessHost* process,
 +    const base::ReadOnlySharedMemoryRegion& shared_memory) {
-+  // LOG(INFO) << "---UserScriptLoader::SendUpdate";
++  if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts))
++    LOG(INFO) << "UserScriptLoader: SendUpdate";
 +
 +  // If the process is being started asynchronously, early return.  We'll end up
 +  // calling InitUserScripts when it's created which will call this again.
@@ -2653,8 +2656,6 @@ new file mode 100755
 +    LoadScriptsCallback callback) {
 +  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 +
-+  // LOG(INFO) << "---UserScriptLoader::LoadScripts";
-+
 +  GetUserScriptsFileTaskRunner()->PostTask(
 +      FROM_HERE,
 +      base::BindOnce(&LoadScriptsOnFileTaskRunner, std::move(user_scripts),
@@ -2670,7 +2671,7 @@ new file mode 100755
 +  if (GetOrCreatePath(path)) {
 +    base::FilePath file = path.Append(script_id);
 +    if( base::DeleteFile(file) == false ) {
-+      LOG(INFO) <<
++      LOG(ERROR) <<
 +               "ERROR: failed to delete file : " << path;
 +    }
 +  }
@@ -2741,9 +2742,10 @@ new file mode 100755
 +      userscript->set_key(display_name);
 +    }
 +
-+    LOG(INFO) << "User Script Loaded " << userscript->name() <<
-+                                   "-" << userscript->version() <<
-+                                   "-" << userscript->description();
++    if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts))
++      LOG(INFO) << "UserScriptLoader: Loaded " << userscript->name() <<
++                                    "-" << userscript->version() <<
++                                    "-" << userscript->description();
 +    base::FilePath destination;
 +    result = GetOrCreatePath(destination);
 +    if( result == false ) {
@@ -2756,7 +2758,7 @@ new file mode 100755
 +      }
 +    }
 +  } else {
-+    LOG(INFO) << "User Script Load error " << error;
++    LOG(ERROR) << "UserScriptLoader: load error " << error;
 +  }
 +
 +  const std::string string_error = base::UTF16ToASCII(error);
@@ -2789,16 +2791,14 @@ new file mode 100755
 +
 +void UserScriptLoader::FileSelected(
 +    const base::FilePath& path, int index, void* params) {
-+  LOG(INFO) << "UserScriptLoader::FileSelected " << path;
++  if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts))
++    LOG(INFO) << "UserScriptLoader: FileSelected " << path;
 +
 +  UserScriptLoader::TryToInstall(path);
 +}
 +
 +void UserScriptLoader::LoadScriptFromPathOnFileTaskRunnerCallback(
 +              bool result, const std::string& error) {
-+  // LOG(INFO) << "Return from LoadScriptFromPathOnFileTaskRunnerCallback "
-+  //          << result << " " << error;
-+
 +  for (auto& observer : observers_)
 +     observer.OnUserScriptLoaded(this, result, error);
 +
@@ -2807,7 +2807,6 @@ new file mode 100755
 +
 +void UserScriptLoader::FileSelectionCanceled(
 +    void* params) {
-+  LOG(INFO) << "UserScriptLoader::FileSelectionCanceled";
 +}
 +
 +}  // namespace extensions
@@ -3097,7 +3096,7 @@ diff --git a/components/user_scripts/browser/user_script_prefs.cc b/components/u
 new file mode 100644
 --- /dev/null
 +++ b/components/user_scripts/browser/user_script_prefs.cc
-@@ -0,0 +1,241 @@
+@@ -0,0 +1,240 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -3131,6 +3130,7 @@ new file mode 100644
 +#include "user_script_prefs.h"
 +#include "user_script_pref_info.h"
 +#include "../common/user_script.h"
++#include "../common/user_scripts_features.h"
 +
 +namespace user_scripts {
 +
@@ -3212,7 +3212,9 @@ new file mode 100644
 +
 +void UserScriptsPrefs::CompareWithPrefs(UserScriptList& user_scripts) {
 +  if( IsEnabled() == false ) {
-+    LOG(INFO) << "UserScripts disabled";
++    if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts))
++      LOG(INFO) << "UserScriptsPrefs: disabled by user";
++
 +    user_scripts.clear();
 +    return;
 +  }
@@ -3233,8 +3235,6 @@ new file mode 100644
 +    scriptInfo->set_description(it->get()->description());
 +    scriptInfo->set_version(it->get()->version());
 +
-+    // LOG(INFO) << "---UserScriptsPrefs::CompareWithPrefs name " << scriptInfo->name();
-+
 +    PrefUpdate update(prefs_, key, kUserScriptsList);
 +    base::DictionaryValue* script_dict = update.Get();
 +
@@ -3248,10 +3248,8 @@ new file mode 100644
 +    script_dict->SetString(kScriptInstallTime, install_time_str);
 +
 +   if (!scriptInfo->enabled) {
-+      // LOG(INFO) << "---UserScriptsPrefs::CompareWithPrefs removed " << key;
 +      it = user_scripts.erase(it);
 +    } else {
-+      // LOG(INFO) << "---UserScriptsPrefs::CompareWithPrefs using " << key;
 +      ++it;
 +    }
 +  }
@@ -5360,7 +5358,7 @@ new file mode 100755
 +    if (pattern->MatchesURL(url)) {
 +      if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts))
 +        LOG(INFO) << "UserScripts: URLPatternSet::MatchesURL true " << url.spec();
-+      
++
 +      return true;
 +    }
 +  }
@@ -6390,7 +6388,7 @@ new file mode 100644
 +
 +const base::Feature kEnableUserScripts = {"EnableUserScripts",
 +                                          base::FEATURE_DISABLED_BY_DEFAULT};
-+const base::Feature kEnableLoggingUserScripts = 
++const base::Feature kEnableLoggingUserScripts =
 +                                        {"EnableLoggingUserScripts",
 +                                          base::FEATURE_DISABLED_BY_DEFAULT};
 +
@@ -6646,13 +6644,13 @@ new file mode 100755
 +// is valid, and clears |callbacks_to_be_run_and_cleared|.
 +void RunCallbacksWhileFrameIsValid(
 +    base::WeakPtr<ExtensionFrameHelper> frame_helper,
-+    std::vector<base::Closure>* callbacks_to_be_run_and_cleared) {
++    std::vector<base::OnceClosure>* callbacks_to_be_run_and_cleared) {
 +  // The JavaScript code can cause re-entrancy. To avoid a deadlock, don't run
 +  // callbacks that are added during the iteration.
-+  std::vector<base::Closure> callbacks;
++  std::vector<base::OnceClosure> callbacks;
 +  callbacks_to_be_run_and_cleared->swap(callbacks);
 +  for (auto& callback : callbacks) {
-+    callback.Run();
++    std::move(callback).Run();
 +    if (!frame_helper.get())
 +      return;  // Frame and ExtensionFrameHelper invalidated by callback.
 +  }
@@ -6672,18 +6670,18 @@ new file mode 100755
 +}
 +
 +void ExtensionFrameHelper::ScheduleAtDocumentStart(
-+    const base::Closure& callback) {
-+  document_element_created_callbacks_.push_back(callback);
++    base::OnceClosure callback) {
++  document_element_created_callbacks_.push_back(std::move(callback));
 +}
 +
 +void ExtensionFrameHelper::ScheduleAtDocumentEnd(
-+    const base::Closure& callback) {
-+  document_load_finished_callbacks_.push_back(callback);
++    base::OnceClosure callback) {
++  document_load_finished_callbacks_.push_back(std::move(callback));
 +}
 +
 +void ExtensionFrameHelper::ScheduleAtDocumentIdle(
-+    const base::Closure& callback) {
-+  document_idle_callbacks_.push_back(callback);
++    base::OnceClosure callback) {
++  document_idle_callbacks_.push_back(std::move(callback));
 +}
 +
 +void ExtensionFrameHelper::RunScriptsAtDocumentStart() {
@@ -6774,13 +6772,13 @@ new file mode 100755
 +  // notification, e.g. from RenderFrameObserver::DidCreateDocumentElement.
 +  // Otherwise the callback is never invoked, or invoked for a document that you
 +  // were not expecting.
-+  void ScheduleAtDocumentStart(const base::Closure& callback);
++  void ScheduleAtDocumentStart(base::OnceClosure callback);
 +
 +  // Schedule a callback, to be run at the next RunScriptsAtDocumentEnd call.
-+  void ScheduleAtDocumentEnd(const base::Closure& callback);
++  void ScheduleAtDocumentEnd(base::OnceClosure callback);
 +
 +  // Schedule a callback, to be run at the next RunScriptsAtDocumentIdle call.
-+  void ScheduleAtDocumentIdle(const base::Closure& callback);
++  void ScheduleAtDocumentIdle(base::OnceClosure callback);
 +
 + private:
 +
@@ -6790,13 +6788,13 @@ new file mode 100755
 +  int tab_id_;
 +
 +  // Callbacks to be run at the next RunScriptsAtDocumentStart notification.
-+  std::vector<base::Closure> document_element_created_callbacks_;
++  std::vector<base::OnceClosure> document_element_created_callbacks_;
 +
 +  // Callbacks to be run at the next RunScriptsAtDocumentEnd notification.
-+  std::vector<base::Closure> document_load_finished_callbacks_;
++  std::vector<base::OnceClosure> document_load_finished_callbacks_;
 +
 +  // Callbacks to be run at the next RunScriptsAtDocumentIdle notification.
-+  std::vector<base::Closure> document_idle_callbacks_;
++  std::vector<base::OnceClosure> document_idle_callbacks_;
 +
 +  base::WeakPtrFactory<ExtensionFrameHelper> weak_ptr_factory_{this};
 +
@@ -7273,7 +7271,7 @@ diff --git a/components/user_scripts/renderer/script_injection.cc b/components/u
 new file mode 100755
 --- /dev/null
 +++ b/components/user_scripts/renderer/script_injection.cc
-@@ -0,0 +1,350 @@
+@@ -0,0 +1,344 @@
 +// Copyright 2014 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -7450,7 +7448,7 @@ new file mode 100755
 +ScriptInjection::InjectionResult ScriptInjection::TryToInject(
 +    UserScript::RunLocation current_location,
 +    ScriptsRunInfo* scripts_run_info,
-+    const CompletionCallback& async_completion_callback) {
++    CompletionCallback async_completion_callback) {
 +  if (current_location < run_location_)
 +    return INJECTION_WAITING;  // Wait for the right location.
 +
@@ -7468,7 +7466,7 @@ new file mode 100755
 +  // If the injection is blocked, we need to set the manager so we can
 +  // notify it upon completion.
 +  if (result == INJECTION_BLOCKED)
-+    async_completion_callback_ = async_completion_callback;
++    async_completion_callback_ = std::move(async_completion_callback);
 +  return result;
 +}
 +
@@ -7519,11 +7517,9 @@ new file mode 100755
 +  complete_ = did_inject_js_ || !should_inject_js;
 +
 +  if (complete_) {
-+    LOG(INFO) << "---ScriptInjection::Inject complete";
 +    injector_->OnInjectionComplete(std::move(execution_result_), run_location_,
 +                                   render_frame_);
 +  } else {
-+    LOG(INFO) << "---ScriptInjection::Inject INcomplete";
 +    ++scripts_run_info->num_blocking_js;
 +  }
 +
@@ -7532,7 +7528,6 @@ new file mode 100755
 +
 +void ScriptInjection::InjectJs(std::set<std::string>* executing_scripts,
 +                               size_t* num_injected_js_scripts) {
-+  // LOG(INFO) << "---ScriptInjection::InjectJs";
 +  DCHECK(!did_inject_js_);
 +  std::vector<blink::WebScriptSource> sources = injector_->GetJsSources(
 +      run_location_, executing_scripts, num_injected_js_scripts);
@@ -7564,13 +7559,11 @@ new file mode 100755
 +  render_frame_->GetWebFrame()->RequestExecuteScriptInIsolatedWorld(
 +      world_id, &sources.front(), sources.size(), is_user_gesture,
 +      execution_option, callback.release());
-+  // LOG(INFO) << "---ScriptInjection::InjectJs end " << world_id;
 +}
 +
 +void ScriptInjection::OnJsInjectionCompleted(
 +    const std::vector<v8::Local<v8::Value>>& results,
 +    base::Optional<base::TimeDelta> elapsed) {
-+  // LOG(INFO) << "---ScriptInjection::OnJsInjectionCompleted end";
 +  DCHECK(!did_inject_js_);
 +
 +  bool expects_results = injector_->ExpectsResults();
@@ -7598,9 +7591,8 @@ new file mode 100755
 +    injector_->OnInjectionComplete(std::move(execution_result_), run_location_,
 +                                   render_frame_);
 +    // Warning: this object can be destroyed after this line!
-+    async_completion_callback_.Run(this);
++    std::move(async_completion_callback_).Run(this);
 +  }
-+  // LOG(INFO) << "---ScriptInjection::OnJsInjectionCompleted end "<< execution_result_;
 +}
 +
 +void ScriptInjection::InjectCss(std::set<std::string>* injected_stylesheets,
@@ -7674,7 +7666,7 @@ new file mode 100755
 +    INJECTION_WAITING
 +  };
 +
-+  using CompletionCallback = base::Callback<void(ScriptInjection*)>;
++  using CompletionCallback = base::OnceCallback<void(ScriptInjection*)>;
 +
 +  // Return the id of the injection host associated with the given world.
 +  static std::string GetHostIdForIsolatedWorld(int world_id);
@@ -7700,7 +7692,7 @@ new file mode 100755
 +  InjectionResult TryToInject(
 +      UserScript::RunLocation current_location,
 +      ScriptsRunInfo* scripts_run_info,
-+      const CompletionCallback& async_completion_callback);
++      CompletionCallback async_completion_callback);
 +
 +  // Called when permission for the given injection has been granted.
 +  // Returns INJECTION_FINISHED if injection has injected or will never inject,
@@ -7867,7 +7859,7 @@ diff --git a/components/user_scripts/renderer/script_injection_manager.cc b/comp
 new file mode 100755
 --- /dev/null
 +++ b/components/user_scripts/renderer/script_injection_manager.cc
-@@ -0,0 +1,407 @@
+@@ -0,0 +1,417 @@
 +// Copyright 2014 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -7936,6 +7928,9 @@ new file mode 100755
 +            ScriptInjectionManager* manager);
 +  ~RFOHelper() override;
 +
++  // commit @9f2aac4
++  void Initialize();
++
 + private:
 +  // RenderFrameObserver implementation.
 +  void DidCreateNewDocument() override;
@@ -7959,7 +7954,7 @@ new file mode 100755
 +  // The owning ScriptInjectionManager.
 +  ScriptInjectionManager* manager_;
 +
-+  bool should_run_idle_;
++  bool should_run_idle_ = true; // commit @9f2aac4
 +
 +  base::WeakPtrFactory<RFOHelper> weak_factory_{this};
 +};
@@ -7973,17 +7968,33 @@ new file mode 100755
 +ScriptInjectionManager::RFOHelper::~RFOHelper() {
 +}
 +
-+void ScriptInjectionManager::RFOHelper::DidCreateNewDocument() {
-+  // LOG(INFO) << "---ScriptInjectionManager::RFOHelper::DidCreateNewDocument";
 +
++void ScriptInjectionManager::RFOHelper::Initialize() {
++  // Set up for the initial empty document, for which the Document created
++  // events do not happen as it's already present.
++  DidCreateNewDocument();
++  // The initial empty document for a main frame may have scripts attached to it
++  // but we do not want to invalidate the frame and lose them when the next
++  // document loads. For example the IncognitoApiTest.IncognitoSplitMode test
++  // does `chrome.tabs.create()` with a script to be run, which is added to the
++  // frame before it navigates, so it needs to be preserved. However scripts in
++  // child frames are expected to be run inside the initial empty document. For
++  // example the ExecuteScriptApiTest.FrameWithHttp204 test creates a child
++  // frame at about:blank and expects to run injected scripts inside it.
++  // This is all quite inconsistent however tests both depend on us queuing and
++  // not queueing the DOCUMENT_START events in the initial empty document.
++  if (!render_frame()->IsMainFrame()) {
++    DidCreateDocumentElement();
++  }
++}
++
++void ScriptInjectionManager::RFOHelper::DidCreateNewDocument() {
 +  // A new document is going to be shown, so invalidate the old document state.
 +  // Don't force-reset the frame, because it is possible that a script injection
 +  // was scheduled before the page was loaded, e.g. by navigating to a
 +  // javascript: URL before the page has loaded.
 +  constexpr bool kForceReset = false;
 +  InvalidateAndResetFrame(kForceReset);
-+
-+  // LOG(INFO) << "---ScriptInjectionManager::RFOHelper::DidCreateNewDocument exit";
 +}
 +
 +void ScriptInjectionManager::RFOHelper::DidCreateDocumentElement() {
@@ -7992,14 +8003,11 @@ new file mode 100755
 +
 +  ExtensionFrameHelper::Get(render_frame())
 +      ->ScheduleAtDocumentStart(
-+          base::Bind(&ScriptInjectionManager::RFOHelper::StartInjectScripts,
++          base::BindOnce(&ScriptInjectionManager::RFOHelper::StartInjectScripts,
 +                     weak_factory_.GetWeakPtr(), UserScript::DOCUMENT_START));
-+
-+  // LOG(INFO) << "---ScriptInjectionManager::RFOHelper::DidCreateDocumentElement exit";
 +}
 +
 +void ScriptInjectionManager::RFOHelper::DidFailProvisionalLoad() {
-+  // LOG(INFO) << "---ScriptInjectionManager::RFOHelper::DidFailProvisionalLoad";
 +  auto it = manager_->frame_statuses_.find(render_frame());
 +  if (it != manager_->frame_statuses_.end() &&
 +      it->second == UserScript::DOCUMENT_START) {
@@ -8018,7 +8026,6 @@ new file mode 100755
 +    should_run_idle_ = false;
 +    manager_->frame_statuses_[render_frame()] = UserScript::DOCUMENT_IDLE;
 +  }
-+  // LOG(INFO) << "---ScriptInjectionManager::RFOHelper::DidFailProvisionalLoad exit";
 +}
 +
 +void ScriptInjectionManager::RFOHelper::DidFinishDocumentLoad() {
@@ -8028,7 +8035,7 @@ new file mode 100755
 +  DCHECK(content::RenderThread::Get());
 +  ExtensionFrameHelper::Get(render_frame())
 +      ->ScheduleAtDocumentEnd(
-+          base::Bind(&ScriptInjectionManager::RFOHelper::StartInjectScripts,
++          base::BindOnce(&ScriptInjectionManager::RFOHelper::StartInjectScripts,
 +                     weak_factory_.GetWeakPtr(), UserScript::DOCUMENT_END));
 +
 +  // We try to run idle in two places: a delayed task here and in response to
@@ -8050,20 +8057,17 @@ new file mode 100755
 +
 +  ExtensionFrameHelper::Get(render_frame())
 +      ->ScheduleAtDocumentIdle(
-+          base::Bind(&ScriptInjectionManager::RFOHelper::RunIdle,
++          base::BindOnce(&ScriptInjectionManager::RFOHelper::RunIdle,
 +                     weak_factory_.GetWeakPtr()));
 +}
 +
 +void ScriptInjectionManager::RFOHelper::WillDetach() {
-+  // LOG(INFO) << "---ScriptInjectionManager::RFOHelper::WillDetach";
 +  // The frame is closing - invalidate.
 +  constexpr bool kForceReset = true;
 +  InvalidateAndResetFrame(kForceReset);
-+  // LOG(INFO) << "---ScriptInjectionManager::RFOHelper::WillDetach exit";
 +}
 +
 +void ScriptInjectionManager::RFOHelper::OnDestruct() {
-+  // LOG(INFO) << "---ScriptInjectionManager::RFOHelper::OnDestruct";
 +  manager_->RemoveObserver(this);
 +}
 +
@@ -8122,7 +8126,7 @@ new file mode 100755
 +void ScriptInjectionManager::OnRenderFrameCreated(
 +    content::RenderFrame* render_frame) {
 +  rfo_helpers_.push_back(std::make_unique<RFOHelper>(render_frame, this));
-+  // LOG(INFO) << "---ScriptInjectionManager::OnRenderFrameCreated";
++  rfo_helpers_.back()->Initialize(); // commit @9f2aac4
 +}
 +
 +void ScriptInjectionManager::OnInjectionFinished(
@@ -8210,8 +8214,6 @@ new file mode 100755
 +void ScriptInjectionManager::InjectScripts(
 +    content::RenderFrame* frame,
 +    UserScript::RunLocation run_location) {
-+  // LOG(INFO) << "---ScriptInjectionManager::InjectScripts";
-+
 +  // Find any injections that want to run on the given frame.
 +  ScriptInjectionVector frame_injections;
 +  for (auto iter = pending_injections_.begin();
@@ -8598,7 +8600,7 @@ diff --git a/components/user_scripts/renderer/user_script_injector.cc b/componen
 new file mode 100755
 --- /dev/null
 +++ b/components/user_scripts/renderer/user_script_injector.cc
-@@ -0,0 +1,229 @@
+@@ -0,0 +1,228 @@
 +// Copyright 2014 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -8697,7 +8699,6 @@ new file mode 100755
 +      user_script_set_(script_list),
 +      script_id_(script_->id()),
 +      user_script_set_observer_(this) {
-+  // LOG(INFO) << "---UserScriptInjector::UserScriptInjector";
 +  user_script_set_observer_.Add(script_list);
 +}
 +
@@ -8923,7 +8924,7 @@ diff --git a/components/user_scripts/renderer/user_script_set.cc b/components/us
 new file mode 100755
 --- /dev/null
 +++ b/components/user_scripts/renderer/user_script_set.cc
-@@ -0,0 +1,260 @@
+@@ -0,0 +1,258 @@
 +// Copyright 2014 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -9127,7 +9128,7 @@ new file mode 100755
 +                                         "url=" << effective_document_url.spec();
 +  } else {
 +    if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts)) {
-+      if (script->run_location() != run_location) 
++      if (script->run_location() != run_location)
 +        LOG(INFO) << "UserScripts: wrong run location current " << run_location << " " <<
 +                                                     "expeted " << script->run_location();
 +      else
@@ -9143,7 +9144,6 @@ new file mode 100755
 +  const GURL& url = file.url();
 +  auto iter = script_sources_.find(url);
 +  if (iter != script_sources_.end()) {
-+    // LOG(INFO) << "---UserScriptSet::GetJsSource found " << url;
 +    return iter->second;
 +  }
 +
@@ -9158,7 +9158,6 @@ new file mode 100755
 +    source = blink::WebString::FromUTF8(content);
 +    if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts))
 +      LOG(INFO) << "UserScripts: Injecting w/greasemonkey " << file.url();
-+    // LOG(INFO) << "---UserScriptSet::GetJsSource emu " << script_content;
 +  } else {
 +    source = blink::WebString::FromUTF8(script_content.data(),
 +                                        script_content.length());
