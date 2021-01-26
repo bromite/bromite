@@ -3,31 +3,57 @@ Date: Sun, 3 Nov 2019 08:22:29 +0100
 Subject: Remove SMS integration
 
 ---
- .../browser/sms/SmsUserConsentReceiver.java   | 42 ++-----------------
- .../browser/sms/SmsVerificationReceiver.java  | 30 +------------
- .../content/browser/sms/Wrappers.java         | 14 +------
- 3 files changed, 7 insertions(+), 79 deletions(-)
+ .../content/browser/sms/SmsProviderGms.java   |  9 +---
+ .../browser/sms/SmsUserConsentReceiver.java   | 46 ++-----------------
+ .../browser/sms/SmsVerificationReceiver.java  | 43 +++--------------
+ .../content/browser/sms/Wrappers.java         | 28 +----------
+ 4 files changed, 12 insertions(+), 114 deletions(-)
 
+diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/SmsProviderGms.java b/content/public/android/java/src/org/chromium/content/browser/sms/SmsProviderGms.java
+--- a/content/public/android/java/src/org/chromium/content/browser/sms/SmsProviderGms.java
++++ b/content/public/android/java/src/org/chromium/content/browser/sms/SmsProviderGms.java
+@@ -126,13 +126,6 @@ public class SmsProviderGms {
+     }
+ 
+     public Wrappers.SmsRetrieverClientWrapper getClient() {
+-        if (mClient != null) {
+-            return mClient;
+-        }
+-        mClient = new Wrappers.SmsRetrieverClientWrapper(
+-                mUserConsentReceiver != null ? mUserConsentReceiver.createClient() : null,
+-                mVerificationReceiver != null ? mVerificationReceiver.createClient() : null);
+-
+         return mClient;
+     }
+ 
+@@ -153,4 +146,4 @@ public class SmsProviderGms {
+         void onTimeout(long nativeSmsProviderGms);
+         void onCancel(long nativeSmsProviderGms);
+     }
+-}
+\ No newline at end of file
++}
 diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/SmsUserConsentReceiver.java b/content/public/android/java/src/org/chromium/content/browser/sms/SmsUserConsentReceiver.java
 --- a/content/public/android/java/src/org/chromium/content/browser/sms/SmsUserConsentReceiver.java
 +++ b/content/public/android/java/src/org/chromium/content/browser/sms/SmsUserConsentReceiver.java
-@@ -12,12 +12,6 @@ import android.content.IntentFilter;
- 
- import androidx.annotation.VisibleForTesting;
+@@ -10,13 +10,6 @@ import android.content.Context;
+ import android.content.Intent;
+ import android.content.IntentFilter;
  
 -import com.google.android.gms.auth.api.phone.SmsRetriever;
+-import com.google.android.gms.auth.api.phone.SmsRetrieverClient;
 -import com.google.android.gms.common.api.CommonStatusCodes;
 -import com.google.android.gms.common.api.Status;
 -import com.google.android.gms.tasks.OnFailureListener;
 -import com.google.android.gms.tasks.Task;
 -
- import org.chromium.base.ContextUtils;
  import org.chromium.base.Log;
- import org.chromium.base.annotations.CalledByNative;
-@@ -46,18 +40,6 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
-         mSmsProviderAndroid = smsProviderAndroid;
+ import org.chromium.ui.base.WindowAndroid;
  
-         mContext = new Wrappers.SmsReceiverContext(ContextUtils.getApplicationContext());
+@@ -34,28 +27,11 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
+         mDestroyed = false;
+         mProvider = provider;
+         mContext = context;
 -
 -        // A broadcast receiver is registered upon the creation of this class
 -        // which happens when the SMS Retriever API is used for the first time
@@ -40,18 +66,20 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Sm
 -        IntentFilter filter = new IntentFilter();
 -        filter.addAction(SmsRetriever.SMS_RETRIEVED_ACTION);
 -        mContext.registerReceiver(this, filter);
+-    }
+-
+-    public SmsRetrieverClient createClient() {
+-        return SmsRetriever.getClient(mContext);
      }
  
-     @CalledByNative
-@@ -70,7 +52,6 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
-     private void destroy() {
+     public void destroy() {
          if (DEBUG) Log.d(TAG, "Destroying SmsUserConsentReceiver.");
          mDestroyed = true;
 -        mContext.unregisterReceiver(this);
      }
  
      @Override
-@@ -83,7 +64,7 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
+@@ -66,7 +42,7 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
              return;
          }
  
@@ -60,28 +88,27 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Sm
              return;
          }
  
-@@ -115,35 +96,20 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
+@@ -100,28 +76,14 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
                  if (DEBUG) Log.d(TAG, "Timeout");
-                 SmsUserConsentReceiverJni.get().onTimeout(mSmsProviderAndroid);
+                 mProvider.onTimeout();
                  break;
 -        }
-+        }*/
++        } */
      }
  
      void onConsentResult(int resultCode, Intent data) {
 -        if (resultCode == Activity.RESULT_OK) {
 -            String message = data.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE);
--            SmsUserConsentReceiverJni.get().onReceive(mSmsProviderAndroid, message);
+-            mProvider.onReceive(message);
 -        } else if (resultCode == Activity.RESULT_CANCELED) {
 -            if (DEBUG) Log.d(TAG, "Activity result cancelled.");
+-            mProvider.onCancel();
 -        }
 +        if (DEBUG) Log.d(TAG, "Activity result discarded.");
      }
  
-     @CalledByNative
-     private void listen(WindowAndroid windowAndroid) {
-         mWindowAndroid = windowAndroid;
--        Task<Void> task = getClient().startSmsUserConsent(null);
+     public void listen(WindowAndroid windowAndroid) {
+-        Task<Void> task = mProvider.getClient().startSmsUserConsent(null);
 -
 -        task.addOnFailureListener(new OnFailureListener() {
 -            @Override
@@ -90,122 +117,143 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Sm
 -            }
 -        });
 -        if (DEBUG) Log.d(TAG, "Installed task");
-+        Log.d(TAG, "Ignored task");
++        if (DEBUG) Log.d(TAG, "Ignored task");
      }
- 
-     private Wrappers.SmsRetrieverClientWrapper getClient() {
--        if (mClient != null) return mClient;
--        mClient = new Wrappers.SmsRetrieverClientWrapper(SmsRetriever.getClient(mContext));
-         return mClient;
-     }
- 
+ }
 diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/SmsVerificationReceiver.java b/content/public/android/java/src/org/chromium/content/browser/sms/SmsVerificationReceiver.java
 --- a/content/public/android/java/src/org/chromium/content/browser/sms/SmsVerificationReceiver.java
 +++ b/content/public/android/java/src/org/chromium/content/browser/sms/SmsVerificationReceiver.java
-@@ -11,11 +11,6 @@ import android.content.IntentFilter;
+@@ -11,16 +11,6 @@ import android.content.Context;
+ import android.content.Intent;
+ import android.content.IntentFilter;
  
- import androidx.annotation.VisibleForTesting;
- 
+-import com.google.android.gms.auth.api.phone.SmsCodeBrowserClient;
+-import com.google.android.gms.auth.api.phone.SmsCodeRetriever;
 -import com.google.android.gms.auth.api.phone.SmsRetriever;
+-import com.google.android.gms.auth.api.phone.SmsRetrieverStatusCodes;
+-import com.google.android.gms.common.api.ApiException;
 -import com.google.android.gms.common.api.CommonStatusCodes;
+-import com.google.android.gms.common.api.ResolvableApiException;
 -import com.google.android.gms.common.api.Status;
 -import com.google.android.gms.tasks.Task;
 -
- import org.chromium.base.ContextUtils;
  import org.chromium.base.Log;
- import org.chromium.base.annotations.CalledByNative;
-@@ -42,18 +37,6 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
-         mSmsProviderAndroid = smsProviderAndroid;
+ import org.chromium.ui.base.WindowAndroid;
  
-         mContext = new Wrappers.SmsReceiverContext(ContextUtils.getApplicationContext());
+@@ -46,35 +36,18 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
+         mDestroyed = false;
+         mProvider = provider;
+         mContext = context;
 -
--        // A broadcast receiver is registered upon the creation of this class
--        // which happens when the SMS Retriever API is used for the first time
--        // since chrome last restarted (which, on android, happens frequently).
--        // The broadcast receiver is fairly lightweight (e.g. it responds
--        // quickly without much computation).
--        // If this broadcast receiver becomes more heavyweight, we should make
--        // this registration expire after the SMS message is received.
--        if (DEBUG) Log.d(TAG, "Registering intent filters.");
+-        // A broadcast receiver is registered upon the creation of this class which happens when the
+-        // SMS Retriever API or SMS Browser Code API is used for the first time since chrome last
+-        // restarted (which, on android, happens frequently). The broadcast receiver is fairly
+-        // lightweight (e.g. it responds quickly without much computation). If this broadcast
+-        // receiver becomes more heavyweight, we should make this registration expire after the SMS
+-        // message is received.
+-        if (DEBUG) Log.i(TAG, "Registering intent filters.");
 -        IntentFilter filter = new IntentFilter();
--        filter.addAction(SmsRetriever.SMS_RETRIEVED_ACTION);
+-        filter.addAction(SmsCodeRetriever.SMS_CODE_RETRIEVED_ACTION);
+-
 -        mContext.registerReceiver(this, filter);
+-    }
+-
+-    public SmsCodeBrowserClient createClient() {
+-        return SmsCodeRetriever.getBrowserClient(mContext);
      }
  
-     @CalledByNative
-@@ -66,7 +49,6 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
-     private void destroy() {
+     public void destroy() {
          if (DEBUG) Log.d(TAG, "Destroying SmsVerificationReceiver.");
          mDestroyed = true;
 -        mContext.unregisterReceiver(this);
      }
  
      @Override
-@@ -77,7 +59,7 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
+     public void onReceive(Context context, Intent intent) {
+         if (DEBUG) Log.d(TAG, "Received something!");
+ 
+-        if (mDestroyed) {
++        /*if (mDestroyed) {
              return;
          }
  
--        if (!SmsRetriever.SMS_RETRIEVED_ACTION.equals(intent.getAction())) {
-+/*        if (!SmsRetriever.SMS_RETRIEVED_ACTION.equals(intent.getAction())) {
-             return;
-         }
- 
-@@ -104,22 +86,14 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
+@@ -105,7 +78,7 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
                  if (DEBUG) Log.d(TAG, "Timeout");
-                 SmsVerificationReceiverJni.get().onTimeout(mSmsProviderAndroid);
+                 mProvider.onTimeout();
                  break;
 -        }
 +        }*/
      }
  
-     @CalledByNative
-     private void listen() {
--        Wrappers.SmsRetrieverClientWrapper client = getClient();
--        Task<Void> task = client.startSmsRetriever();
+     public void onPermissionDone(WindowAndroid window, int resultCode) {
+@@ -125,7 +98,7 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
+      * task.
+      */
+     public void onRetrieverTaskFailure(WindowAndroid window, Exception e) {
+-        if (DEBUG) Log.d(TAG, "Task failed. Attempting recovery.", e);
++/*        if (DEBUG) Log.d(TAG, "Task failed. Attempting recovery.", e);
+         ApiException exception = (ApiException) e;
+         if (exception.getStatusCode() == SmsRetrieverStatusCodes.API_NOT_CONNECTED) {
+             mProvider.onMethodNotAvailable();
+@@ -162,15 +135,11 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
+             }
+         } else {
+             Log.w(TAG, "Unexpected exception", e);
+-        }
++        }*/
++        Log.w(TAG, "Unexpected exception", e);
+     }
+ 
+     public void listen(WindowAndroid window) {
+-        Wrappers.SmsRetrieverClientWrapper client = mProvider.getClient();
+-        Task<Void> task = client.startSmsCodeBrowserRetriever();
+-
+-        task.addOnFailureListener((Exception e) -> { this.onRetrieverTaskFailure(window, e); });
 -
 -        if (DEBUG) Log.d(TAG, "Installed task");
++        if (DEBUG) Log.d(TAG, "Ignored task");
      }
- 
-     private Wrappers.SmsRetrieverClientWrapper getClient() {
--        if (mClient != null) {
--            return mClient;
--        }
--        mClient = new Wrappers.SmsRetrieverClientWrapper(SmsRetriever.getClient(mContext));
-         return mClient;
-     }
- 
+ }
 diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Wrappers.java b/content/public/android/java/src/org/chromium/content/browser/sms/Wrappers.java
 --- a/content/public/android/java/src/org/chromium/content/browser/sms/Wrappers.java
 +++ b/content/public/android/java/src/org/chromium/content/browser/sms/Wrappers.java
-@@ -10,9 +10,6 @@ import android.content.ContextWrapper;
+@@ -10,11 +10,6 @@ import android.content.ContextWrapper;
  import android.content.Intent;
  import android.content.IntentFilter;
  
+-import com.google.android.gms.auth.api.phone.SmsCodeBrowserClient;
+-import com.google.android.gms.auth.api.phone.SmsCodeRetriever;
 -import com.google.android.gms.auth.api.phone.SmsRetrieverClient;
 -import com.google.android.gms.tasks.Task;
 -
  class Wrappers {
      // Prevent instantiation.
      private Wrappers() {}
-@@ -21,11 +18,9 @@ class Wrappers {
+@@ -23,16 +18,9 @@ class Wrappers {
       * Wraps com.google.android.gms.auth.api.phone.SmsRetrieverClient.
       */
      static class SmsRetrieverClientWrapper {
+-        // Used for user consent flow.
 -        private final SmsRetrieverClient mSmsRetrieverClient;
-         private SmsReceiverContext mContext;
+-        // Used for browser code flow.
+-        private final SmsCodeBrowserClient mSmsCodeBrowserClient;
+         private WebOTPServiceContext mContext;
  
--        public SmsRetrieverClientWrapper(SmsRetrieverClient smsRetrieverClient) {
+-        public SmsRetrieverClientWrapper(
+-                SmsRetrieverClient smsRetrieverClient, SmsCodeBrowserClient smsCodeBrowserClient) {
 -            mSmsRetrieverClient = smsRetrieverClient;
+-            mSmsCodeBrowserClient = smsCodeBrowserClient;
 +        public SmsRetrieverClientWrapper() {
          }
  
-         public void setContext(SmsReceiverContext context) {
-@@ -36,13 +31,6 @@ class Wrappers {
+         public void setContext(WebOTPServiceContext context) {
+@@ -42,14 +30,6 @@ class Wrappers {
+         public WebOTPServiceContext getContext() {
              return mContext;
          }
- 
--        public Task<Void> startSmsRetriever() {
--            return mSmsRetrieverClient.startSmsRetriever();
+-
+-        public Task<Void> startSmsCodeBrowserRetriever() {
+-            return mSmsCodeBrowserClient.startSmsCodeRetriever();
 -        }
 -
 -        public Task<Void> startSmsUserConsent(String senderAddress) {
@@ -214,6 +262,19 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Wr
      }
  
      /**
+@@ -77,12 +57,6 @@ class Wrappers {
+ 
+         @Override
+         public Intent registerReceiver(BroadcastReceiver receiver, IntentFilter filter) {
+-            if (filter.hasAction(SmsCodeRetriever.SMS_CODE_RETRIEVED_ACTION)) {
+-                mVerificationReceiver = receiver;
+-            } else {
+-                mUserConsentReceiver = receiver;
+-            }
+-
+             return super.registerReceiver(receiver, filter);
+         }
+ 
 -- 
 2.17.1
 

@@ -1,3 +1,10 @@
+# 88.0.4324.95
+* ignore managed state for secure DNS (fixes https://github.com/bromite/bromite/issues/832)
+* fix broken recent tabs behaviour (fixes https://github.com/bromite/bromite/issues/886)
+* re-introduce flags for number of raster threads (fixes https://github.com/bromite/bromite/issues/875)
+* avoid initializing histogram data for the WebView (https://github.com/bromite/bromite/issues/873)
+* dropped patch for manifest changes for Q/R (already present upstream)
+
 # 87.0.4280.131
 * enable all network isolation features (fixes https://github.com/bromite/bromite/issues/836)
 * disable unified autoplay feature (fixes https://github.com/bromite/bromite/issues/804)

@@ -87,6 +87,7 @@ Flags which have been retired from upstream Chromium but are still available in 
 * `#darken-websites-checkbox-in-themes-setting`
 * `#simplified-ntp`
 * `#enable-text-fragment-anchor`
+* `#num-raster-threads`
 
 New flags:
 
