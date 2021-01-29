@@ -9,6 +9,8 @@ Have you read the README? https://github.com/bromite/bromite/blob/master/README.
 Have you searched the issue tracker? https://github.com/bromite/bromite/issues
 Are you sure this is not a Chromium bug? You have to test with Chromium before submitting a bug.
 Are you using the latest version of Bromite?
+
+If instead of a bug report you want to ask a question then please use the GitHub Discussions: https://github.com/bromite/bromite/discussions
 -->
 
 ### Bromite version

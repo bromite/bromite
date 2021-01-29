@@ -154,7 +154,9 @@ Bromite uses an unindexed filter file, which is periodically published at https:
 
 Please submit issues following the issue template; beware that GitHub does not display the templates from mobile.
 
-Patches are welcome and accepted if they match the project goals; if you are willing to contribute you can open an issue to discuss patches submission.
+Patches are welcome and accepted if they match the project goals.
+
+For any usage or development discussion please use GitHub Discussions: https://github.com/bromite/bromite/discussions
 
 # Credits
 
