@@ -4,6 +4,7 @@
 * re-introduce flags for number of raster threads (fixes https://github.com/bromite/bromite/issues/875)
 * avoid initializing histogram data for the WebView (https://github.com/bromite/bromite/issues/873)
 * dropped patch for manifest changes for Q/R (already present upstream)
+* fix check for HTML extension in bookmark import dialog
 
 # 87.0.4280.131
 * enable all network isolation features (fixes https://github.com/bromite/bromite/issues/836)
