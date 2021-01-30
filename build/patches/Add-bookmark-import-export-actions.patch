@@ -7,29 +7,29 @@ Reduce permissions needed for bookmarks import/export
 Completely remove contacts picker permission from the file dialog
 ---
  chrome/android/java/AndroidManifest.xml       |   1 -
- .../res/menu/bookmark_action_bar_menu.xml     |  14 ++
+ .../res/menu/bookmark_action_bar_menu.xml     |  14 +
  .../browser/bookmarks/BookmarkActionBar.java  |  12 +
- .../browser/bookmarks/BookmarkActivity.java   |  15 ++
- .../browser/bookmarks/BookmarkBridge.java     |  47 ++++
+ .../browser/bookmarks/BookmarkActivity.java   |  23 ++
+ .../browser/bookmarks/BookmarkBridge.java     |  63 +++++
  .../browser/bookmarks/BookmarkDelegate.java   |  10 +
  .../browser/bookmarks/BookmarkManager.java    |  19 ++
  .../browser/bookmarks/BookmarkPage.java       |   5 +-
  .../native_page/NativePageFactory.java        |   3 +-
  chrome/browser/BUILD.gn                       |   6 +-
- .../android/bookmarks/bookmark_bridge.cc      | 217 ++++++++++++++++++
- .../android/bookmarks/bookmark_bridge.h       |  20 +-
+ .../android/bookmarks/bookmark_bridge.cc      | 242 ++++++++++++++++++
+ .../android/bookmarks/bookmark_bridge.h       |  23 +-
  chrome/browser/importer/profile_writer.cc     |  12 +
  chrome/browser/importer/profile_writer.h      |   6 +
  .../strings/android_chrome_strings.grd        |   6 +
  chrome/common/BUILD.gn                        |   3 +
  chrome/utility/BUILD.gn                       |   7 +-
- .../utility/importer/bookmark_html_reader.cc  |  27 ++-
+ .../utility/importer/bookmark_html_reader.cc  |  27 +-
  .../utility/importer/bookmark_html_reader.h   |   8 +
  .../chromium/ui/base/SelectFileDialog.java    |  18 +-
  ui/shell_dialogs/select_file_dialog.h         |   2 +
  .../select_file_dialog_android.cc             |   6 +
  ui/shell_dialogs/select_file_dialog_android.h |   2 +
- 23 files changed, 452 insertions(+), 14 deletions(-)
+ 23 files changed, 504 insertions(+), 14 deletions(-)
 
 diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/AndroidManifest.xml
 --- a/chrome/android/java/AndroidManifest.xml
@@ -155,22 +155,39 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
          if (requestCode == EDIT_BOOKMARK_REQUEST_CODE && resultCode == RESULT_OK) {
              BookmarkId bookmarkId = BookmarkId.getBookmarkIdFromString(data.getStringExtra(
                      INTENT_VISIT_BOOKMARK_ID));
+@@ -61,6 +76,14 @@ public class BookmarkActivity extends SnackbarActivity {
+         }
+     }
+ 
++    @Override
++    public void onRequestPermissionsResult(
++            int requestCode, String[] permissions, int[] grantResults) {
++        if (mWindowAndroid.handlePermissionResult(requestCode, permissions, grantResults))
++            return;        
++        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
++    }
++
+     /**
+      * @return The {@link BookmarkManager} for testing purposes.
+      */
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java
-@@ -4,7 +4,11 @@
+@@ -4,7 +4,13 @@
  
  package org.chromium.chrome.browser.bookmarks;
  
 +import android.content.Intent;
 +import android.content.Context;
++import android.content.pm.PackageManager;
 +import android.net.Uri;
  import android.os.SystemClock;
 +import android.provider.Browser;
++import android.Manifest.permission;
  import android.text.TextUtils;
  import android.util.Pair;
  
-@@ -26,6 +30,11 @@ import org.chromium.components.url_formatter.SchemeDisplay;
+@@ -26,6 +32,11 @@ import org.chromium.components.url_formatter.SchemeDisplay;
  import org.chromium.components.url_formatter.UrlFormatter;
  import org.chromium.content_public.browser.WebContents;
  
@@ -182,7 +199,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
  import java.util.ArrayList;
  import java.util.List;
  
-@@ -584,6 +593,24 @@ public class BookmarkBridge {
+@@ -584,6 +595,38 @@ public class BookmarkBridge {
                  mNativeBookmarkBridge, BookmarkBridge.this, id.getId(), id.getType());
      }
  
@@ -199,15 +216,29 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
 +     * Export bookmarks to a path selected by the user.
 +     * @param window The current window of the bookmarks activity or page.
 +     */
-+    public void exportBookmarks() {
++    public void exportBookmarks(WindowAndroid window) {
 +        assert mIsNativeBookmarkModelLoaded;
++        // check if we have the correct write permission
++        if (window.hasPermission(permission.WRITE_EXTERNAL_STORAGE)) {
++            exportBookmarksImpl();
++        } else {
++            String[] requestPermissions = new String[] {permission.WRITE_EXTERNAL_STORAGE};
++            window.requestPermissions(requestPermissions, (permissions, grantResults) -> {
++                if (grantResults.length >= 1 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
++                    exportBookmarksImpl();
++                }
++            });
++        };
++    }
++
++    private void exportBookmarksImpl() {
 +        BookmarkBridgeJni.get().exportBookmarks(mNativeBookmarkBridge, BookmarkBridge.this);
 +    }
 +
      /**
       * Synchronously gets a list of bookmarks that match the specified search query.
       * @param query Keyword used for searching bookmarks.
-@@ -1006,6 +1033,24 @@ public class BookmarkBridge {
+@@ -1005,6 +1048,24 @@ public class BookmarkBridge {
          depthList.add(depth);
      }
  
@@ -232,7 +263,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
      private static List<Pair<Integer, Integer>> createPairsList(int[] left, int[] right) {
          List<Pair<Integer, Integer>> pairList = new ArrayList<Pair<Integer, Integer>>();
          for (int i = 0; i < left.length; i++) {
-@@ -1073,6 +1118,8 @@ public class BookmarkBridge {
+@@ -1072,6 +1133,8 @@ public class BookmarkBridge {
          int getChildCount(long nativeBookmarkBridge, BookmarkBridge caller, long id, int type);
          void getChildIDs(long nativeBookmarkBridge, BookmarkBridge caller, long id, int type,
                  List<BookmarkId> bookmarksList);
@@ -305,7 +336,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
 +
 +    @Override
 +    public void exportBookmarks() {
-+        mBookmarkModel.exportBookmarks();
++        mBookmarkModel.exportBookmarks(mWindowAndroid);
 +    }
 +
      @Override
@@ -391,7 +422,7 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browse
  #include "components/dom_distiller/core/url_utils.h"
  #include "components/prefs/pref_service.h"
  #include "components/query_parser/query_parser.h"
-@@ -48,6 +49,21 @@
+@@ -48,6 +49,24 @@
  #include "content/public/browser/browser_thread.h"
  #include "content/public/browser/web_contents.h"
  
@@ -409,11 +440,14 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browse
 +#include "components/search_engines/template_url.h"
 +#include "components/url_formatter/url_fixer.h"
 +#include "ui/android/window_android.h"
++#include "base/task/task_traits.h"
++#include "base/task/thread_pool.h"
++#include "content/public/browser/browser_task_traits.h"
 +
  using base::android::AttachCurrentThread;
  using base::android::ConvertUTF8ToJavaString;
  using base::android::ConvertUTF16ToJavaString;
-@@ -64,6 +80,56 @@ using bookmarks::BookmarkNode;
+@@ -64,6 +83,56 @@ using bookmarks::BookmarkNode;
  using bookmarks::BookmarkType;
  using content::BrowserThread;
  
@@ -470,7 +504,7 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browse
  namespace {
  
  const int kInvalidId = -1;
-@@ -150,6 +216,10 @@ BookmarkBridge::~BookmarkBridge() {
+@@ -150,6 +219,10 @@ BookmarkBridge::~BookmarkBridge() {
    if (partner_bookmarks_shim_)
      partner_bookmarks_shim_->RemoveObserver(this);
    reading_list_manager_->RemoveObserver(this);
@@ -481,7 +515,7 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browse
  }
  
  void BookmarkBridge::Destroy(JNIEnv*, const JavaParamRef<jobject>&) {
-@@ -541,6 +611,153 @@ jint BookmarkBridge::GetTotalBookmarkCount(
+@@ -541,6 +614,175 @@ jint BookmarkBridge::GetTotalBookmarkCount(
    return count;
  }
  
@@ -558,6 +592,17 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browse
 +
 +void BookmarkBridge::FileSelected(const base::FilePath& path, int index,
 +                            void* params) {
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::TaskPriority::BEST_EFFORT, base::MayBlock()},
++      base::BindOnce(&BookmarkBridge::FileSelectedImpl, 
++        base::Unretained(this),
++        path),
++      base::BindOnce(&BookmarkBridge::FileSelectedImplOnUIThread, 
++        base::Unretained(this),
++        path));
++}
++
++const std::string BookmarkBridge::FileSelectedImpl(const base::FilePath& path) {
 +  base::File file;
 +  if (path.IsContentUri()) {
 +    file = base::OpenContentUriForRead(path);
@@ -566,32 +611,39 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browse
 +  }
 +  if (!file.IsValid()) {
 +    select_file_dialog_->ShowToast("Cannot open bookmarks file for import");
-+    return;
++    return "";
 +  }
 +
 +  auto fileLength = file.GetLength();
 +  if (-1 == fileLength) {
 +    select_file_dialog_->ShowToast("Cannot read bookmarks file length");
-+    return;
++    return "";
 +  }
 +
 +  if (fileLength > 10 * 1024 * 1024) {
 +    select_file_dialog_->ShowToast("Bookmark file is bigger than 10MB");
-+    return;
++    return "";
 +  }
 +
 +  std::vector<char> buffer(fileLength);
 +  if (-1 == file.ReadAtCurrentPos(buffer.data(), fileLength)) {
 +    select_file_dialog_->ShowToast("Could not read bookmarks file");
-+    return;
++    return "";
 +  }
 +
 +  if (buffer.empty()) {
 +    select_file_dialog_->ShowToast("Empty bookmarks file");
-+    return;
++    return "";
 +  }
 +
 +  std::string contents(buffer.begin(), buffer.end());
++  return contents;
++}
++
++void BookmarkBridge::FileSelectedImplOnUIThread(const base::FilePath& path,
++                                        const std::string& contents) {
++  if (contents.empty())
++    return;
 +
 +  // the following import logic comes from BookmarksFileImporter class
 +  std::vector<ImportedBookmarkEntry> bookmarks;
@@ -623,10 +675,14 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browse
 +    writer->AddKeywords(std::move(owned_template_urls), false);
 +  }
 +
-+  select_file_dialog_->ShowToast("Bookmarks import complete");
-+
-+  LOG(INFO) << "Imported " << bookmarks.size() << " bookmarks and " <<
++  std::stringstream message;
++  message << "Imported " << bookmarks.size() << " bookmarks and " <<
 +		search_engines.size() << " search engines from " << path.MaybeAsASCII();
++  auto result = message.str();
++
++  select_file_dialog_->ShowToast(result);
++
++  LOG(INFO) << result;
 +}
 +
 +void BookmarkBridge::FileSelectionCanceled(void* params) {
@@ -699,6 +755,16 @@ diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.h b/chrome/browser
  
    // Information about the Partner bookmarks (must check for IsLoaded()).
    // This is owned by profile.
+@@ -328,6 +346,9 @@ class BookmarkBridge : public bookmarks::BaseBookmarkModelObserver,
+   // Observes the profile destruction and creation.
+   ScopedObserver<Profile, ProfileObserver> profile_observer_{this};
+ 
++  const std::string FileSelectedImpl(const base::FilePath& path);
++  void FileSelectedImplOnUIThread(const base::FilePath& path, 
++                                  const std::string& contents);
+   DISALLOW_COPY_AND_ASSIGN(BookmarkBridge);
+ };
+ 
 diff --git a/chrome/browser/importer/profile_writer.cc b/chrome/browser/importer/profile_writer.cc
 --- a/chrome/browser/importer/profile_writer.cc
 +++ b/chrome/browser/importer/profile_writer.cc
