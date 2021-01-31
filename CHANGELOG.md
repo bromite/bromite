@@ -1,5 +1,9 @@
-# 88.0.4324.95
+# 88.0.4324.141
+* fix bookmarks not opening (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/891)
+* fix proxy page not loading (fixes https://github.com/bromite/bromite/issues/890)
 * ignore managed state for secure DNS (fixes https://github.com/bromite/bromite/issues/832)
+
+# 88.0.4324.95
 * fix broken recent tabs behaviour (fixes https://github.com/bromite/bromite/issues/886)
 * re-introduce flags for number of raster threads (fixes https://github.com/bromite/bromite/issues/875)
 * avoid initializing histogram data for the WebView (https://github.com/bromite/bromite/issues/873)
