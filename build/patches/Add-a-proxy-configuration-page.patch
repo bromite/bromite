@@ -23,11 +23,12 @@ Offer auto-complete for the proxy page URL.
  chrome/common/webui_url_constants.cc          |   4 +
  chrome/common/webui_url_constants.h           |   2 +
  .../core/browser/proxy_policy_handler.cc      |   2 +-
- .../proxy_config/proxy_config_dictionary.cc   |  22 +-
- .../proxy_config/proxy_config_dictionary.h    |   6 +-
+ .../pref_proxy_config_tracker_impl.cc         |   1 +
+ .../proxy_config/proxy_config_dictionary.cc   |  30 +-
+ .../proxy_config/proxy_config_dictionary.h    |   7 +-
  net/proxy_resolution/proxy_config.cc          |  52 ++-
  net/proxy_resolution/proxy_config.h           |   3 +
- 20 files changed, 953 insertions(+), 14 deletions(-)
+ 21 files changed, 963 insertions(+), 14 deletions(-)
  create mode 100644 chrome/browser/resources/proxy_config.css
  create mode 100644 chrome/browser/resources/proxy_config.html
  create mode 100644 chrome/browser/resources/proxy_config.js
@@ -1079,6 +1080,17 @@ diff --git a/components/policy/core/browser/proxy_policy_handler.cc b/components
        }
        break;
      }
+diff --git a/components/proxy_config/pref_proxy_config_tracker_impl.cc b/components/proxy_config/pref_proxy_config_tracker_impl.cc
+--- a/components/proxy_config/pref_proxy_config_tracker_impl.cc
++++ b/components/proxy_config/pref_proxy_config_tracker_impl.cc
+@@ -380,6 +380,7 @@ bool PrefProxyConfigTrackerImpl::PrefConfigToNetConfig(
+       if (proxy_dict.GetBypassList(&proxy_bypass)) {
+         proxy_config.proxy_rules().bypass_rules.ParseFromString(proxy_bypass);
+       }
++      proxy_config.proxy_rules().reverse_bypass = proxy_dict.HasReverseBypass();
+       *config = net::ProxyConfigWithAnnotation(
+           proxy_config, kSettingsProxyConfigTrafficAnnotation);
+       return true;
 diff --git a/components/proxy_config/proxy_config_dictionary.cc b/components/proxy_config/proxy_config_dictionary.cc
 --- a/components/proxy_config/proxy_config_dictionary.cc
 +++ b/components/proxy_config/proxy_config_dictionary.cc
@@ -1091,7 +1103,22 @@ diff --git a/components/proxy_config/proxy_config_dictionary.cc b/components/pro
  
  }  // namespace
  
-@@ -79,29 +81,30 @@ const base::Value& ProxyConfigDictionary::GetDictionary() const {
+@@ -72,6 +74,14 @@ bool ProxyConfigDictionary::HasBypassList() const {
+   return dict_.FindKey(kProxyBypassList);
+ }
+ 
++bool ProxyConfigDictionary::HasReverseBypass() const {
++  const base::Value* value = dict_.FindKey(kProxyReverseBypass);
++  if (!value || !value->is_bool()) {
++    return false;
++  }
++  return value->GetBool();
++}
++
+ const base::Value& ProxyConfigDictionary::GetDictionary() const {
+   return dict_;
+ }
+@@ -79,29 +89,30 @@ const base::Value& ProxyConfigDictionary::GetDictionary() const {
  // static
  base::Value ProxyConfigDictionary::CreateDirect() {
    return CreateDictionary(ProxyPrefs::MODE_DIRECT, std::string(), false,
@@ -1127,7 +1154,7 @@ diff --git a/components/proxy_config/proxy_config_dictionary.cc b/components/pro
    } else {
      return CreateDirect();
    }
-@@ -110,7 +113,7 @@ base::Value ProxyConfigDictionary::CreateFixedServers(
+@@ -110,7 +121,7 @@ base::Value ProxyConfigDictionary::CreateFixedServers(
  // static
  base::Value ProxyConfigDictionary::CreateSystem() {
    return CreateDictionary(ProxyPrefs::MODE_SYSTEM, std::string(), false,
@@ -1136,7 +1163,7 @@ diff --git a/components/proxy_config/proxy_config_dictionary.cc b/components/pro
  }
  
  // static
-@@ -119,7 +122,8 @@ base::Value ProxyConfigDictionary::CreateDictionary(
+@@ -119,7 +130,8 @@ base::Value ProxyConfigDictionary::CreateDictionary(
      const std::string& pac_url,
      bool pac_mandatory,
      const std::string& proxy_server,
@@ -1146,7 +1173,7 @@ diff --git a/components/proxy_config/proxy_config_dictionary.cc b/components/pro
    base::Value dict(base::Value::Type::DICTIONARY);
    dict.SetKey(kProxyMode, base::Value(ProxyModeToString(mode)));
    if (!pac_url.empty()) {
-@@ -128,8 +132,10 @@ base::Value ProxyConfigDictionary::CreateDictionary(
+@@ -128,8 +140,10 @@ base::Value ProxyConfigDictionary::CreateDictionary(
    }
    if (!proxy_server.empty())
      dict.SetKey(kProxyServer, base::Value(proxy_server));
@@ -1161,7 +1188,15 @@ diff --git a/components/proxy_config/proxy_config_dictionary.cc b/components/pro
 diff --git a/components/proxy_config/proxy_config_dictionary.h b/components/proxy_config/proxy_config_dictionary.h
 --- a/components/proxy_config/proxy_config_dictionary.h
 +++ b/components/proxy_config/proxy_config_dictionary.h
-@@ -46,7 +46,8 @@ class PROXY_CONFIG_EXPORT ProxyConfigDictionary {
+@@ -38,6 +38,7 @@ class PROXY_CONFIG_EXPORT ProxyConfigDictionary {
+   bool GetProxyServer(std::string* out) const;
+   bool GetBypassList(std::string* out) const;
+   bool HasBypassList() const;
++  bool HasReverseBypass() const;
+ 
+   const base::Value& GetDictionary() const;
+ 
+@@ -46,7 +47,8 @@ class PROXY_CONFIG_EXPORT ProxyConfigDictionary {
    static base::Value CreatePacScript(const std::string& pac_url,
                                       bool pac_mandatory);
    static base::Value CreateFixedServers(const std::string& proxy_server,
@@ -1171,7 +1206,7 @@ diff --git a/components/proxy_config/proxy_config_dictionary.h b/components/prox
    static base::Value CreateSystem();
  
    // Encodes the proxy server as "<url-scheme>=<proxy-scheme>://<proxy>".
-@@ -62,7 +63,8 @@ class PROXY_CONFIG_EXPORT ProxyConfigDictionary {
+@@ -62,7 +64,8 @@ class PROXY_CONFIG_EXPORT ProxyConfigDictionary {
                                        const std::string& pac_url,
                                        bool pac_mandatory,
                                        const std::string& proxy_server,
