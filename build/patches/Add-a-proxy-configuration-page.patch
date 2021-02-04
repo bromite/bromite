@@ -12,6 +12,9 @@ Offer auto-complete for the proxy page URL.
  .../privacy/settings/PrivacySettings.java     |   5 +-
  .../chrome_autocomplete_provider_client.cc    |   2 +
  chrome/browser/browser_resources.grd          |   6 +
+ chrome/browser/net/proxy_service_factory.cc   |  23 +-
+ chrome/browser/net/proxy_service_factory.h    |   3 +
+ chrome/browser/prefs/browser_prefs.cc         |   4 +
  .../prefs/chrome_command_line_pref_store.cc   |   2 +-
  chrome/browser/resources/proxy_config.css     |  61 +++
  chrome/browser/resources/proxy_config.html    |  80 ++++
@@ -28,7 +31,7 @@ Offer auto-complete for the proxy page URL.
  .../proxy_config/proxy_config_dictionary.h    |   7 +-
  net/proxy_resolution/proxy_config.cc          |  52 ++-
  net/proxy_resolution/proxy_config.h           |   3 +
- 21 files changed, 963 insertions(+), 14 deletions(-)
+ 24 files changed, 992 insertions(+), 15 deletions(-)
  create mode 100644 chrome/browser/resources/proxy_config.css
  create mode 100644 chrome/browser/resources/proxy_config.html
  create mode 100644 chrome/browser/resources/proxy_config.js
@@ -110,6 +113,92 @@ diff --git a/chrome/browser/browser_resources.grd b/chrome/browser/browser_resou
        <if expr="not is_android">
          <!-- New Tab Page -->
          <part file="resources/local_ntp/icons.grdp" />
+diff --git a/chrome/browser/net/proxy_service_factory.cc b/chrome/browser/net/proxy_service_factory.cc
+--- a/chrome/browser/net/proxy_service_factory.cc
++++ b/chrome/browser/net/proxy_service_factory.cc
+@@ -14,6 +14,9 @@
+ #include "content/public/browser/browser_thread.h"
+ #include "net/proxy_resolution/configured_proxy_resolution_service.h"
+ #include "net/proxy_resolution/proxy_config_service.h"
++#include "components/proxy_config/proxy_config_pref_names.h"
++#include "components/prefs/pref_service.h"
++#include "components/prefs/pref_registry_simple.h"
+ 
+ #if defined(OS_CHROMEOS)
+ #include "chromeos/network/proxy/proxy_config_service_impl.h"
+@@ -58,7 +61,20 @@ ProxyServiceFactory::CreatePrefProxyConfigTrackerOfProfile(
+   return std::make_unique<chromeos::ProxyConfigServiceImpl>(
+       profile_prefs, local_state_prefs, nullptr);
+ #else
+-  return std::make_unique<PrefProxyConfigTrackerImpl>(profile_prefs, nullptr);
++  // Migrate from profile_prefs to local_state_prefs
++  if (local_state_prefs->GetBoolean("proxy_migrated") == false) {
++    const base::DictionaryValue* dict =
++        profile_prefs->GetDictionary(proxy_config::prefs::kProxy);
++
++    LOG(INFO) << "CreatePrefProxyConfigTrackerOfProfile: Migration from profile to local state";
++
++    const base::Value /*ProxyConfigDictionary*/ proxy_dict(dict->Clone());
++    local_state_prefs->Set(proxy_config::prefs::kProxy, proxy_dict);
++
++    local_state_prefs->SetBoolean("proxy_migrated", true);
++    local_state_prefs->CommitPendingWrite();
++  }
++  return std::make_unique<PrefProxyConfigTrackerImpl>(local_state_prefs, nullptr);
+ #endif  // defined(OS_CHROMEOS)
+ }
+ 
+@@ -74,3 +90,8 @@ ProxyServiceFactory::CreatePrefProxyConfigTrackerOfLocalState(
+                                                       nullptr);
+ #endif  // defined(OS_CHROMEOS)
+ }
++
++// static
++void ProxyServiceFactory::RegisterPrefs(PrefRegistrySimple* registry) {
++  registry->RegisterBooleanPref("proxy_migrated", false);
++}
+\ No newline at end of file
+diff --git a/chrome/browser/net/proxy_service_factory.h b/chrome/browser/net/proxy_service_factory.h
+--- a/chrome/browser/net/proxy_service_factory.h
++++ b/chrome/browser/net/proxy_service_factory.h
+@@ -8,6 +8,7 @@
+ #include <memory>
+ 
+ #include "base/macros.h"
++#include "components/prefs/pref_registry_simple.h"
+ 
+ class PrefProxyConfigTracker;
+ class PrefService;
+@@ -37,6 +38,8 @@ class ProxyServiceFactory {
+   static std::unique_ptr<PrefProxyConfigTracker>
+   CreatePrefProxyConfigTrackerOfLocalState(PrefService* local_state_prefs);
+ 
++  static void RegisterPrefs(PrefRegistrySimple* registry);
++
+  private:
+   DISALLOW_IMPLICIT_CONSTRUCTORS(ProxyServiceFactory);
+ };
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -401,6 +401,8 @@
+ #include "chrome/browser/media/kaleidoscope/kaleidoscope_prefs.h"
+ #endif
+ 
++#include "chrome/browser/net/proxy_service_factory.h"
++
+ namespace {
+ 
+ // Deprecated 9/2019
+@@ -642,6 +644,8 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+   PluginsResourceService::RegisterPrefs(registry);
+ #endif
+ 
++  ProxyServiceFactory::RegisterPrefs(registry);
++
+ #if defined(OS_ANDROID)
+   ::android::RegisterPrefs(registry);
+ 
 diff --git a/chrome/browser/prefs/chrome_command_line_pref_store.cc b/chrome/browser/prefs/chrome_command_line_pref_store.cc
 --- a/chrome/browser/prefs/chrome_command_line_pref_store.cc
 +++ b/chrome/browser/prefs/chrome_command_line_pref_store.cc
@@ -677,7 +766,7 @@ new file mode 100644
 +
 + private:
 +  // Not owned.
-+  Profile *profile_;
++  PrefService *pref_service_;
 +  std::unique_ptr<net::ProxyConfigService> proxy_config_service_;
 +  // Monitors global and Profile prefs related to proxy configuration.
 +  std::unique_ptr<PrefProxyConfigTracker> pref_proxy_config_tracker_;
@@ -697,7 +786,7 @@ new file mode 100644
 +      weak_ptr_factory_(this) {
 +
 +  // used to set new configuration preferences
-+  profile_ = profile->GetOriginalProfile();
++  pref_service_ = g_browser_process->local_state();
 +  // observer is explicitly added only later in enableNotifyUIWithState
 +  is_observing_ = false;
 +
@@ -835,7 +924,7 @@ new file mode 100644
 +  auto availability = proxy_config_service_->GetLatestProxyConfig(&config);
 +
 +  const base::DictionaryValue* dict =
-+      profile_->GetPrefs()->GetDictionary(proxy_config::prefs::kProxy);
++      pref_service_->GetDictionary(proxy_config::prefs::kProxy);
 +  ProxyConfigDictionary proxy_dict(dict->Clone());
 +  ProxyPrefs::ProxyMode mode;
 +  if (!proxy_dict.GetMode(&mode) || mode == ProxyPrefs::MODE_SYSTEM) {
@@ -849,8 +938,8 @@ new file mode 100644
 +  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 +
 +  const base::Value cfg = ProxyConfigDictionary::CreateSystem();
-+  profile_->GetPrefs()->Set(proxy_config::prefs::kProxy, cfg);
-+  profile_->GetPrefs()->CommitPendingWrite();
++  pref_service_->Set(proxy_config::prefs::kProxy, cfg);
++  pref_service_->CommitPendingWrite();
 +  OnEnableNotifyUIWithState(nullptr);
 +}
 +
@@ -960,13 +1049,13 @@ new file mode 100644
 +void ProxyConfigMessageHandler::apply(const net::ProxyConfig& proxyConfig) {
 +  if (proxyConfig.auto_detect()) {
 +    const base::Value cfg = ProxyConfigDictionary::CreateAutoDetect();
-+    profile_->GetPrefs()->Set(proxy_config::prefs::kProxy, cfg);
++    pref_service_->Set(proxy_config::prefs::kProxy, cfg);
 +  } else if (proxyConfig.has_pac_url()) {
 +    const base::Value cfg = ProxyConfigDictionary::CreatePacScript(proxyConfig.pac_url().spec(), proxyConfig.pac_mandatory());
-+    profile_->GetPrefs()->Set(proxy_config::prefs::kProxy, cfg);
++    pref_service_->Set(proxy_config::prefs::kProxy, cfg);
 +  } else if (proxyConfig.proxy_rules().type == net::ProxyConfig::ProxyRules::Type::EMPTY) {
 +    const base::Value cfg = ProxyConfigDictionary::CreateDirect();
-+    profile_->GetPrefs()->Set(proxy_config::prefs::kProxy, cfg);
++    pref_service_->Set(proxy_config::prefs::kProxy, cfg);
 +  } else {
 +    auto proxyRulesAsString = proxyConfig.proxy_rules().ToString();
 +    auto bypassRulesAsString = proxyConfig.proxy_rules().bypass_rules.ToString();
@@ -974,9 +1063,9 @@ new file mode 100644
 +    // fixed servers
 +    const base::Value cfg = ProxyConfigDictionary::CreateFixedServers(proxyRulesAsString,
 +                            bypassRulesAsString, proxyConfig.proxy_rules().reverse_bypass);
-+    profile_->GetPrefs()->Set(proxy_config::prefs::kProxy, cfg);
++    pref_service_->Set(proxy_config::prefs::kProxy, cfg);
 +  }
-+  profile_->GetPrefs()->CommitPendingWrite();
++  pref_service_->CommitPendingWrite();
 +  OnEnableNotifyUIWithState(nullptr);
 +}
 +
