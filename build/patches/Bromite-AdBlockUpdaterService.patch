@@ -17,7 +17,7 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  .../android/java/res/xml/main_preferences.xml |   5 +
  .../chrome/browser/app/ChromeActivity.java    |  18 +
  .../browser/settings/AdBlockEditor.java       |  92 +++++
- .../browser/settings/AdBlockPreferences.java  | 131 +++++++
+ .../browser/settings/AdBlockPreferences.java  | 130 +++++++
  .../chrome/browser/tabmodel/TabModelImpl.java |   2 +-
  chrome/app/generated_resources.grd            |  34 ++
  chrome/browser/after_startup_task_utils.cc    |   5 +
@@ -33,19 +33,19 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  .../sessions/session_restore_android.cc       |   4 +-
  .../strings/android_chrome_strings.grd        |  14 +
  components/component_updater/BUILD.gn         |   6 +
- .../adblock_updater_service.cc                | 320 ++++++++++++++++++
+ .../adblock_updater_service.cc                | 321 ++++++++++++++++++
  .../adblock_updater_service.h                 | 118 +++++++
- .../download_filters_task.cc                  | 239 +++++++++++++
+ .../download_filters_task.cc                  | 237 +++++++++++++
  .../component_updater/download_filters_task.h | 129 +++++++
  ...ent_subresource_filter_throttle_manager.cc |  11 +
  .../content/browser/ruleset_service.cc        |  33 +-
  .../content/browser/ruleset_service.h         |   7 +-
  .../content/browser/ruleset_version.h         |   4 +
  .../browser/verified_ruleset_dealer.cc        |   3 +
- .../browser/subresource_filter_features.cc    | 113 +------
+ .../browser/subresource_filter_features.cc    | 113 +-----
  .../core/common/common_features.cc            |   2 +-
  .../navigation_throttle_runner.cc             |   5 -
- 36 files changed, 1444 insertions(+), 140 deletions(-)
+ 36 files changed, 1442 insertions(+), 140 deletions(-)
  create mode 100644 chrome/android/java/res/layout/adblock_editor.xml
  create mode 100644 chrome/android/java/res/xml/adblock_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
@@ -204,7 +204,7 @@ new file mode 100644
 +        app:allowDividerBelow="false" />
 +
 +    <org.chromium.components.browser_ui.settings.ButtonPreference
-+        android:key="adblock_startchek"
++        android:key="adblock_startcheck"
 +        android:title="@string/options_adblock_startcheck_label"/>
 +
 +    <org.chromium.components.browser_ui.settings.TextMessagePreference
@@ -384,7 +384,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBloc
 new file mode 100644
 --- /dev/null
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockPreferences.java
-@@ -0,0 +1,131 @@
+@@ -0,0 +1,130 @@
 +// Copyright 2015 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -423,7 +423,7 @@ new file mode 100644
 +    private static final String PREF_ADBLOCK_SWITCH = "adblock_switch";
 +    private static final String PREF_ADBLOCK_EDIT = "adblock_edit";
 +    private static final String PREF_ADBLOCK_INDEX_VERSION = "adblock_current_index_version";
-+    private static final String PREF_ADBLOCK_CHECK_NOW = "adblock_startchek";
++    private static final String PREF_ADBLOCK_CHECK_NOW = "adblock_startcheck";
 +    private static final String PREF_ADBLOCK_CURRENT_STATUS = "adblock_current_status";
 +
 +    private Preference mAdBlockEdit;
@@ -452,13 +452,12 @@ new file mode 100644
 +        mAdBlockEdit = findPreference(PREF_ADBLOCK_EDIT);
 +        updateCurrentAdBlockSettings();
 +
-+        AdBlockPreferences captured = this;
 +        ButtonPreference startUpdateButton =
 +            (ButtonPreference) findPreference(PREF_ADBLOCK_CHECK_NOW);
 +        startUpdateButton.setOnPreferenceClickListener(new OnPreferenceClickListener() {
 +            @Override
 +            public boolean onPreferenceClick(Preference preference) {
-+                CachedFeatureFlags.AdBlockStartCheck(captured);
++                CachedFeatureFlags.AdBlockStartCheck(AdBlockPreferences.this);
 +                return true;
 +            }
 +        });
@@ -978,7 +977,7 @@ diff --git a/components/component_updater/adblock_updater_service.cc b/component
 new file mode 100644
 --- /dev/null
 +++ b/components/component_updater/adblock_updater_service.cc
-@@ -0,0 +1,320 @@
+@@ -0,0 +1,321 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1114,14 +1113,15 @@ new file mode 100644
 +
 +  last_update_ = pref_service_->GetTime(kAdBlockLastCheckTime);
 +
-+  // Check if the request is too soon.
-+  if (is_foreground == false && !last_update_.is_null()) {
-+    base::TimeDelta delta =
-+        base::Time::Now() - last_update_;
-+    auto version = ruleset_service_->GetMostRecentlyIndexedVersion();
-+    if(!version.content_version.empty()) {
-+      if (is_updating_ || (delta < base::TimeDelta::FromSeconds(on_demand_check_delay))) {
-+        LOG(INFO) << "AdBlockUpdaterService: update not necessary.";
++  auto version = ruleset_service_->GetMostRecentlyIndexedVersion();
++  if (!version.content_version.empty()) {
++    // Check if the request is too soon.
++    if (!last_update_.is_null()) {
++      int deltaCheck = is_foreground == false ? next_check_delay : on_demand_check_delay;
++      base::TimeDelta delta = base::Time::Now() - last_update_;
++      if (is_updating_ || (delta < base::TimeDelta::FromSeconds(deltaCheck))) {
++        LOG(INFO) << "AdBlockUpdaterService: update delayed. Wait for "
++                  << (base::TimeDelta::FromSeconds(deltaCheck)-delta);
 +        return false;
 +      }
 +    }
@@ -1426,7 +1426,7 @@ diff --git a/components/component_updater/download_filters_task.cc b/components/
 new file mode 100644
 --- /dev/null
 +++ b/components/component_updater/download_filters_task.cc
-@@ -0,0 +1,239 @@
+@@ -0,0 +1,237 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1586,8 +1586,6 @@ new file mode 100644
 +
 +  final_url_ = final_url;
 +  response_code_ = response_head.headers ? response_head.headers->response_code() : -1;
-+
-+
 +
 +  if (!response_head.headers->GetLastModifiedValue(&last_modified_))
 +    LOG(WARNING) << "DownloadFiltersTask: fetched URL '" << final_url.spec()
