@@ -1,0 +1,189 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Tue, 11 Dec 2018 23:37:18 +0100
+Subject: Add support for HTTPS proxy auth
+
+---
+ net/base/proxy_server.cc | 28 +++++++++++++++++++++-------
+ net/base/proxy_server.h  |  5 ++++-
+ net/base/url_util.cc     | 30 +++++++++++++++++++++++++-----
+ net/base/url_util.h      |  3 +++
+ 4 files changed, 53 insertions(+), 13 deletions(-)
+
+diff --git a/net/base/proxy_server.cc b/net/base/proxy_server.cc
+--- a/net/base/proxy_server.cc
++++ b/net/base/proxy_server.cc
+@@ -66,8 +66,10 @@ ProxyServer::Scheme GetSchemeFromURIInternal(base::StringPiece type) {
+ 
+ }  // namespace
+ 
+-ProxyServer::ProxyServer(Scheme scheme, const HostPortPair& host_port_pair)
+-      : scheme_(scheme), host_port_pair_(host_port_pair) {
++ProxyServer::ProxyServer(Scheme scheme, const HostPortPair& host_port_pair,
++                         const std::string& username, const std::string& password)
++      : scheme_(scheme), host_port_pair_(host_port_pair),
++        username_(username), password_(password) {
+   if (scheme_ == SCHEME_DIRECT || scheme_ == SCHEME_INVALID) {
+     // |host_port_pair| isn't relevant for these special schemes, so none should
+     // have been specified. It is important for this to be consistent since we
+@@ -75,12 +77,17 @@ ProxyServer::ProxyServer(Scheme scheme, const HostPortPair& host_port_pair)
+     DCHECK(host_port_pair.Equals(HostPortPair()));
+     host_port_pair_ = HostPortPair();
+   }
++  // Basic Auth supported only for HTTPS proxies
++  if (scheme_ != SCHEME_HTTPS) {
++    username_ = "";
++    password_ = "";
++  }
+ }
+ 
+ ProxyServer::ProxyServer(Scheme scheme,
+                          const HostPortPair& host_port_pair,
+                          bool is_trusted_proxy)
+-    : ProxyServer(scheme, host_port_pair) {
++    : ProxyServer(scheme, host_port_pair, "", "") {
+   if (is_trusted_proxy) {
+     is_trusted_proxy_ = true;
+     // TODO(https://crbug.com/778010): Update this when cross-origin server
+@@ -129,7 +136,10 @@ std::string ProxyServer::ToURI() const {
+     case SCHEME_SOCKS5:
+       return std::string("socks5://") + host_port_pair().ToString();
+     case SCHEME_HTTPS:
+-      return std::string("https://") + host_port_pair().ToString();
++      std::string auth;
++      if ((username_.length() != 0) && (password_.length() != 0))
++        auth = username_ + std::string(":") + password_ + std::string("@");
++      return std::string("https://") + auth + host_port_pair().ToString();
+     case SCHEME_QUIC:
+       return std::string("quic://") + host_port_pair().ToString();
+     default:
+@@ -175,7 +185,10 @@ std::string ProxyServer::ToPacString() const {
+     case SCHEME_SOCKS5:
+       return std::string("SOCKS5 ") + host_port_pair().ToString();
+     case SCHEME_HTTPS:
+-      return std::string("HTTPS ") + host_port_pair().ToString();
++      std::string auth;
++      if ((username_.length() != 0) && (password_.length() != 0))
++        auth = username_ + std::string(":") + password_ + std::string("@");
++      return std::string("HTTPS ") + auth + host_port_pair().ToString();
+     case SCHEME_QUIC:
+       return std::string("QUIC ") + host_port_pair().ToString();
+     default:
+@@ -224,11 +237,12 @@ ProxyServer ProxyServer::FromSchemeHostAndPort(
+ 
+   HostPortPair host_port_pair;
+ 
++  std::string username, password;
+   if (scheme != SCHEME_INVALID && scheme != SCHEME_DIRECT) {
+     std::string host;
+     int port = -1;
+     // If the scheme has a host/port, parse it.
+-    bool ok = ParseHostAndPort(host_and_port, &host, &port);
++    bool ok = ParseAuthHostAndPort(host_and_port, &host, &port, &username, &password);
+     if (!ok)
+       return ProxyServer();  // Invalid -- failed parsing <host>[":"<port>]
+ 
+@@ -239,7 +253,7 @@ ProxyServer ProxyServer::FromSchemeHostAndPort(
+     host_port_pair = HostPortPair(host, static_cast<uint16_t>(port));
+   }
+ 
+-  return ProxyServer(scheme, host_port_pair);
++  return ProxyServer(scheme, host_port_pair, username, password);
+ }
+ 
+ }  // namespace net
+diff --git a/net/base/proxy_server.h b/net/base/proxy_server.h
+--- a/net/base/proxy_server.h
++++ b/net/base/proxy_server.h
+@@ -44,7 +44,8 @@ class NET_EXPORT ProxyServer {
+   // Constructs an invalid ProxyServer.
+   ProxyServer() {}
+ 
+-  ProxyServer(Scheme scheme, const HostPortPair& host_port_pair);
++  ProxyServer(Scheme scheme, const HostPortPair& host_port_pair,
++              const std::string& username = "", const std::string& password = "");
+   ProxyServer(Scheme scheme,
+               const HostPortPair& host_port_pair,
+               bool is_trusted_proxy);
+@@ -185,6 +186,8 @@ class NET_EXPORT ProxyServer {
+ 
+   Scheme scheme_ = SCHEME_INVALID;
+   HostPortPair host_port_pair_;
++  std::string username_;
++  std::string password_;
+   bool is_trusted_proxy_ = false;
+ };
+ 
+diff --git a/net/base/url_util.cc b/net/base/url_util.cc
+--- a/net/base/url_util.cc
++++ b/net/base/url_util.cc
+@@ -173,7 +173,16 @@ bool GetValueForKeyInQuery(const GURL& url,
+   return false;
+ }
+ 
++bool ParseAuthHostAndPort(base::StringPiece input, std::string* host, int* port, std::string *username, std::string *password) {
++  return internalParse(input, host, port, username, password);
++}
++
+ bool ParseHostAndPort(base::StringPiece input, std::string* host, int* port) {
++  // disallow username/password
++  return internalParse(input, host, port, nullptr, nullptr);
++}
++
++bool internalParse(base::StringPiece input, std::string* host, int* port, std::string *username, std::string *password) {
+   if (input.empty())
+     return false;
+ 
+@@ -187,13 +196,25 @@ bool ParseHostAndPort(base::StringPiece input, std::string* host, int* port) {
+                       &password_component, &hostname_component,
+                       &port_component);
+ 
+-  // There shouldn't be a username/password.
+-  if (username_component.is_valid() || password_component.is_valid())
+-    return false;
+-
+   if (!hostname_component.is_nonempty())
+     return false;  // Failed parsing.
+ 
++  if (username == nullptr) {
++    if (username_component.is_valid())
++      // There shouldn't be a username.
++      return false;
++  } else {
++    username->assign(input.data() + password_component.begin, username_component.len);
++  }
++
++  if (password == nullptr) {
++    if (password_component.is_valid())
++      // There shouldn't be a password.
++      return false;
++  } else {
++    password->assign(input.data() + password_component.begin, password_component.len);
++  }
++
+   int parsed_port_number = -1;
+   if (port_component.is_nonempty()) {
+     parsed_port_number = url::ParsePort(input.data(), port_component);
+@@ -230,7 +251,6 @@ bool ParseHostAndPort(base::StringPiece input, std::string* host, int* port) {
+   return true;  // Success.
+ }
+ 
+-
+ std::string GetHostAndPort(const GURL& url) {
+   // For IPv6 literals, GURL::host() already includes the brackets so it is
+   // safe to just append a colon.
+diff --git a/net/base/url_util.h b/net/base/url_util.h
+--- a/net/base/url_util.h
++++ b/net/base/url_util.h
+@@ -101,6 +101,9 @@ NET_EXPORT bool ParseHostAndPort(base::StringPiece input,
+                                  std::string* host,
+                                  int* port);
+ 
++// Same as ParseHostAndPort with the addition of username and password parsing for Basic Auth.
++NET_EXPORT bool ParseAuthHostAndPort(base::StringPiece input, std::string* host, int* port, std::string *username, std::string *password);
++
+ // Returns a host:port string for the given URL.
+ NET_EXPORT std::string GetHostAndPort(const GURL& url);
+ 
+-- 
+2.20.1
+
