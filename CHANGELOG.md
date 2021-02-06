@@ -3,6 +3,7 @@
 * store proxy configuration in LocalState instead of Profile (thanks to @uazo)
 * fix toggle for reversing the meaning of bypass rules (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/884)
 * ignore managed state and policies for secure DNS (fixes https://github.com/bromite/bromite/issues/832)
+* do not permit user-installed certificates
 
 # 88.0.4324.141
 * fix bookmarks not opening (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/891)
