@@ -1,7 +1,12 @@
+# 88.0.4324.149
+* fix proxy PAC URL option not working (fixes https://github.com/bromite/bromite/issues/908)
+* store proxy configuration in LocalState instead of Profile (thanks to @uazo)
+* fix toggle for reversing the meaning of bypass rules (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/884)
+* ignore managed state and policies for secure DNS (fixes https://github.com/bromite/bromite/issues/832)
+
 # 88.0.4324.141
 * fix bookmarks not opening (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/891)
 * fix proxy page not loading (fixes https://github.com/bromite/bromite/issues/890)
-* ignore managed state for secure DNS (fixes https://github.com/bromite/bromite/issues/832)
 
 # 88.0.4324.95
 * fix broken recent tabs behaviour (fixes https://github.com/bromite/bromite/issues/886)
