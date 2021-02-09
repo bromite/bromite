@@ -13,43 +13,49 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  chrome/android/chrome_java_sources.gni        |   2 +
  .../java/res/layout/adblock_editor.xml        |  67 ++++
  chrome/android/java/res/values/values.xml     |   2 +
- .../java/res/xml/adblock_preferences.xml      |  37 ++
+ .../java/res/xml/adblock_preferences.xml      |  43 +++
  .../android/java/res/xml/main_preferences.xml |   5 +
- .../chrome/browser/app/ChromeActivity.java    |  18 +
- .../browser/settings/AdBlockEditor.java       |  92 +++++
- .../browser/settings/AdBlockPreferences.java  | 130 +++++++
+ .../chrome/browser/app/ChromeActivity.java    |  21 ++
+ .../browser/settings/AdBlockEditor.java       |  93 +++++
+ .../browser/settings/AdBlockPreferences.java  | 173 +++++++++
  .../chrome/browser/tabmodel/TabModelImpl.java |   2 +-
- chrome/app/generated_resources.grd            |  34 ++
+ chrome/app/generated_resources.grd            |  43 +++
  chrome/browser/after_startup_task_utils.cc    |   5 +
  chrome/browser/browser_process.h              |   7 +
  chrome/browser/browser_process_impl.cc        |  29 ++
  chrome/browser/browser_process_impl.h         |   3 +
  chrome/browser/chrome_browser_main.cc         |   2 +
  .../browser/chrome_content_browser_client.cc  |  16 -
- .../flags/android/cached_feature_flags.cc     |  62 ++++
+ chrome/browser/flags/BUILD.gn                 |  14 +-
+ .../flags/android/adblock_updater_bridge.cc   | 101 +++++
+ .../flags/android/adblock_updater_bridge.h    |  33 ++
+ .../flags/android/cached_feature_flags.cc     |   1 +
  .../flags/android/cached_feature_flags.h      |   2 +
- .../browser/flags/CachedFeatureFlags.java     |  57 ++++
+ .../browser/flags/AdblockUpdaterBridge.java   | 105 ++++++
  chrome/browser/prefs/browser_prefs.cc         |   1 +
  .../sessions/session_restore_android.cc       |   4 +-
  .../strings/android_chrome_strings.grd        |  14 +
  components/component_updater/BUILD.gn         |   6 +
- .../adblock_updater_service.cc                | 321 ++++++++++++++++++
- .../adblock_updater_service.h                 | 118 +++++++
- .../download_filters_task.cc                  | 237 +++++++++++++
- .../component_updater/download_filters_task.h | 129 +++++++
+ .../adblock_updater_service.cc                | 345 ++++++++++++++++++
+ .../adblock_updater_service.h                 | 124 +++++++
+ .../download_filters_task.cc                  | 237 ++++++++++++
+ .../component_updater/download_filters_task.h | 131 +++++++
  ...ent_subresource_filter_throttle_manager.cc |  11 +
  .../content/browser/ruleset_service.cc        |  33 +-
- .../content/browser/ruleset_service.h         |   7 +-
+ .../content/browser/ruleset_service.h         |  11 +-
  .../content/browser/ruleset_version.h         |   4 +
  .../browser/verified_ruleset_dealer.cc        |   3 +
  .../browser/subresource_filter_features.cc    | 113 +-----
  .../core/common/common_features.cc            |   2 +-
  .../navigation_throttle_runner.cc             |   5 -
- 36 files changed, 1442 insertions(+), 140 deletions(-)
+ 39 files changed, 1674 insertions(+), 141 deletions(-)
  create mode 100644 chrome/android/java/res/layout/adblock_editor.xml
  create mode 100644 chrome/android/java/res/xml/adblock_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockPreferences.java
+ create mode 100644 chrome/browser/flags/android/adblock_updater_bridge.cc
+ create mode 100644 chrome/browser/flags/android/adblock_updater_bridge.h
+ create mode 100644 chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/AdblockUpdaterBridge.java
  create mode 100644 components/component_updater/adblock_updater_service.cc
  create mode 100644 components/component_updater/adblock_updater_service.h
  create mode 100644 components/component_updater/download_filters_task.cc
@@ -174,7 +180,7 @@ diff --git a/chrome/android/java/res/xml/adblock_preferences.xml b/chrome/androi
 new file mode 100644
 --- /dev/null
 +++ b/chrome/android/java/res/xml/adblock_preferences.xml
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,43 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<!-- Copyright 2015 The Chromium Authors. All rights reserved.
 +     Use of this source code is governed by a BSD-style license that can be
@@ -199,13 +205,19 @@ new file mode 100644
 +        android:title="@string/options_adblock_edit_label"
 +        android:fragment="org.chromium.chrome.browser.settings.AdBlockEditor" />
 +
-+    <org.chromium.components.browser_ui.settings.TextMessagePreference
-+        android:key="adblock_current_index_version"
-+        app:allowDividerBelow="false" />
++    <org.chromium.components.browser_ui.settings.SpinnerPreference
++        android:key="adblock_period_spinner"
++        android:persistent="false"
++        android:title="@string/options_adblock_period_title"
++        app:singleLine="true" />
 +
 +    <org.chromium.components.browser_ui.settings.ButtonPreference
 +        android:key="adblock_startcheck"
 +        android:title="@string/options_adblock_startcheck_label"/>
++
++    <org.chromium.components.browser_ui.settings.TextMessagePreference
++        android:key="adblock_current_index_version"
++        app:allowDividerBelow="false" />
 +
 +    <org.chromium.components.browser_ui.settings.TextMessagePreference
 +        android:key="adblock_current_status"
@@ -230,16 +242,18 @@ diff --git a/chrome/android/java/res/xml/main_preferences.xml b/chrome/android/j
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
-@@ -59,6 +59,8 @@ import org.chromium.chrome.browser.ChromeActivitySessionTracker;
+@@ -59,6 +59,10 @@ import org.chromium.chrome.browser.ChromeActivitySessionTracker;
  import org.chromium.chrome.browser.ChromeApplication;
  import org.chromium.chrome.browser.ChromeWindow;
  import org.chromium.chrome.browser.DeferredStartupHandler;
 +import org.chromium.chrome.browser.flags.CachedFeatureFlags;
-+import org.chromium.chrome.browser.flags.CachedFeatureFlags.AdBlockCallback;
++import org.chromium.chrome.browser.flags.AdblockUpdaterBridge;
++import org.chromium.chrome.browser.flags.AdblockError;
++import org.chromium.chrome.browser.flags.AdblockEvent;
  import org.chromium.chrome.browser.IntentHandler;
  import org.chromium.chrome.browser.IntentHandler.IntentHandlerDelegate;
  import org.chromium.chrome.browser.IntentHandler.TabOpenType;
-@@ -106,6 +108,7 @@ import org.chromium.chrome.browser.gsa.ContextReporter;
+@@ -106,6 +110,7 @@ import org.chromium.chrome.browser.gsa.ContextReporter;
  import org.chromium.chrome.browser.gsa.GSAAccountChangeListener;
  import org.chromium.chrome.browser.gsa.GSAState;
  import org.chromium.chrome.browser.history.HistoryManagerUtils;
@@ -247,7 +261,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
  import org.chromium.chrome.browser.init.AsyncInitializationActivity;
  import org.chromium.chrome.browser.init.ProcessInitializationHandler;
  import org.chromium.chrome.browser.init.StartupTabPreloader;
-@@ -133,6 +136,7 @@ import org.chromium.chrome.browser.printing.TabPrinter;
+@@ -133,6 +138,7 @@ import org.chromium.chrome.browser.printing.TabPrinter;
  import org.chromium.chrome.browser.profiles.Profile;
  import org.chromium.chrome.browser.settings.SettingsLauncher;
  import org.chromium.chrome.browser.settings.SettingsLauncherImpl;
@@ -255,7 +269,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
  import org.chromium.chrome.browser.share.ShareDelegate;
  import org.chromium.chrome.browser.share.ShareDelegateImpl;
  import org.chromium.chrome.browser.tab.AccessibilityVisibilityHandler;
-@@ -159,6 +163,7 @@ import org.chromium.chrome.browser.ui.TabObscuringHandler;
+@@ -159,6 +165,7 @@ import org.chromium.chrome.browser.ui.TabObscuringHandler;
  import org.chromium.chrome.browser.ui.appmenu.AppMenuBlocker;
  import org.chromium.chrome.browser.ui.appmenu.AppMenuDelegate;
  import org.chromium.chrome.browser.ui.appmenu.AppMenuPropertiesDelegate;
@@ -263,13 +277,14 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
  import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
  import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager.SnackbarManageable;
  import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManagerProvider;
-@@ -1018,6 +1023,19 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
+@@ -1018,6 +1025,20 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
       */
      @CallSuper
      protected void initDeferredStartupForActivity() {
 +        DeferredStartupHandler.getInstance().addDeferredTask(() -> {
-+            CachedFeatureFlags.AdBlockRegisterCallback((int result, int error) -> {
-+                if (result == /*ADBLOCK_UPDATED*/ 4 || error == /*DOWNLOAD_ERROR*/ 4) {
++            AdblockUpdaterBridge.AdBlockRegisterCallback(
++                (@AdblockEvent int result, @AdblockError int error) -> {
++                if (result == AdblockEvent.ADBLOCK_UPDATED || error == AdblockError.DOWNLOAD_ERROR) {
 +                    Tab tab = ChromeActivity.this.getActivityTabProvider().get();
 +                    if (tab == null) return;
 +
@@ -287,7 +302,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBloc
 new file mode 100644
 --- /dev/null
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,93 @@
 +// Copyright 2015 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -306,6 +321,7 @@ new file mode 100644
 +
 +import org.chromium.components.browser_ui.settings.SettingsUtils;
 +import org.chromium.chrome.browser.flags.CachedFeatureFlags;
++import org.chromium.chrome.browser.flags.AdblockUpdaterBridge;
 +import org.chromium.chrome.R;
 +import org.chromium.components.url_formatter.UrlFormatter;
 +
@@ -328,7 +344,7 @@ new file mode 100644
 +        scrollView.getViewTreeObserver().addOnScrollChangedListener(
 +                SettingsUtils.getShowShadowOnScrollListener(v, v.findViewById(R.id.shadow)));
 +        mAdBlockFiltersUrlEdit = (EditText) v.findViewById(R.id.adblock_url_edit);
-+        mAdBlockFiltersUrlEdit.setText(CachedFeatureFlags.getAdBlockFiltersURL());
++        mAdBlockFiltersUrlEdit.setText(AdblockUpdaterBridge.getAdBlockFiltersURL());
 +        mAdBlockFiltersUrlEdit.addTextChangedListener(this);
 +        mAdBlockFiltersUrlEdit.requestFocus();
 +
@@ -355,7 +371,7 @@ new file mode 100644
 +        mResetButton.setOnClickListener(new View.OnClickListener() {
 +            @Override
 +            public void onClick(View v) {
-+                mAdBlockFiltersUrlEdit.setText(CachedFeatureFlags.getAdBlockFiltersURL());
++                mAdBlockFiltersUrlEdit.setText(AdblockUpdaterBridge.getAdBlockFiltersURL());
 +                getActivity().finish();
 +            }
 +        });
@@ -365,7 +381,7 @@ new file mode 100644
 +        mSaveButton.setOnClickListener(new View.OnClickListener() {
 +            @Override
 +            public void onClick(View v) {
-+                CachedFeatureFlags.setAdBlockFiltersURL(
++                AdblockUpdaterBridge.setAdBlockFiltersURL(
 +                        UrlFormatter.fixupUrl(mAdBlockFiltersUrlEdit.getText().toString()).getSpec());
 +                getActivity().finish();
 +            }
@@ -384,7 +400,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBloc
 new file mode 100644
 --- /dev/null
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockPreferences.java
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,173 @@
 +// Copyright 2015 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -406,25 +422,32 @@ new file mode 100644
 +import org.chromium.components.browser_ui.settings.ButtonPreference;
 +import org.chromium.components.content_settings.ContentSettingsType;
 +import org.chromium.components.browser_ui.settings.SettingsUtils;
++import org.chromium.components.browser_ui.settings.SpinnerPreference;
 +import org.chromium.chrome.browser.flags.CachedFeatureFlags;
-+import org.chromium.chrome.browser.flags.CachedFeatureFlags.AdBlockCallback;
++import org.chromium.chrome.browser.flags.AdblockUpdaterBridge;
++import org.chromium.chrome.browser.flags.AdblockUpdaterBridge.AdblockCallback;
++import org.chromium.chrome.browser.flags.AdblockError;
++import org.chromium.chrome.browser.flags.AdblockEvent;
 +import androidx.annotation.VisibleForTesting;
 +import androidx.preference.Preference.OnPreferenceClickListener;
 +import org.chromium.chrome.R;
 +
 +import java.text.DateFormat;
++import java.util.ArrayList;
++import java.util.List;
 +
 +/**
 + * Fragment that allows the user to configure AdBlock related preferences.
 + */
 +public class AdBlockPreferences extends SiteSettingsPreferenceFragment
-+                                implements AdBlockCallback {
++                                implements AdblockCallback {
 +    @VisibleForTesting
 +    private static final String PREF_ADBLOCK_SWITCH = "adblock_switch";
 +    private static final String PREF_ADBLOCK_EDIT = "adblock_edit";
 +    private static final String PREF_ADBLOCK_INDEX_VERSION = "adblock_current_index_version";
 +    private static final String PREF_ADBLOCK_CHECK_NOW = "adblock_startcheck";
 +    private static final String PREF_ADBLOCK_CURRENT_STATUS = "adblock_current_status";
++    private static final String PREF_ADBLOCK_PERIOD_SPINNER = "adblock_period_spinner";
 +
 +    private Preference mAdBlockEdit;
 +    private TextMessagePreference currentIndexVersion;
@@ -446,6 +469,23 @@ new file mode 100644
 +            return true;
 +        });
 +
++        SpinnerPreference spinner = (SpinnerPreference) findPreference(PREF_ADBLOCK_PERIOD_SPINNER);
++        TimePeriodSpinnerOption[] spinnerOptions = getTimePeriodSpinnerOptions();
++        int selectedTimePeriod = AdblockUpdaterBridge.getAdBlockUpdateTimePeriod();
++        int spinnerOptionIndex = -1;
++        for (int i = 0; i < spinnerOptions.length; ++i) {
++            if (spinnerOptions[i].getDays() == selectedTimePeriod) {
++                spinnerOptionIndex = i;
++                break;
++            }
++        }
++        spinner.setOptions(spinnerOptions, spinnerOptionIndex);
++        spinner.setOnPreferenceChangeListener((preference, newValue) -> {
++            AdblockUpdaterBridge.setAdBlockUpdateTimePeriod(
++                    ((TimePeriodSpinnerOption) newValue).getDays());
++            return true;
++        });
++
 +        currentIndexVersion = (TextMessagePreference) findPreference(PREF_ADBLOCK_INDEX_VERSION);
 +        currentIndexVersion.setTitle(R.string.options_adblock_current_index_title);
 +
@@ -457,51 +497,36 @@ new file mode 100644
 +        startUpdateButton.setOnPreferenceClickListener(new OnPreferenceClickListener() {
 +            @Override
 +            public boolean onPreferenceClick(Preference preference) {
-+                CachedFeatureFlags.AdBlockStartCheck(AdBlockPreferences.this);
++                AdblockUpdaterBridge.AdBlockStartCheck(AdBlockPreferences.this);
 +                return true;
 +            }
 +        });
 +    }
 +
 +    private void updateCurrentAdBlockSettings() {
-+        mAdBlockEdit.setSummary(CachedFeatureFlags.getAdBlockFiltersURL());
++        mAdBlockEdit.setSummary(AdblockUpdaterBridge.getAdBlockFiltersURL());
 +
 +        DateFormat df = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.MEDIUM);
 +        currentIndexVersion.setSummary(
-+            CachedFeatureFlags.getAdBlockMostRecentIndexedVersion() +
++            AdblockUpdaterBridge.getAdBlockMostRecentIndexedVersion() +
 +            "\n" + getString(R.string.adblock_last_checked_text) +
-+            " "  + df.format(CachedFeatureFlags.getAdBlockLastUpdateUs()));
++            " "  + df.format(AdblockUpdaterBridge.getAdBlockLastUpdate()));
 +    }
 +
-+    public static String GetAdBlockMessage(int event, int error) {
++    public static String GetAdBlockMessage(@AdblockEvent int event, @AdblockError int error) {
 +        Context applicationContext = ContextUtils.getApplicationContext();
-+        // see in components/component_updater/download_filters_task.h
-+        // EVENT:
-+        //   ADBLOCK_CHECKING_FOR_UPDATES = 1
-+        //   ADBLOCK_UPDATE_READY = 2
-+        //   ADBLOCK_UPDATE_DOWNLOADING = 3
-+        //   ADBLOCK_UPDATED = 4
-+        //   ADBLOCK_NOT_UPDATED = 5
-+        //   ADBLOCK_UPDATE_ERROR = 6
-+        // ERROR:
-+        //   NONE = 0
-+        //   UPDATE_IN_PROGRESS = 1
-+        //   UPDATE_CANCELED = 2
-+        //   UPDATE_NOT_NEEDED = 3
-+        //   DOWNLOAD_ERROR = 4
-+        //   INVALID_ARGUMENT = 5
 +        String message = "";
-+        if (error == 0) {
-+            if (event == 1) message = applicationContext.getString(R.string.options_adblock_event_1);
-+            else if (event == 3) message = applicationContext.getString(R.string.options_adblock_event_3);
-+            else if (event == 4) message = applicationContext.getString(R.string.options_adblock_event_4);
++        if (error == AdblockError.NONE) {
++            if (event == AdblockEvent.ADBLOCK_CHECKING_FOR_UPDATES) message = applicationContext.getString(R.string.options_adblock_event_1);
++            else if (event == AdblockEvent.ADBLOCK_UPDATE_DOWNLOADING) message = applicationContext.getString(R.string.options_adblock_event_3);
++            else if (event == AdblockEvent.ADBLOCK_UPDATED) message = applicationContext.getString(R.string.options_adblock_event_4);
 +        }
-+        else if (error == 3) message = applicationContext.getString(R.string.options_adblock_error_3);
-+        else if (error == 4) message = applicationContext.getString(R.string.options_adblock_error_4);
++        else if (error == AdblockError.UPDATE_NOT_NEEDED) message = applicationContext.getString(R.string.options_adblock_error_3);
++        else if (error == AdblockError.DOWNLOAD_ERROR) message = applicationContext.getString(R.string.options_adblock_error_4);
 +        return message;
 +    }
 +
-+    public void onAdBlockUpdaterResult(int event, int error) {
++    public void onAdBlockUpdaterResult(@AdblockEvent int event, @AdblockError int error) {
 +        String message = GetAdBlockMessage(event, error);
 +        TextMessagePreference currentStatus = (TextMessagePreference) findPreference(PREF_ADBLOCK_CURRENT_STATUS);
 +        currentStatus.setTitle(message);
@@ -513,6 +538,40 @@ new file mode 100644
 +    public void onResume() {
 +        super.onResume();
 +        updateCurrentAdBlockSettings();
++    }
++
++    private TimePeriodSpinnerOption[] getTimePeriodSpinnerOptions() {
++        List<TimePeriodSpinnerOption> options = new ArrayList<>();
++        options.add(new TimePeriodSpinnerOption(1,
++                getString(R.string.options_adblock_period_day)));
++        options.add(new TimePeriodSpinnerOption(4,
++                getString(R.string.options_adblock_period_days)));
++        options.add(new TimePeriodSpinnerOption(7,
++                getString(R.string.options_adblock_period_days)));
++        options.add(new TimePeriodSpinnerOption(10,
++                getString(R.string.options_adblock_period_days)));
++        options.add(new TimePeriodSpinnerOption(30,
++                getString(R.string.options_adblock_period_days)));
++        return options.toArray(new TimePeriodSpinnerOption[0]);
++    }
++
++    static class TimePeriodSpinnerOption {
++        private int mDays;
++        private String mTitle;
++
++        public TimePeriodSpinnerOption(int days, String title) {
++            mDays = days;
++            mTitle = Integer.toString(days) + " " + title;
++        }
++
++        public int getDays() {
++            return mDays;
++        }
++
++        @Override
++        public String toString() {
++            return mTitle;
++        }
 +    }
 +}
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java
@@ -530,7 +589,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabMod
 diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
-@@ -10242,6 +10242,40 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -10242,6 +10242,49 @@ Please help our engineers fix this problem. Tell us what happened right before y
        Never show this again.
      </message>
  
@@ -547,6 +606,15 @@ diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources
 +      </message>
 +      <message name="IDS_ADBLOCK_LAST_CHECKED_TEXT" desc="The title of the Ad Blocking last checked datetime" formatter_data="android_java">
 +        Last Checked:
++      </message>
++      <message name="IDS_OPTIONS_ADBLOCK_PERIOD_TITLE" desc="The title of the Ad Blocking period to check update" formatter_data="android_java">
++        Check every
++      </message>
++      <message name="IDS_OPTIONS_ADBLOCK_PERIOD_DAY" desc="Ad Blocking period single day" formatter_data="android_java">
++        Day
++      </message>
++      <message name="IDS_OPTIONS_ADBLOCK_PERIOD_DAYS" desc="Ad Blocking period multiple day" formatter_data="android_java">
++        Days
 +      </message>
 +      <message name="IDS_OPTIONS_ADBLOCK_STARTCHECK_LABEL" desc="The title of the Ad Blocking button to check update" formatter_data="android_java">
 +        Check Now
@@ -742,32 +810,103 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
    MaybeAddThrottle(PDFIFrameNavigationThrottle::MaybeCreateThrottleFor(handle),
                     &throttles);
  
-diff --git a/chrome/browser/flags/android/cached_feature_flags.cc b/chrome/browser/flags/android/cached_feature_flags.cc
---- a/chrome/browser/flags/android/cached_feature_flags.cc
-+++ b/chrome/browser/flags/android/cached_feature_flags.cc
-@@ -8,8 +8,10 @@
- 
- #include "base/android/jni_string.h"
- #include "base/feature_list.h"
-+#include "chrome/browser/browser_process.h"
- #include "content/public/common/content_features.h"
- #include "content/public/common/network_service_util.h"
-+#include "components/component_updater/adblock_updater_service.h"
- 
- using base::android::ConvertJavaStringToUTF8;
- using base::android::ConvertUTF8ToJavaString;
-@@ -41,3 +43,63 @@ static jboolean JNI_CachedFeatureFlags_IsNetworkServiceWarmUpEnabled(
-   return content::IsOutOfProcessNetworkService() &&
-          base::FeatureList::IsEnabled(features::kWarmUpNetworkProcess);
+diff --git a/chrome/browser/flags/BUILD.gn b/chrome/browser/flags/BUILD.gn
+--- a/chrome/browser/flags/BUILD.gn
++++ b/chrome/browser/flags/BUILD.gn
+@@ -14,6 +14,7 @@ android_library("java") {
+     "android/java/src/org/chromium/chrome/browser/flags/FeatureParamUtils.java",
+     "android/java/src/org/chromium/chrome/browser/flags/IntCachedFieldTrialParameter.java",
+     "android/java/src/org/chromium/chrome/browser/flags/StringCachedFieldTrialParameter.java",
++    "android/java/src/org/chromium/chrome/browser/flags/AdblockUpdaterBridge.java",
+   ]
+   deps = [
+     "//base:base_java",
+@@ -21,7 +22,8 @@ android_library("java") {
+     "//chrome/browser/preferences:java",
+     "//third_party/android_deps:androidx_annotation_annotation_java",
+   ]
+-  srcjar_deps = [ ":chrome_android_java_switches_srcjar" ]
++  srcjar_deps = [ ":chrome_android_java_switches_srcjar",
++                  ":adblock_enums_javagen" ]
+   annotation_processor_deps = [ "//base/android/jni_generator:jni_processor" ]
  }
+ 
+@@ -29,6 +31,7 @@ generate_jni("jni_headers") {
+   sources = [
+     "android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java",
+     "android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java",
++    "android/java/src/org/chromium/chrome/browser/flags/AdblockUpdaterBridge.java",
+   ]
+ }
+ 
+@@ -36,6 +39,8 @@ static_library("flags_android") {
+   sources = [
+     "android/cached_feature_flags.cc",
+     "android/cached_feature_flags.h",
++    "android/adblock_updater_bridge.cc",
++    "android/adblock_updater_bridge.h",
+   ]
+   deps = [
+     ":jni_headers",
+@@ -44,6 +49,13 @@ static_library("flags_android") {
+   ]
+ }
+ 
++java_cpp_enum("adblock_enums_javagen") {
++  sources = [
++    "../../../components/component_updater/download_filters_task.h",
++  ]
++  visibility = [ ":*" ]
++}
++
+ java_cpp_strings("chrome_android_java_switches_srcjar") {
+   sources = [ "//chrome/common/chrome_switches.cc" ]
+   template = "android/java_templates/ChromeSwitches.java.tmpl"
+diff --git a/chrome/browser/flags/android/adblock_updater_bridge.cc b/chrome/browser/flags/android/adblock_updater_bridge.cc
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/flags/android/adblock_updater_bridge.cc
+@@ -0,0 +1,101 @@
++/*
++    This file is part of Bromite.
++
++    Bromite is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    Bromite is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with Bromite. If not, see <https://www.gnu.org/licenses/>.
++*/
++
++#include "chrome/browser/flags/android/adblock_updater_bridge.h"
++
++#include "chrome/browser/flags/jni_headers/AdblockUpdaterBridge_jni.h"
++
++#include "base/android/jni_string.h"
++#include "base/feature_list.h"
++#include "chrome/browser/browser_process.h"
++#include "content/public/common/content_features.h"
++#include "content/public/common/network_service_util.h"
++#include "components/component_updater/adblock_updater_service.h"
++
++using base::android::ConvertJavaStringToUTF8;
++using base::android::ConvertUTF8ToJavaString;
++using base::android::JavaParamRef;
++using base::android::ScopedJavaLocalRef;
 +
 +namespace {
 +
 +  class AdblockCallbackObserver :
 +          public adblock_updater::Observer {
 +  private:
-+    void OnEvent(adblock_updater::Event result, adblock_updater::Error error) override {
-+        Java_CachedFeatureFlags_onAdBlockUpdaterResult(
++    void OnEvent(adblock_updater::AdblockEvent result, adblock_updater::AdblockError error) override {
++        Java_AdblockUpdaterBridge_onAdBlockUpdaterResult(
 +          base::android::AttachCurrentThread(),
 +          (int)result,
 +          (int)error);
@@ -778,40 +917,49 @@ diff --git a/chrome/browser/flags/android/cached_feature_flags.cc b/chrome/brows
 +
 +}
 +
-+static ScopedJavaLocalRef<jstring> JNI_CachedFeatureFlags_GetAdBlockFiltersURL(JNIEnv* env) {
++static ScopedJavaLocalRef<jstring> JNI_AdblockUpdaterBridge_GetAdBlockFiltersURL(JNIEnv* env) {
 +  std::string url = g_browser_process->adblock_updater()->GetAdBlockFiltersURL();
 +  return base::android::ConvertUTF8ToJavaString(env, url);
 +}
 +
-+static void JNI_CachedFeatureFlags_SetAdBlockFiltersURL(JNIEnv* env, const JavaParamRef<jstring>& url) {
++static void JNI_AdblockUpdaterBridge_SetAdBlockFiltersURL(JNIEnv* env, const JavaParamRef<jstring>& url) {
 +  std::string new_url = base::android::ConvertJavaStringToUTF8(env, url);
 +  g_browser_process->adblock_updater()->SetAdBlockFiltersURL(new_url);
 +}
 +
-+static ScopedJavaLocalRef<jstring> JNI_CachedFeatureFlags_GetAdBlockMostRecentIndexedVersion(JNIEnv* env) {
++static ScopedJavaLocalRef<jstring> JNI_AdblockUpdaterBridge_GetAdBlockMostRecentIndexedVersion(JNIEnv* env) {
 +  std::string url = g_browser_process->adblock_updater()->GetMostRecentIndexedVersion();
 +  return base::android::ConvertUTF8ToJavaString(env, url);
 +}
 +
-+static long JNI_CachedFeatureFlags_GetAdBlockLastOkUpdateUs(JNIEnv* env) {
-+  long value = g_browser_process->adblock_updater()->GetLastOkUpdateUs();
++static jint JNI_AdblockUpdaterBridge_GetAdBlockUpdateTimePeriod(JNIEnv* env) {
++  int value = g_browser_process->adblock_updater()->GetAdBlockUpdateTimePeriod();
 +  return value;
 +}
 +
-+static long JNI_CachedFeatureFlags_GetAdBlockLastUpdateUs(JNIEnv* env) {
-+  long value = g_browser_process->adblock_updater()->GetLastUpdateUs();
++static void JNI_AdblockUpdaterBridge_SetAdBlockUpdateTimePeriod(JNIEnv* env, jint days) {
++  g_browser_process->adblock_updater()->SetAdBlockUpdateTimePeriod(days);
++}
++
++static jlong JNI_AdblockUpdaterBridge_GetAdBlockLastOkUpdate(JNIEnv* env) {
++  long value = g_browser_process->adblock_updater()->GetLastOkUpdate();
 +  return value;
 +}
 +
-+static void JNI_CachedFeatureFlags_AdBlockStartCheckOnDemand(JNIEnv* env) {
++static jlong JNI_AdblockUpdaterBridge_GetAdBlockLastUpdate(JNIEnv* env) {
++  long value = g_browser_process->adblock_updater()->GetLastUpdate();
++  return value;
++}
++
++static void JNI_AdblockUpdaterBridge_AdBlockStartCheckOnDemand(JNIEnv* env) {
 +  adblock_updater::AdBlockUpdaterService* client = g_browser_process->adblock_updater();
 +  if (client == nullptr) return;
 +
-+  JNI_CachedFeatureFlags_AdBlockRegisterCallback(env);
++  JNI_AdblockUpdaterBridge_AdBlockRegisterCallback(env);
 +  client->OnDemandUpdate(adblock_updater::Callback());
 +}
 +
-+static void JNI_CachedFeatureFlags_AdBlockRegisterCallback(JNIEnv* env) {
++static void JNI_AdblockUpdaterBridge_AdBlockRegisterCallback(JNIEnv* env) {
 +  adblock_updater::AdBlockUpdaterService* client = g_browser_process->adblock_updater();
 +  if (client == nullptr) return;
 +
@@ -820,6 +968,52 @@ diff --git a/chrome/browser/flags/android/cached_feature_flags.cc b/chrome/brows
 +    client->AddObserver(g_adblock_updater_observer);
 +  }
 +}
+diff --git a/chrome/browser/flags/android/adblock_updater_bridge.h b/chrome/browser/flags/android/adblock_updater_bridge.h
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/flags/android/adblock_updater_bridge.h
+@@ -0,0 +1,33 @@
++/*
++    This file is part of Bromite.
++
++    Bromite is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    Bromite is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with Bromite. If not, see <https://www.gnu.org/licenses/>.
++*/
++
++#ifndef CHROME_BROWSER_FLAGS_ANDROID_ADBLOCK_UPDATER_BRIDGE_H_
++#define CHROME_BROWSER_FLAGS_ANDROID_ADBLOCK_UPDATER_BRIDGE_H_
++
++#include <jni.h>
++
++#include <string>
++
++namespace chrome {
++namespace android {
++
++void onAdBlockUpdaterResult(JNIEnv* env, int result);
++
++}  // namespace android
++}  // namespace chrome
++
++#endif  // CHROME_BROWSER_FLAGS_ANDROID_ADBLOCK_UPDATER_BRIDGE_H_
+diff --git a/chrome/browser/flags/android/cached_feature_flags.cc b/chrome/browser/flags/android/cached_feature_flags.cc
+--- a/chrome/browser/flags/android/cached_feature_flags.cc
++++ b/chrome/browser/flags/android/cached_feature_flags.cc
+@@ -41,3 +41,4 @@ static jboolean JNI_CachedFeatureFlags_IsNetworkServiceWarmUpEnabled(
+   return content::IsOutOfProcessNetworkService() &&
+          base::FeatureList::IsEnabled(features::kWarmUpNetworkProcess);
+ }
++
 diff --git a/chrome/browser/flags/android/cached_feature_flags.h b/chrome/browser/flags/android/cached_feature_flags.h
 --- a/chrome/browser/flags/android/cached_feature_flags.h
 +++ b/chrome/browser/flags/android/cached_feature_flags.h
@@ -832,82 +1026,116 @@ diff --git a/chrome/browser/flags/android/cached_feature_flags.h b/chrome/browse
  }  // namespace android
  }  // namespace chrome
  
-diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
---- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
-+++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
-@@ -18,6 +18,8 @@ import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
- import java.util.HashMap;
- import java.util.List;
- import java.util.Map;
+diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/AdblockUpdaterBridge.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/AdblockUpdaterBridge.java
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/AdblockUpdaterBridge.java
+@@ -0,0 +1,105 @@
++/*
++    This file is part of Bromite.
++
++    Bromite is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    Bromite is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with Bromite. If not, see <https://www.gnu.org/licenses/>.
++*/
++
++package org.chromium.chrome.browser.flags;
++
++import org.chromium.base.FieldTrialList;
++import org.chromium.base.annotations.CalledByNative;
++import org.chromium.base.annotations.CheckDiscard;
++import org.chromium.base.annotations.NativeMethods;
++import org.chromium.base.library_loader.LibraryLoader;
++import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
++import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
++import org.chromium.chrome.browser.flags.AdblockError;
++import org.chromium.chrome.browser.flags.AdblockEvent;
++
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
 +import java.util.Date;
 +import java.lang.ref.WeakReference;
- 
- /**
-  * A class to cache the state of flags from {@link ChromeFeatureList}.
-@@ -399,8 +401,63 @@ public class CachedFeatureFlags {
-         return swapped;
-     }
- 
++
++public class AdblockUpdaterBridge {
++    static WeakReference<AdblockCallback> observer;
++
++    public interface AdblockCallback {
++        void onAdBlockUpdaterResult(@AdblockEvent int result, @AdblockError int error);
++    }
++
 +    public static void setAdBlockFiltersURL(String url) {
-+        CachedFeatureFlagsJni.get().setAdBlockFiltersURL(url);
++        AdblockUpdaterBridgeJni.get().setAdBlockFiltersURL(url);
 +    }
 +
 +    public static String getAdBlockFiltersURL() {
-+        return CachedFeatureFlagsJni.get().getAdBlockFiltersURL();
++        return AdblockUpdaterBridgeJni.get().getAdBlockFiltersURL();
++    }
++
++    public static int getAdBlockUpdateTimePeriod() {
++        return AdblockUpdaterBridgeJni.get().getAdBlockUpdateTimePeriod();
++    }
++
++    public static void setAdBlockUpdateTimePeriod(int number_of_days) {
++        AdblockUpdaterBridgeJni.get().setAdBlockUpdateTimePeriod(number_of_days);
 +    }
 +
 +    public static String getAdBlockMostRecentIndexedVersion() {
-+       return CachedFeatureFlagsJni.get().getAdBlockMostRecentIndexedVersion();
++       return AdblockUpdaterBridgeJni.get().getAdBlockMostRecentIndexedVersion();
 +    }
 +
-+    public static Date getAdBlockLastOkUpdateUs() {
-+        long millis = CachedFeatureFlagsJni.get().getAdBlockLastOkUpdateUs();
++    public static Date getAdBlockLastOkUpdate() {
++        long millis = AdblockUpdaterBridgeJni.get().getAdBlockLastOkUpdate();
 +        return new Date(millis);
 +    }
 +
-+    public static Date getAdBlockLastUpdateUs() {
-+        long millis = CachedFeatureFlagsJni.get().getAdBlockLastUpdateUs();
++    public static Date getAdBlockLastUpdate() {
++        long millis = AdblockUpdaterBridgeJni.get().getAdBlockLastUpdate();
 +        return new Date(millis);
 +    }
 +
-+    static WeakReference<AdBlockCallback> observer;
-+
-+    public interface AdBlockCallback {
-+        void onAdBlockUpdaterResult(int result, int error);
++    public static void AdBlockStartCheck(AdblockCallback callback) {
++        observer = new WeakReference<AdblockCallback>(callback);
++        AdblockUpdaterBridgeJni.get().adBlockStartCheckOnDemand();
 +    }
 +
-+    public static void AdBlockStartCheck(AdBlockCallback callback) {
-+        observer = new WeakReference<AdBlockCallback>(callback);
-+        CachedFeatureFlagsJni.get().adBlockStartCheckOnDemand();
-+    }
-+
-+    public static void AdBlockRegisterCallback(AdBlockCallback callback) {
-+        observer = new WeakReference<AdBlockCallback>(callback);
-+        CachedFeatureFlagsJni.get().adBlockRegisterCallback();
++    public static void AdBlockRegisterCallback(AdblockCallback callback) {
++        observer = new WeakReference<AdblockCallback>(callback);
++        AdblockUpdaterBridgeJni.get().adBlockRegisterCallback();
 +    }
 +
 +    @CalledByNative
-+    private static void onAdBlockUpdaterResult(int result, int error) {
++    private static void onAdBlockUpdaterResult(@AdblockEvent int result, @AdblockError int error) {
 +        if (observer != null) {
-+            AdBlockCallback reference = observer.get();
++            AdblockCallback reference = observer.get();
 +            if (reference != null) {
 +                reference.onAdBlockUpdaterResult(result, error);
 +            }
 +        }
 +    }
 +
-     @NativeMethods
-     interface Natives {
-         boolean isNetworkServiceWarmUpEnabled();
++    @NativeMethods
++    interface Natives {
 +        void setAdBlockFiltersURL(String url);
 +        String getAdBlockFiltersURL();
 +        String getAdBlockMostRecentIndexedVersion();
-+        long getAdBlockLastUpdateUs();
-+        long getAdBlockLastOkUpdateUs();
++        long getAdBlockLastUpdate();
++        long getAdBlockLastOkUpdate();
++        int getAdBlockUpdateTimePeriod();
++        void setAdBlockUpdateTimePeriod(int number_of_days);
 +        void adBlockStartCheckOnDemand();
 +        void adBlockRegisterCallback();
-     }
- }
++    }
++}
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
@@ -977,7 +1205,7 @@ diff --git a/components/component_updater/adblock_updater_service.cc b/component
 new file mode 100644
 --- /dev/null
 +++ b/components/component_updater/adblock_updater_service.cc
-@@ -0,0 +1,321 @@
+@@ -0,0 +1,345 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1026,6 +1254,9 @@ new file mode 100644
 +// Holds the URL to an indexed subresource filters file.
 +const char kAdBlockFiltersURL[] = "adblock.filters_url";
 +
++// Holds the URL to an indexed subresource filters file.
++const char kAdBlockFiltersCheckPeriod[] = "adblock.check_period";
++
 +// Last check time
 +const char kAdBlockLastCheckTime[] = "adblock.last_check_time";
 +
@@ -1035,8 +1266,8 @@ new file mode 100644
 +// all constants express seconds
 +// these could be made configurable
 +const int initial_check_delay = 5,
-+      next_check_delay = 60*60*24*7, // 1 week
 +      on_demand_check_delay = 60; // minimum 1 minute between each on-demand check
++int next_check_delay = 60*60*24*7; // 1 week
 +
 +AdBlockUpdaterService::AdBlockUpdaterService(
 +      scoped_refptr<network::SharedURLLoaderFactory> shared_url_network_factory,
@@ -1048,7 +1279,7 @@ new file mode 100644
 +   scheduler_(std::move(scheduler)) {
 +  DCHECK(ruleset_service);
 +  pref_service_ = pref_service;
-+  ruleset_service_->SetRulesetPublishedCallbackForTesting(
++  ruleset_service_->SetRulesetPublishedCallback(
 +      base::BindRepeating(&AdBlockUpdaterService::RulesetPublishedCallback,
 +        base::Unretained(this)));
 +}
@@ -1068,10 +1299,10 @@ new file mode 100644
 +}
 +
 +void AdBlockUpdaterService::RulesetPublishedCallback() {
-+  NotifyObservers(Event::ADBLOCK_UPDATED, Error::NONE);
++  NotifyObservers(AdblockEvent::ADBLOCK_UPDATED, AdblockError::NONE);
 +}
 +
-+void AdBlockUpdaterService::NotifyObservers(Event event, Error error) {
++void AdBlockUpdaterService::NotifyObservers(AdblockEvent event, AdblockError error) {
 +  DCHECK(thread_checker_.CalledOnValidThread());
 +  for (auto& observer : observer_list_)
 +    observer.OnEvent(event, error);
@@ -1085,14 +1316,25 @@ new file mode 100644
 +    return;
 +  scheduled_ = true;
 +
++  ReStart(initial_check_delay);
++}
++
++void AdBlockUpdaterService::ReStart(int delay) {
++  int days = GetAdBlockUpdateTimePeriod();
++  if (days <= 0) days = 7;
++  next_check_delay = 60*60*24*days;
++
++  if (delay == 0) delay = next_check_delay;
++
 +  LOG(INFO) << "AdBlockUpdaterService: starting up. "
 +          << "First update attempt will take place in "
-+          << initial_check_delay << " seconds. "
++          << delay << " seconds. "
 +          << "Next update attempt will take place in "
 +          << next_check_delay << " seconds. ";
 +
++  scheduler_->Stop();
 +  scheduler_->Schedule(
-+      base::TimeDelta::FromSeconds(initial_check_delay),
++      base::TimeDelta::FromSeconds(delay),
 +      base::TimeDelta::FromSeconds(next_check_delay),
 +      base::Bind(&AdBlockUpdaterService::OnDemandScheduledUpdate,
 +                 base::Unretained(this)), base::DoNothing());
@@ -1137,7 +1379,7 @@ new file mode 100644
 +  if (is_updating_) {
 +    base::ThreadTaskRunnerHandle::Get()->PostTask(
 +        FROM_HERE, base::BindOnce(std::move(on_finished),
-+                                    Error::UPDATE_IN_PROGRESS));
++                                    AdblockError::UPDATE_IN_PROGRESS));
 +    return;
 +  }
 +  is_updating_ = true;
@@ -1190,7 +1432,7 @@ new file mode 100644
 +      LOG(WARNING) << "AdBlockUpdaterService: failed to convert version to time.";
 +  }
 +
-+  NotifyObservers(Event::ADBLOCK_CHECKING_FOR_UPDATES, Error::NONE);
++  NotifyObservers(AdblockEvent::ADBLOCK_CHECKING_FOR_UPDATES, AdblockError::NONE);
 +
 +  std::string filters_url_ = pref_service_->GetString(kAdBlockFiltersURL);
 +  auto task = base::MakeRefCounted<DownloadFiltersTask>(
@@ -1208,11 +1450,11 @@ new file mode 100644
 +
 +void AdBlockUpdaterService::OnUpdateComplete(Callback on_finished,
 +                                        scoped_refptr<DownloadFiltersTask> task,
-+                                        Error error) {
++                                        AdblockError error) {
 +  DCHECK(thread_checker_.CalledOnValidThread());
 +
 +  auto file_path = task->file_path();
-+  if (error == Error::NONE) {
++  if (error == AdblockError::NONE) {
 +    subresource_filter::UnindexedRulesetInfo ruleset_info;
 +    ruleset_info.ruleset_path = file_path;
 +    ruleset_info.delete_ruleset_path = true;
@@ -1247,12 +1489,12 @@ new file mode 100644
 +
 +    ruleset_service_->IndexAndStoreAndPublishRulesetIfNeeded(ruleset_info, ignore_version);
 +
-+    NotifyObservers(Event::ADBLOCK_UPDATED, error);
++    NotifyObservers(AdblockEvent::ADBLOCK_UPDATED, error);
 +  } else {
-+    NotifyObservers(Event::ADBLOCK_NOT_UPDATED, error);
++    NotifyObservers(AdblockEvent::ADBLOCK_NOT_UPDATED, error);
 +  }
 +
-+  if (error == Error::NONE || error == Error::UPDATE_NOT_NEEDED) {
++  if (error == AdblockError::NONE || error == AdblockError::UPDATE_NOT_NEEDED) {
 +    pref_service_->SetTime(kAdBlockLastCheckTimeOk, base::Time::Now());
 +  }
 +
@@ -1279,18 +1521,28 @@ new file mode 100644
 +  return version.content_version;
 +}
 +
-+long AdBlockUpdaterService::GetLastUpdateUs() {
-+  return last_update_.ToJavaTime();
++long AdBlockUpdaterService::GetLastUpdate() {
++  return pref_service_->GetTime(kAdBlockLastCheckTime).ToJavaTime();
 +}
 +
-+long AdBlockUpdaterService::GetLastOkUpdateUs() {
++long AdBlockUpdaterService::GetLastOkUpdate() {
 +  base::Time lastOk = pref_service_->GetTime(kAdBlockLastCheckTimeOk);
 +  return lastOk.ToJavaTime();
++}
++
++int AdBlockUpdaterService::GetAdBlockUpdateTimePeriod() {
++  return pref_service_->GetInteger(kAdBlockFiltersCheckPeriod);
++}
++
++void AdBlockUpdaterService::SetAdBlockUpdateTimePeriod(int days) {
++  pref_service_->SetInteger(kAdBlockFiltersCheckPeriod, days);
++  ReStart(0);
 +}
 +
 +// static
 +void AdBlockUpdaterService::RegisterPrefs(PrefRegistrySimple* registry) {
 +  registry->RegisterStringPref(kAdBlockFiltersURL, std::string());
++  registry->RegisterIntegerPref(kAdBlockFiltersCheckPeriod, 7);
 +  registry->RegisterTimePref(kAdBlockLastCheckTime, base::Time());
 +  registry->RegisterTimePref(kAdBlockLastCheckTimeOk, base::Time());
 +
@@ -1303,7 +1555,7 @@ diff --git a/components/component_updater/adblock_updater_service.h b/components
 new file mode 100644
 --- /dev/null
 +++ b/components/component_updater/adblock_updater_service.h
-@@ -0,0 +1,118 @@
+@@ -0,0 +1,124 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1346,14 +1598,14 @@ new file mode 100644
 +namespace adblock_updater {
 +
 +// Called when a non-blocking call in this module completes.
-+using Callback = base::OnceCallback<void(Error error)>;
++using Callback = base::OnceCallback<void(AdblockError error)>;
 +
 +class Observer {
 +   public:
 +    virtual ~Observer() {}
 +
 +    // Called by the update service when a state change happens.
-+    virtual void OnEvent(Event event, Error error) = 0;
++    virtual void OnEvent(AdblockEvent event, AdblockError error) = 0;
 +};
 +
 +// The AdBlock update service is in charge of downloading and saving the
@@ -1384,10 +1636,14 @@ new file mode 100644
 +  std::string GetMostRecentIndexedVersion();
 +
 +  // return date/time (in millis) of last successfully request
-+  long GetLastOkUpdateUs();
++  long GetLastOkUpdate();
 +
 +  // return date/time (in millis) of last request
-+  long GetLastUpdateUs();
++  long GetLastUpdate();
++
++  // Get/Set check interval (in days)
++  int GetAdBlockUpdateTimePeriod();
++  void SetAdBlockUpdateTimePeriod(int days);
 +
 +  // To be called for an user-triggered update.
 +  // Will not result in an actual update if the last update was too recently triggered.
@@ -1396,11 +1652,13 @@ new file mode 100644
 +  static void RegisterPrefs(PrefRegistrySimple* registry);
 +
 + private:
-+  void NotifyObservers(Event event, Error error);
++  void ReStart(int delay);
++
++  void NotifyObservers(AdblockEvent event, AdblockError error);
 +  void OnDemandScheduledUpdate(component_updater::UpdateScheduler::OnFinishedCallback on_finished);
 +  bool OnDemandUpdateAsNeeded(bool is_foreground, Callback on_finished);
 +  void OnDemandUpdateInternal(bool is_foreground, Callback on_finished);
-+  void OnUpdateComplete(Callback callback, scoped_refptr<DownloadFiltersTask> task, Error error);
++  void OnUpdateComplete(Callback callback, scoped_refptr<DownloadFiltersTask> task, AdblockError error);
 +  void RulesetPublishedCallback();
 +
 +  base::ObserverList<Observer>::Unchecked observer_list_;
@@ -1526,7 +1784,7 @@ new file mode 100644
 +  createSimpleURLLoader(true);
 +
 +  if (!simple_url_loader_) {
-+    TaskComplete(Error::INVALID_ARGUMENT);
++    TaskComplete(AdblockError::INVALID_ARGUMENT);
 +    return;
 +  }
 +
@@ -1574,9 +1832,9 @@ new file mode 100644
 +
 +    // the remote filters are not more recent than known ones
 +    LOG(INFO) << "DownloadFiltersTask: Update not needed";
-+    TaskComplete(Error::UPDATE_NOT_NEEDED);
++    TaskComplete(AdblockError::UPDATE_NOT_NEEDED);
 +  } else {
-+    TaskComplete(Error::DOWNLOAD_ERROR);
++    TaskComplete(AdblockError::DOWNLOAD_ERROR);
 +  }
 +}
 +
@@ -1629,12 +1887,12 @@ new file mode 100644
 +          << "' to '" << file_path << "' with net_error " << net_error << " and error " << error;
 +
 +  if (error) {
-+    TaskComplete(Error::DOWNLOAD_ERROR);
++    TaskComplete(AdblockError::DOWNLOAD_ERROR);
 +    return;
 +  }
 +
 +  file_path_ = file_path;
-+  TaskComplete(Error::NONE);
++  TaskComplete(AdblockError::NONE);
 +}
 +
 +void DownloadFiltersTask::Cancel() {
@@ -1644,10 +1902,10 @@ new file mode 100644
 +
 +  // deletion of the simple_url_loader_ will cause cancellation of its active request, if any
 +
-+  TaskComplete(Error::UPDATE_CANCELED);
++  TaskComplete(AdblockError::UPDATE_CANCELED);
 +}
 +
-+void DownloadFiltersTask::TaskComplete(Error error) {
++void DownloadFiltersTask::TaskComplete(AdblockError error) {
 +  DCHECK(thread_checker_.CalledOnValidThread());
 +
 +  base::ThreadTaskRunnerHandle::Get()->PostTask(
@@ -1668,7 +1926,7 @@ diff --git a/components/component_updater/download_filters_task.h b/components/c
 new file mode 100644
 --- /dev/null
 +++ b/components/component_updater/download_filters_task.h
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,131 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1705,7 +1963,8 @@ new file mode 100644
 +namespace adblock_updater {
 +
 +// Errors generated as a result of calling Run() or by the service itself (UPDATE_IN_PROGRESS or UPDATE_CANCELED)
-+enum class Error {
++// GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser.flags
++enum class AdblockError {
 +  NONE = 0,
 +  UPDATE_IN_PROGRESS = 1,
 +  UPDATE_CANCELED = 2,
@@ -1715,7 +1974,8 @@ new file mode 100644
 +  MAX_VALUE,
 +};
 +
-+enum class Event {
++// GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser.flags
++enum class AdblockEvent {
 +      // Sent before the update client does an update check.
 +      ADBLOCK_CHECKING_FOR_UPDATES = 1,
 +
@@ -1744,7 +2004,7 @@ new file mode 100644
 +class DownloadFiltersTask : public base::RefCounted<DownloadFiltersTask> {
 + public:
 +  using Callback =
-+      base::OnceCallback<void(scoped_refptr<DownloadFiltersTask> task, Error error)>;
++      base::OnceCallback<void(scoped_refptr<DownloadFiltersTask> task, AdblockError error)>;
 +
 +  // |shared_url_network_factory| is injected here for the URL loader factory.
 +  // |is_foreground| is true when the update task is initiated by the user.
@@ -1776,7 +2036,7 @@ new file mode 100644
 +
 +  // Called when the task has completed either because the task has run or
 +  // it has been canceled.
-+  void TaskComplete(Error error);
++  void TaskComplete(AdblockError error);
 +
 +  base::ThreadChecker thread_checker_;
 +  scoped_refptr<network::SharedURLLoaderFactory> shared_url_network_factory_;
@@ -1937,7 +2197,18 @@ diff --git a/components/subresource_filter/content/browser/ruleset_service.cc b/
 diff --git a/components/subresource_filter/content/browser/ruleset_service.h b/components/subresource_filter/content/browser/ruleset_service.h
 --- a/components/subresource_filter/content/browser/ruleset_service.h
 +++ b/components/subresource_filter/content/browser/ruleset_service.h
-@@ -182,7 +182,7 @@ class RulesetService : public base::SupportsWeakPtr<RulesetService> {
+@@ -171,6 +171,10 @@ class RulesetService : public base::SupportsWeakPtr<RulesetService> {
+     publisher_->SetRulesetPublishedCallbackForTesting(std::move(callback));
+   }
+ 
++  void SetRulesetPublishedCallback(base::OnceClosure callback) {
++    publisher_->SetRulesetPublishedCallbackForTesting(std::move(callback));
++  }
++
+   // Indexes, stores, and publishes the given unindexed ruleset, unless its
+   // |content_version| matches that of the most recently indexed version, in
+   // which case it does nothing. The files comprising the unindexed ruleset
+@@ -182,7 +186,7 @@ class RulesetService : public base::SupportsWeakPtr<RulesetService> {
    //
    // Virtual so that it can be mocked out in tests.
    virtual void IndexAndStoreAndPublishRulesetIfNeeded(
@@ -1946,7 +2217,7 @@ diff --git a/components/subresource_filter/content/browser/ruleset_service.h b/c
  
    // Get the ruleset version associated with the current local_state_.
    IndexedRulesetVersion GetMostRecentlyIndexedVersion() const;
-@@ -215,6 +215,11 @@ class RulesetService : public base::SupportsWeakPtr<RulesetService> {
+@@ -215,6 +219,11 @@ class RulesetService : public base::SupportsWeakPtr<RulesetService> {
        const base::FilePath& indexed_ruleset_base_dir,
        const UnindexedRulesetInfo& unindexed_ruleset_info);
  
