@@ -38,7 +38,8 @@ to use the flag in the hamburger menu to navigate with a custom useragent leavin
  .../renderer_host/render_process_host_impl.cc |   1 +
  .../browser/web_contents/web_contents_impl.cc |   4 +-
  .../framehost/NavigationControllerImpl.java   |   6 +-
- 31 files changed, 751 insertions(+), 13 deletions(-)
+ content/renderer/render_thread_impl.cc        |   1 -
+ 32 files changed, 751 insertions(+), 14 deletions(-)
  create mode 100644 chrome/android/java/res/layout/custom_useragent_preferences.xml
  create mode 100644 chrome/android/java/res/xml/useragent_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/UserAgentPreferences.java
@@ -253,7 +254,7 @@ new file mode 100644
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
-@@ -69,6 +69,7 @@ import org.chromium.chrome.browser.app.appmenu.AppMenuPropertiesDelegateImpl;
+@@ -73,6 +73,7 @@ import org.chromium.chrome.browser.app.appmenu.AppMenuPropertiesDelegateImpl;
  import org.chromium.chrome.browser.app.flags.ChromeCachedFlags;
  import org.chromium.chrome.browser.app.tab_activity_glue.ReparentingDelegateFactory;
  import org.chromium.chrome.browser.app.tabmodel.AsyncTabParamsManagerSingleton;
@@ -261,7 +262,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
  import org.chromium.chrome.browser.bookmarks.BookmarkBridge;
  import org.chromium.chrome.browser.bookmarks.BookmarkBridge.BookmarkItem;
  import org.chromium.chrome.browser.bookmarks.BookmarkModel;
-@@ -206,6 +207,13 @@ import org.chromium.ui.modaldialog.ModalDialogManager;
+@@ -213,6 +214,13 @@ import org.chromium.ui.modaldialog.ModalDialogManager;
  import org.chromium.ui.widget.Toast;
  import org.chromium.url.Origin;
  import org.chromium.webapk.lib.client.WebApkNavigationClient;
@@ -275,7 +276,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
  
  import org.chromium.url.GURL;
  
-@@ -2074,11 +2082,18 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
+@@ -2095,11 +2103,18 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
          } else if (id == R.id.view_source_id) {
              currentTab.getWebContents().getNavigationController().loadUrl(new LoadUrlParams("view-source:"+currentTab.getUrlString()));
          } else if (id == R.id.request_desktop_site_id || id == R.id.request_desktop_site_check_id) {
@@ -796,22 +797,22 @@ diff --git a/chrome/browser/android/preferences/privacy_preferences_manager.cc b
 +  bool overrideUserAgentEnabled =
 +    g_browser_process->local_state()->GetBoolean(prefs::kOverrideUserAgentEnabled);
 +  std::string ua = g_browser_process->local_state()->GetString(prefs::kOverrideUserAgent);
++  if (ua.empty()) {
++    ua = ChromeContentBrowserClient().GetUserAgent();
++  }
 +
 +  base::CommandLine* parsed_command_line =
 +      base::CommandLine::ForCurrentProcess();
 +  parsed_command_line->RemoveSwitch(switches::kUserAgent);
-+  if (overrideUserAgentEnabled) {
-+    parsed_command_line->AppendSwitchASCII(switches::kUserAgent, ua);
-+  }
++  if (!ua.empty()) {
++    if (overrideUserAgentEnabled) {
++      parsed_command_line->AppendSwitchASCII(switches::kUserAgent, ua);
++    }
 +
-+  for (auto iter = content::RenderProcessHost::AllHostsIterator(); !iter.IsAtEnd();
-+      iter.Advance()) {
-+    if (iter.GetCurrentValue()->IsInitializedAndNotDead()) {
-+      if (overrideUserAgentEnabled) {
++    for (auto iter = content::RenderProcessHost::AllHostsIterator(); !iter.IsAtEnd();
++         iter.Advance()) {
++      if (iter.GetCurrentValue()->IsInitializedAndNotDead()) {
 +        iter.GetCurrentValue()->GetRendererInterface()->SetUserAgent(ua);
-+      } else {
-+        iter.GetCurrentValue()->GetRendererInterface()->SetUserAgent(
-+           ChromeContentBrowserClient().GetUserAgent());
 +      }
 +    }
 +  }
@@ -1080,7 +1081,7 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
 diff --git a/chrome/common/pref_names.cc b/chrome/common/pref_names.cc
 --- a/chrome/common/pref_names.cc
 +++ b/chrome/common/pref_names.cc
-@@ -3124,4 +3124,17 @@ const char kIncognitoTabHistoryEnabled[] =
+@@ -3121,4 +3121,17 @@ const char kIncognitoTabHistoryEnabled[] =
      "incognito_tab_history_enabled";
  #endif
  
@@ -1101,7 +1102,7 @@ diff --git a/chrome/common/pref_names.cc b/chrome/common/pref_names.cc
 diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
 --- a/chrome/common/pref_names.h
 +++ b/chrome/common/pref_names.h
-@@ -1097,6 +1097,14 @@ extern const char kSecurityTokenSessionNotificationSeconds[];
+@@ -1096,6 +1096,14 @@ extern const char kSecurityTokenSessionNotificationSeconds[];
  extern const char kIncognitoTabHistoryEnabled[];
  #endif
  
@@ -1228,6 +1229,17 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/frameh
          void clearHistory(long nativeNavigationControllerAndroid, NavigationControllerImpl caller);
          int getNavigationHistory(long nativeNavigationControllerAndroid,
                  NavigationControllerImpl caller, Object history);
+diff --git a/content/renderer/render_thread_impl.cc b/content/renderer/render_thread_impl.cc
+--- a/content/renderer/render_thread_impl.cc
++++ b/content/renderer/render_thread_impl.cc
+@@ -1697,7 +1697,6 @@ void RenderThreadImpl::SetWebKitSharedTimersSuspended(bool suspend) {
+ }
+ 
+ void RenderThreadImpl::SetUserAgent(const std::string& user_agent) {
+-  DCHECK(user_agent_.IsNull());
+   user_agent_ = WebString::FromUTF8(user_agent);
+   GetContentClient()->renderer()->DidSetUserAgent(user_agent);
+ }
 -- 
 2.17.1
 
