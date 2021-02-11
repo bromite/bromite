@@ -36,8 +36,8 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  .../sessions/session_restore_android.cc       |   4 +-
  .../strings/android_chrome_strings.grd        |  14 +
  components/component_updater/BUILD.gn         |   6 +
- .../adblock_updater_service.cc                | 345 ++++++++++++++++++
- .../adblock_updater_service.h                 | 124 +++++++
+ .../adblock_updater_service.cc                | 348 ++++++++++++++++++
+ .../adblock_updater_service.h                 | 125 +++++++
  .../download_filters_task.cc                  | 237 ++++++++++++
  .../component_updater/download_filters_task.h | 131 +++++++
  ...ent_subresource_filter_throttle_manager.cc |  11 +
@@ -48,7 +48,7 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  .../browser/subresource_filter_features.cc    | 113 +-----
  .../core/common/common_features.cc            |   2 +-
  .../navigation_throttle_runner.cc             |   5 -
- 39 files changed, 1674 insertions(+), 141 deletions(-)
+ 39 files changed, 1678 insertions(+), 141 deletions(-)
  create mode 100644 chrome/android/java/res/layout/adblock_editor.xml
  create mode 100644 chrome/android/java/res/xml/adblock_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
@@ -206,9 +206,9 @@ new file mode 100644
 +        android:fragment="org.chromium.chrome.browser.settings.AdBlockEditor" />
 +
 +    <org.chromium.components.browser_ui.settings.SpinnerPreference
-+        android:key="adblock_period_spinner"
++        android:key="adblock_frequency_spinner"
 +        android:persistent="false"
-+        android:title="@string/options_adblock_period_title"
++        android:title="@string/options_adblock_frequency_title"
 +        app:singleLine="true" />
 +
 +    <org.chromium.components.browser_ui.settings.ButtonPreference
@@ -447,7 +447,7 @@ new file mode 100644
 +    private static final String PREF_ADBLOCK_INDEX_VERSION = "adblock_current_index_version";
 +    private static final String PREF_ADBLOCK_CHECK_NOW = "adblock_startcheck";
 +    private static final String PREF_ADBLOCK_CURRENT_STATUS = "adblock_current_status";
-+    private static final String PREF_ADBLOCK_PERIOD_SPINNER = "adblock_period_spinner";
++    private static final String PREF_ADBLOCK_FREQUENCY_SPINNER = "adblock_frequency_spinner";
 +
 +    private Preference mAdBlockEdit;
 +    private TextMessagePreference currentIndexVersion;
@@ -469,20 +469,20 @@ new file mode 100644
 +            return true;
 +        });
 +
-+        SpinnerPreference spinner = (SpinnerPreference) findPreference(PREF_ADBLOCK_PERIOD_SPINNER);
-+        TimePeriodSpinnerOption[] spinnerOptions = getTimePeriodSpinnerOptions();
-+        int selectedTimePeriod = AdblockUpdaterBridge.getAdBlockUpdateTimePeriod();
++        SpinnerPreference spinner = (SpinnerPreference) findPreference(PREF_ADBLOCK_FREQUENCY_SPINNER);
++        TimeFrequencySpinnerOption[] spinnerOptions = getTimeFrequencySpinnerOptions();
++        int selectedTimeFrequency = AdblockUpdaterBridge.getAdBlockUpdateTimeFrequency();
 +        int spinnerOptionIndex = -1;
 +        for (int i = 0; i < spinnerOptions.length; ++i) {
-+            if (spinnerOptions[i].getDays() == selectedTimePeriod) {
++            if (spinnerOptions[i].getDays() == selectedTimeFrequency) {
 +                spinnerOptionIndex = i;
 +                break;
 +            }
 +        }
 +        spinner.setOptions(spinnerOptions, spinnerOptionIndex);
 +        spinner.setOnPreferenceChangeListener((preference, newValue) -> {
-+            AdblockUpdaterBridge.setAdBlockUpdateTimePeriod(
-+                    ((TimePeriodSpinnerOption) newValue).getDays());
++            AdblockUpdaterBridge.setAdBlockUpdateTimeFrequency(
++                    ((TimeFrequencySpinnerOption) newValue).getDays());
 +            return true;
 +        });
 +
@@ -540,26 +540,26 @@ new file mode 100644
 +        updateCurrentAdBlockSettings();
 +    }
 +
-+    private TimePeriodSpinnerOption[] getTimePeriodSpinnerOptions() {
-+        List<TimePeriodSpinnerOption> options = new ArrayList<>();
-+        options.add(new TimePeriodSpinnerOption(1,
-+                getString(R.string.options_adblock_period_day)));
-+        options.add(new TimePeriodSpinnerOption(4,
-+                getString(R.string.options_adblock_period_days)));
-+        options.add(new TimePeriodSpinnerOption(7,
-+                getString(R.string.options_adblock_period_days)));
-+        options.add(new TimePeriodSpinnerOption(10,
-+                getString(R.string.options_adblock_period_days)));
-+        options.add(new TimePeriodSpinnerOption(30,
-+                getString(R.string.options_adblock_period_days)));
-+        return options.toArray(new TimePeriodSpinnerOption[0]);
++    private TimeFrequencySpinnerOption[] getTimeFrequencySpinnerOptions() {
++        List<TimeFrequencySpinnerOption> options = new ArrayList<>();
++        options.add(new TimeFrequencySpinnerOption(1,
++                getString(R.string.options_adblock_frequency_day)));
++        options.add(new TimeFrequencySpinnerOption(4,
++                getString(R.string.options_adblock_frequency_days)));
++        options.add(new TimeFrequencySpinnerOption(7,
++                getString(R.string.options_adblock_frequency_days)));
++        options.add(new TimeFrequencySpinnerOption(10,
++                getString(R.string.options_adblock_frequency_days)));
++        options.add(new TimeFrequencySpinnerOption(30,
++                getString(R.string.options_adblock_frequency_days)));
++        return options.toArray(new TimeFrequencySpinnerOption[0]);
 +    }
 +
-+    static class TimePeriodSpinnerOption {
++    static class TimeFrequencySpinnerOption {
 +        private int mDays;
 +        private String mTitle;
 +
-+        public TimePeriodSpinnerOption(int days, String title) {
++        public TimeFrequencySpinnerOption(int days, String title) {
 +            mDays = days;
 +            mTitle = Integer.toString(days) + " " + title;
 +        }
@@ -607,13 +607,13 @@ diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources
 +      <message name="IDS_ADBLOCK_LAST_CHECKED_TEXT" desc="The title of the Ad Blocking last checked datetime" formatter_data="android_java">
 +        Last Checked:
 +      </message>
-+      <message name="IDS_OPTIONS_ADBLOCK_PERIOD_TITLE" desc="The title of the Ad Blocking period to check update" formatter_data="android_java">
++      <message name="IDS_OPTIONS_ADBLOCK_FREQUENCY_TITLE" desc="The title of the Ad Blocking frequency to check update" formatter_data="android_java">
 +        Check every
 +      </message>
-+      <message name="IDS_OPTIONS_ADBLOCK_PERIOD_DAY" desc="Ad Blocking period single day" formatter_data="android_java">
++      <message name="IDS_OPTIONS_ADBLOCK_FREQUENCY_DAY" desc="Ad Blocking frequency single day" formatter_data="android_java">
 +        Day
 +      </message>
-+      <message name="IDS_OPTIONS_ADBLOCK_PERIOD_DAYS" desc="Ad Blocking period multiple day" formatter_data="android_java">
++      <message name="IDS_OPTIONS_ADBLOCK_FREQUENCY_DAYS" desc="Ad Blocking frequency multiple day" formatter_data="android_java">
 +        Days
 +      </message>
 +      <message name="IDS_OPTIONS_ADBLOCK_STARTCHECK_LABEL" desc="The title of the Ad Blocking button to check update" formatter_data="android_java">
@@ -932,13 +932,13 @@ new file mode 100644
 +  return base::android::ConvertUTF8ToJavaString(env, url);
 +}
 +
-+static jint JNI_AdblockUpdaterBridge_GetAdBlockUpdateTimePeriod(JNIEnv* env) {
-+  int value = g_browser_process->adblock_updater()->GetAdBlockUpdateTimePeriod();
++static jint JNI_AdblockUpdaterBridge_GetAdBlockUpdateTimeFrequency(JNIEnv* env) {
++  int value = g_browser_process->adblock_updater()->GetAdBlockUpdateTimeFrequency();
 +  return value;
 +}
 +
-+static void JNI_AdblockUpdaterBridge_SetAdBlockUpdateTimePeriod(JNIEnv* env, jint days) {
-+  g_browser_process->adblock_updater()->SetAdBlockUpdateTimePeriod(days);
++static void JNI_AdblockUpdaterBridge_SetAdBlockUpdateTimeFrequency(JNIEnv* env, jint days) {
++  g_browser_process->adblock_updater()->SetAdBlockUpdateTimeFrequency(days);
 +}
 +
 +static jlong JNI_AdblockUpdaterBridge_GetAdBlockLastOkUpdate(JNIEnv* env) {
@@ -1081,12 +1081,12 @@ new file mode 100644
 +        return AdblockUpdaterBridgeJni.get().getAdBlockFiltersURL();
 +    }
 +
-+    public static int getAdBlockUpdateTimePeriod() {
-+        return AdblockUpdaterBridgeJni.get().getAdBlockUpdateTimePeriod();
++    public static int getAdBlockUpdateTimeFrequency() {
++        return AdblockUpdaterBridgeJni.get().getAdBlockUpdateTimeFrequency();
 +    }
 +
-+    public static void setAdBlockUpdateTimePeriod(int number_of_days) {
-+        AdblockUpdaterBridgeJni.get().setAdBlockUpdateTimePeriod(number_of_days);
++    public static void setAdBlockUpdateTimeFrequency(int number_of_days) {
++        AdblockUpdaterBridgeJni.get().setAdBlockUpdateTimeFrequency(number_of_days);
 +    }
 +
 +    public static String getAdBlockMostRecentIndexedVersion() {
@@ -1130,8 +1130,8 @@ new file mode 100644
 +        String getAdBlockMostRecentIndexedVersion();
 +        long getAdBlockLastUpdate();
 +        long getAdBlockLastOkUpdate();
-+        int getAdBlockUpdateTimePeriod();
-+        void setAdBlockUpdateTimePeriod(int number_of_days);
++        int getAdBlockUpdateTimeFrequency();
++        void setAdBlockUpdateTimeFrequency(int number_of_days);
 +        void adBlockStartCheckOnDemand();
 +        void adBlockRegisterCallback();
 +    }
@@ -1205,7 +1205,7 @@ diff --git a/components/component_updater/adblock_updater_service.cc b/component
 new file mode 100644
 --- /dev/null
 +++ b/components/component_updater/adblock_updater_service.cc
-@@ -0,0 +1,345 @@
+@@ -0,0 +1,348 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1255,7 +1255,7 @@ new file mode 100644
 +const char kAdBlockFiltersURL[] = "adblock.filters_url";
 +
 +// Holds the URL to an indexed subresource filters file.
-+const char kAdBlockFiltersCheckPeriod[] = "adblock.check_period";
++const char kAdBlockFiltersCheckFrequency[] = "adblock.check_frequency";
 +
 +// Last check time
 +const char kAdBlockLastCheckTime[] = "adblock.last_check_time";
@@ -1267,7 +1267,6 @@ new file mode 100644
 +// these could be made configurable
 +const int initial_check_delay = 5,
 +      on_demand_check_delay = 60; // minimum 1 minute between each on-demand check
-+int next_check_delay = 60*60*24*7; // 1 week
 +
 +AdBlockUpdaterService::AdBlockUpdaterService(
 +      scoped_refptr<network::SharedURLLoaderFactory> shared_url_network_factory,
@@ -1320,30 +1319,34 @@ new file mode 100644
 +}
 +
 +void AdBlockUpdaterService::ReStart(int delay) {
-+  int days = GetAdBlockUpdateTimePeriod();
++  int days = GetAdBlockUpdateTimeFrequency();
 +  if (days <= 0) days = 7;
-+  next_check_delay = 60*60*24*days;
++  next_check_delay_ = 60*60*24*days;
 +
-+  if (delay == 0) delay = next_check_delay;
++  if (delay == 0) delay = next_check_delay_;
 +
 +  LOG(INFO) << "AdBlockUpdaterService: starting up. "
 +          << "First update attempt will take place in "
 +          << delay << " seconds. "
 +          << "Next update attempt will take place in "
-+          << next_check_delay << " seconds. ";
++          << next_check_delay_ << " seconds. ";
 +
 +  scheduler_->Stop();
 +  scheduler_->Schedule(
 +      base::TimeDelta::FromSeconds(delay),
-+      base::TimeDelta::FromSeconds(next_check_delay),
++      base::TimeDelta::FromSeconds(next_check_delay_),
 +      base::Bind(&AdBlockUpdaterService::OnDemandScheduledUpdate,
 +                 base::Unretained(this)), base::DoNothing());
 +}
 +
 +void AdBlockUpdaterService::OnDemandScheduledUpdate(
 +        component_updater::UpdateScheduler::OnFinishedCallback on_finished) {
-+  //TODO: call on_finished
-+  OnDemandUpdateAsNeeded(false, Callback());
++  Callback on_finished_callback = base::BindOnce(
++      [](component_updater::UpdateScheduler::OnFinishedCallback on_finished,
++         AdblockError error) { std::move(on_finished).Run(); },
++      std::move(on_finished));
++
++  OnDemandUpdateAsNeeded(false, std::move(on_finished_callback));
 +}
 +
 +bool AdBlockUpdaterService::OnDemandUpdate(Callback on_finished) {
@@ -1359,7 +1362,7 @@ new file mode 100644
 +  if (!version.content_version.empty()) {
 +    // Check if the request is too soon.
 +    if (!last_update_.is_null()) {
-+      int deltaCheck = is_foreground == false ? next_check_delay : on_demand_check_delay;
++      int deltaCheck = is_foreground == false ? next_check_delay_ : on_demand_check_delay;
 +      base::TimeDelta delta = base::Time::Now() - last_update_;
 +      if (is_updating_ || (delta < base::TimeDelta::FromSeconds(deltaCheck))) {
 +        LOG(INFO) << "AdBlockUpdaterService: update delayed. Wait for "
@@ -1530,19 +1533,19 @@ new file mode 100644
 +  return lastOk.ToJavaTime();
 +}
 +
-+int AdBlockUpdaterService::GetAdBlockUpdateTimePeriod() {
-+  return pref_service_->GetInteger(kAdBlockFiltersCheckPeriod);
++int AdBlockUpdaterService::GetAdBlockUpdateTimeFrequency() {
++  return pref_service_->GetInteger(kAdBlockFiltersCheckFrequency);
 +}
 +
-+void AdBlockUpdaterService::SetAdBlockUpdateTimePeriod(int days) {
-+  pref_service_->SetInteger(kAdBlockFiltersCheckPeriod, days);
++void AdBlockUpdaterService::SetAdBlockUpdateTimeFrequency(int days) {
++  pref_service_->SetInteger(kAdBlockFiltersCheckFrequency, days);
 +  ReStart(0);
 +}
 +
 +// static
 +void AdBlockUpdaterService::RegisterPrefs(PrefRegistrySimple* registry) {
 +  registry->RegisterStringPref(kAdBlockFiltersURL, std::string());
-+  registry->RegisterIntegerPref(kAdBlockFiltersCheckPeriod, 7);
++  registry->RegisterIntegerPref(kAdBlockFiltersCheckFrequency, 7);
 +  registry->RegisterTimePref(kAdBlockLastCheckTime, base::Time());
 +  registry->RegisterTimePref(kAdBlockLastCheckTimeOk, base::Time());
 +
@@ -1555,7 +1558,7 @@ diff --git a/components/component_updater/adblock_updater_service.h b/components
 new file mode 100644
 --- /dev/null
 +++ b/components/component_updater/adblock_updater_service.h
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,125 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1642,8 +1645,8 @@ new file mode 100644
 +  long GetLastUpdate();
 +
 +  // Get/Set check interval (in days)
-+  int GetAdBlockUpdateTimePeriod();
-+  void SetAdBlockUpdateTimePeriod(int days);
++  int GetAdBlockUpdateTimeFrequency();
++  void SetAdBlockUpdateTimeFrequency(int days);
 +
 +  // To be called for an user-triggered update.
 +  // Will not result in an actual update if the last update was too recently triggered.
@@ -1674,6 +1677,7 @@ new file mode 100644
 +
 +  bool is_updating_ = false;
 +  bool scheduled_ = false;
++  int next_check_delay_;
 +  std::set<scoped_refptr<DownloadFiltersTask>> tasks_;
 +};
 +
