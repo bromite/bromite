@@ -41,6 +41,9 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  .../download_filters_task.cc                  | 237 ++++++++++++
  .../component_updater/download_filters_task.h | 131 +++++++
  ...ent_subresource_filter_throttle_manager.cc |  11 +
+ .../content/browser/ruleset_publisher.h       |   2 +
+ .../content/browser/ruleset_publisher_impl.cc |   5 +
+ .../content/browser/ruleset_publisher_impl.h  |   2 +
  .../content/browser/ruleset_service.cc        |  33 +-
  .../content/browser/ruleset_service.h         |  11 +-
  .../content/browser/ruleset_version.h         |   4 +
@@ -48,7 +51,7 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  .../browser/subresource_filter_features.cc    | 113 +-----
  .../core/common/common_features.cc            |   2 +-
  .../navigation_throttle_runner.cc             |   5 -
- 39 files changed, 1678 insertions(+), 141 deletions(-)
+ 42 files changed, 1687 insertions(+), 141 deletions(-)
  create mode 100644 chrome/android/java/res/layout/adblock_editor.xml
  create mode 100644 chrome/android/java/res/xml/adblock_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
@@ -1315,10 +1318,10 @@ new file mode 100644
 +    return;
 +  scheduled_ = true;
 +
-+  ReStart(initial_check_delay);
++  StartWithDelay(initial_check_delay);
 +}
 +
-+void AdBlockUpdaterService::ReStart(int delay) {
++void AdBlockUpdaterService::StartWithDelay(int delay) {
 +  int days = GetAdBlockUpdateTimeFrequency();
 +  if (days <= 0) days = 7;
 +  next_check_delay_ = 60*60*24*days;
@@ -1539,7 +1542,7 @@ new file mode 100644
 +
 +void AdBlockUpdaterService::SetAdBlockUpdateTimeFrequency(int days) {
 +  pref_service_->SetInteger(kAdBlockFiltersCheckFrequency, days);
-+  ReStart(0);
++  StartWithDelay(0);
 +}
 +
 +// static
@@ -1655,7 +1658,7 @@ new file mode 100644
 +  static void RegisterPrefs(PrefRegistrySimple* registry);
 +
 + private:
-+  void ReStart(int delay);
++  void StartWithDelay(int delay);
 +
 +  void NotifyObservers(AdblockEvent event, AdblockError error);
 +  void OnDemandScheduledUpdate(component_updater::UpdateScheduler::OnFinishedCallback on_finished);
@@ -2083,6 +2086,45 @@ diff --git a/components/subresource_filter/content/browser/content_subresource_f
      return throttle;
    }
  
+diff --git a/components/subresource_filter/content/browser/ruleset_publisher.h b/components/subresource_filter/content/browser/ruleset_publisher.h
+--- a/components/subresource_filter/content/browser/ruleset_publisher.h
++++ b/components/subresource_filter/content/browser/ruleset_publisher.h
+@@ -45,6 +45,8 @@ class RulesetPublisher {
+   // Set the callback on publish associated with the RulesetPublisher.
+   virtual void SetRulesetPublishedCallbackForTesting(
+       base::OnceClosure callback) = 0;
++  virtual void SetRulesetPublishedCallback(
++      base::OnceClosure callback) = 0;
+ };
+ 
+ }  // namespace subresource_filter
+diff --git a/components/subresource_filter/content/browser/ruleset_publisher_impl.cc b/components/subresource_filter/content/browser/ruleset_publisher_impl.cc
+--- a/components/subresource_filter/content/browser/ruleset_publisher_impl.cc
++++ b/components/subresource_filter/content/browser/ruleset_publisher_impl.cc
+@@ -79,6 +79,11 @@ void RulesetPublisherImpl::SetRulesetPublishedCallbackForTesting(
+   ruleset_published_callback_ = std::move(callback);
+ }
+ 
++void RulesetPublisherImpl::SetRulesetPublishedCallback(
++    base::OnceClosure callback) {
++  ruleset_published_callback_ = std::move(callback);
++}
++
+ void RulesetPublisherImpl::TryOpenAndSetRulesetFile(
+     const base::FilePath& file_path,
+     int expected_checksum,
+diff --git a/components/subresource_filter/content/browser/ruleset_publisher_impl.h b/components/subresource_filter/content/browser/ruleset_publisher_impl.h
+--- a/components/subresource_filter/content/browser/ruleset_publisher_impl.h
++++ b/components/subresource_filter/content/browser/ruleset_publisher_impl.h
+@@ -46,6 +46,8 @@ class RulesetPublisherImpl : public RulesetPublisher,
+   VerifiedRulesetDealer::Handle* GetRulesetDealer() override;
+   void SetRulesetPublishedCallbackForTesting(
+       base::OnceClosure callback) override;
++  void SetRulesetPublishedCallback(
++      base::OnceClosure callback) override;
+ 
+   // Forwards calls to the underlying ruleset_service_.
+   void IndexAndStoreAndPublishRulesetIfNeeded(
 diff --git a/components/subresource_filter/content/browser/ruleset_service.cc b/components/subresource_filter/content/browser/ruleset_service.cc
 --- a/components/subresource_filter/content/browser/ruleset_service.cc
 +++ b/components/subresource_filter/content/browser/ruleset_service.cc
@@ -2206,7 +2248,7 @@ diff --git a/components/subresource_filter/content/browser/ruleset_service.h b/c
    }
  
 +  void SetRulesetPublishedCallback(base::OnceClosure callback) {
-+    publisher_->SetRulesetPublishedCallbackForTesting(std::move(callback));
++    publisher_->SetRulesetPublishedCallback(std::move(callback));
 +  }
 +
    // Indexes, stores, and publishes the given unindexed ruleset, unless its
