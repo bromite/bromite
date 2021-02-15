@@ -15,11 +15,11 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  chrome/android/java/res/values/values.xml     |   2 +
  .../java/res/xml/adblock_preferences.xml      |  43 +++
  .../android/java/res/xml/main_preferences.xml |   5 +
- .../chrome/browser/app/ChromeActivity.java    |  21 ++
+ .../chrome/browser/app/ChromeActivity.java    |  21 +
  .../browser/settings/AdBlockEditor.java       |  93 +++++
  .../browser/settings/AdBlockPreferences.java  | 173 +++++++++
  .../chrome/browser/tabmodel/TabModelImpl.java |   2 +-
- chrome/app/generated_resources.grd            |  43 +++
+ chrome/app/generated_resources.grd            |  46 +++
  chrome/browser/after_startup_task_utils.cc    |   5 +
  chrome/browser/browser_process.h              |   7 +
  chrome/browser/browser_process_impl.cc        |  29 ++
@@ -31,13 +31,13 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  .../flags/android/adblock_updater_bridge.h    |  33 ++
  .../flags/android/cached_feature_flags.cc     |   1 +
  .../flags/android/cached_feature_flags.h      |   2 +
- .../browser/flags/AdblockUpdaterBridge.java   | 105 ++++++
+ .../browser/flags/AdblockUpdaterBridge.java   | 105 +++++
  chrome/browser/prefs/browser_prefs.cc         |   1 +
  .../sessions/session_restore_android.cc       |   4 +-
  .../strings/android_chrome_strings.grd        |  14 +
  components/component_updater/BUILD.gn         |   6 +
- .../adblock_updater_service.cc                | 348 ++++++++++++++++++
- .../adblock_updater_service.h                 | 125 +++++++
+ .../adblock_updater_service.cc                | 364 ++++++++++++++++++
+ .../adblock_updater_service.h                 | 125 ++++++
  .../download_filters_task.cc                  | 237 ++++++++++++
  .../component_updater/download_filters_task.h | 131 +++++++
  ...ent_subresource_filter_throttle_manager.cc |  11 +
@@ -51,7 +51,7 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  .../browser/subresource_filter_features.cc    | 113 +-----
  .../core/common/common_features.cc            |   2 +-
  .../navigation_throttle_runner.cc             |   5 -
- 42 files changed, 1687 insertions(+), 141 deletions(-)
+ 42 files changed, 1706 insertions(+), 141 deletions(-)
  create mode 100644 chrome/android/java/res/layout/adblock_editor.xml
  create mode 100644 chrome/android/java/res/xml/adblock_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
@@ -524,6 +524,7 @@ new file mode 100644
 +            else if (event == AdblockEvent.ADBLOCK_UPDATE_DOWNLOADING) message = applicationContext.getString(R.string.options_adblock_event_3);
 +            else if (event == AdblockEvent.ADBLOCK_UPDATED) message = applicationContext.getString(R.string.options_adblock_event_4);
 +        }
++        else if (error == AdblockError.UPDATE_IN_PROGRESS) message = applicationContext.getString(R.string.options_adblock_error_1);
 +        else if (error == AdblockError.UPDATE_NOT_NEEDED) message = applicationContext.getString(R.string.options_adblock_error_3);
 +        else if (error == AdblockError.DOWNLOAD_ERROR) message = applicationContext.getString(R.string.options_adblock_error_4);
 +        return message;
@@ -544,17 +545,13 @@ new file mode 100644
 +    }
 +
 +    private TimeFrequencySpinnerOption[] getTimeFrequencySpinnerOptions() {
++        String days_string = getString(R.string.options_adblock_frequency_days);
 +        List<TimeFrequencySpinnerOption> options = new ArrayList<>();
-+        options.add(new TimeFrequencySpinnerOption(1,
-+                getString(R.string.options_adblock_frequency_day)));
-+        options.add(new TimeFrequencySpinnerOption(4,
-+                getString(R.string.options_adblock_frequency_days)));
-+        options.add(new TimeFrequencySpinnerOption(7,
-+                getString(R.string.options_adblock_frequency_days)));
-+        options.add(new TimeFrequencySpinnerOption(10,
-+                getString(R.string.options_adblock_frequency_days)));
-+        options.add(new TimeFrequencySpinnerOption(30,
-+                getString(R.string.options_adblock_frequency_days)));
++        options.add(new TimeFrequencySpinnerOption(0,
++                getString(R.string.options_adblock_frequency_never)));
++        options.add(new TimeFrequencySpinnerOption(7, days_string));
++        options.add(new TimeFrequencySpinnerOption(15, days_string));
++        options.add(new TimeFrequencySpinnerOption(30, days_string));
 +        return options.toArray(new TimeFrequencySpinnerOption[0]);
 +    }
 +
@@ -564,7 +561,10 @@ new file mode 100644
 +
 +        public TimeFrequencySpinnerOption(int days, String title) {
 +            mDays = days;
-+            mTitle = Integer.toString(days) + " " + title;
++            if (days != 0)
++                mTitle = Integer.toString(days) + " " + title;
++            else
++                mTitle = title;
 +        }
 +
 +        public int getDays() {
@@ -592,7 +592,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabMod
 diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
-@@ -10242,6 +10242,49 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -10242,6 +10242,52 @@ Please help our engineers fix this problem. Tell us what happened right before y
        Never show this again.
      </message>
  
@@ -608,13 +608,13 @@ diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources
 +        Current Indexed Filter Version
 +      </message>
 +      <message name="IDS_ADBLOCK_LAST_CHECKED_TEXT" desc="The title of the Ad Blocking last checked datetime" formatter_data="android_java">
-+        Last Checked:
++        Last checked:
 +      </message>
 +      <message name="IDS_OPTIONS_ADBLOCK_FREQUENCY_TITLE" desc="The title of the Ad Blocking frequency to check update" formatter_data="android_java">
 +        Check every
 +      </message>
-+      <message name="IDS_OPTIONS_ADBLOCK_FREQUENCY_DAY" desc="Ad Blocking frequency single day" formatter_data="android_java">
-+        Day
++      <message name="IDS_OPTIONS_ADBLOCK_FREQUENCY_NEVER" desc="Ad Blocking frequency never" formatter_data="android_java">
++        Never
 +      </message>
 +      <message name="IDS_OPTIONS_ADBLOCK_FREQUENCY_DAYS" desc="Ad Blocking frequency multiple day" formatter_data="android_java">
 +        Days
@@ -623,19 +623,22 @@ diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources
 +        Check Now
 +      </message>
 +      <message name="IDS_OPTIONS_ADBLOCK_EVENT_1" desc="The text for ADBLOCK_CHECKING_FOR_UPDATES" formatter_data="android_java">
-+        Adblock filter: checking for update
++        Checking for filters update...
 +      </message>
 +      <message name="IDS_OPTIONS_ADBLOCK_EVENT_3" desc="The text for ADBLOCK_UPDATE_DOWNLOADING" formatter_data="android_java">
-+        Adblock filter: downloading update...
++        Downloading new filters...
 +      </message>
 +      <message name="IDS_OPTIONS_ADBLOCK_EVENT_4" desc="The text for ADBLOCK_UPDATED" formatter_data="android_java">
-+        Adblock filter: update successfully installed
++        Updated filters successfully downloaded
++      </message>
++      <message name="IDS_OPTIONS_ADBLOCK_ERROR_1" desc="The text for UPDATE_IN_PROGRESS" formatter_data="android_java">
++        Checking in progress, please wait...
 +      </message>
 +      <message name="IDS_OPTIONS_ADBLOCK_ERROR_3" desc="The text for UPDATE_NOT_NEEDED" formatter_data="android_java">
-+        Adblock filter: update not needed
++        Filters already up to date
 +      </message>
 +      <message name="IDS_OPTIONS_ADBLOCK_ERROR_4" desc="The text for DOWNLOAD_ERROR" formatter_data="android_java">
-+        Adblock filter: download error
++        Filters download error
 +      </message>
 +    </if>
 +
@@ -1208,7 +1211,7 @@ diff --git a/components/component_updater/adblock_updater_service.cc b/component
 new file mode 100644
 --- /dev/null
 +++ b/components/component_updater/adblock_updater_service.cc
-@@ -0,0 +1,348 @@
+@@ -0,0 +1,364 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1269,7 +1272,7 @@ new file mode 100644
 +// all constants express seconds
 +// these could be made configurable
 +const int initial_check_delay = 5,
-+      on_demand_check_delay = 60; // minimum 1 minute between each on-demand check
++          on_demand_check_delay = 60; // minimum 1 minute between each on-demand check
 +
 +AdBlockUpdaterService::AdBlockUpdaterService(
 +      scoped_refptr<network::SharedURLLoaderFactory> shared_url_network_factory,
@@ -1323,23 +1326,27 @@ new file mode 100644
 +
 +void AdBlockUpdaterService::StartWithDelay(int delay) {
 +  int days = GetAdBlockUpdateTimeFrequency();
-+  if (days <= 0) days = 7;
++  if (days < 0) days = 7;
 +  next_check_delay_ = 60*60*24*days;
 +
-+  if (delay == 0) delay = next_check_delay_;
-+
-+  LOG(INFO) << "AdBlockUpdaterService: starting up. "
-+          << "First update attempt will take place in "
-+          << delay << " seconds. "
-+          << "Next update attempt will take place in "
-+          << next_check_delay_ << " seconds. ";
++  if (delay <= 0) delay = next_check_delay_;
 +
 +  scheduler_->Stop();
-+  scheduler_->Schedule(
-+      base::TimeDelta::FromSeconds(delay),
-+      base::TimeDelta::FromSeconds(next_check_delay_),
-+      base::Bind(&AdBlockUpdaterService::OnDemandScheduledUpdate,
-+                 base::Unretained(this)), base::DoNothing());
++  if (next_check_delay_ == 0) {
++    LOG(INFO) << "AdBlockUpdaterService: user disabled.";
++  } else {
++    LOG(INFO) << "AdBlockUpdaterService: starting up. "
++              << "First update attempt will take place in "
++              << delay << " seconds. "
++              << "Next update attempt will take place in "
++              << next_check_delay_ << " seconds. ";
++
++    scheduler_->Schedule(
++        base::TimeDelta::FromSeconds(delay),
++        base::TimeDelta::FromSeconds(next_check_delay_),
++        base::Bind(&AdBlockUpdaterService::OnDemandScheduledUpdate,
++                  base::Unretained(this)), base::DoNothing());
++  }
 +}
 +
 +void AdBlockUpdaterService::OnDemandScheduledUpdate(
@@ -1359,6 +1366,12 @@ new file mode 100644
 +bool AdBlockUpdaterService::OnDemandUpdateAsNeeded(bool is_foreground, Callback on_finished) {
 +  DCHECK(thread_checker_.CalledOnValidThread());
 +
++  if (is_updating_) {
++    LOG(INFO) << "AdBlockUpdaterService: update in progress. Please wait.";
++    NotifyObservers(AdblockEvent::ADBLOCK_CHECKING_FOR_UPDATES, AdblockError::UPDATE_IN_PROGRESS);
++    return false;
++  }
++
 +  last_update_ = pref_service_->GetTime(kAdBlockLastCheckTime);
 +
 +  auto version = ruleset_service_->GetMostRecentlyIndexedVersion();
@@ -1367,8 +1380,8 @@ new file mode 100644
 +    if (!last_update_.is_null()) {
 +      int deltaCheck = is_foreground == false ? next_check_delay_ : on_demand_check_delay;
 +      base::TimeDelta delta = base::Time::Now() - last_update_;
-+      if (is_updating_ || (delta < base::TimeDelta::FromSeconds(deltaCheck))) {
-+        LOG(INFO) << "AdBlockUpdaterService: update delayed. Wait for "
++      if (delta < base::TimeDelta::FromSeconds(deltaCheck)) {
++        LOG(INFO) << "AdBlockUpdaterService: update delayed. Wait "
 +                  << (base::TimeDelta::FromSeconds(deltaCheck)-delta);
 +        return false;
 +      }
@@ -1395,47 +1408,51 @@ new file mode 100644
 +  base::Time::Exploded e = {0};
 +  base::Time t = base::Time();
 +  auto version = ruleset_service_->GetMostRecentlyIndexedVersion();
-+  LOG(INFO) << "AdBlockUpdaterService: MostRecentIndexedVersion = " << version.content_version;
-+  std::vector<std::string> tokens =
-+      base::SplitString(version.content_version, ".", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
-+  int i = 0;
-+  bool failed = false;
-+  for (const std::string& token : tokens) {
-+    // parse as number
-+    int n = 0;
-+    if (!base::StringToInt(token, &n)) {
-+      failed = true;
-+      break;
-+    }
-+
-+    switch (i++) {
-+      case 0:
-+        e.year = 2019 + n;
-+        break;
-+      case 1:
-+        e.month = n + 1;
-+        break;
-+      case 2:
-+        e.day_of_month = n + 1;
-+        break;
-+      case 3:
-+        e.second = n % 60;
-+        n -= e.second;
-+        n /= 60;
-+        e.minute = n % 60;
-+        e.hour = n / 60;
-+        break;
-+      default:
++  if (version.content_version.empty()) {
++    LOG(INFO) << "AdBlockUpdaterService: MostRecentIndexedVersion is empty";
++  } else {
++    LOG(INFO) << "AdBlockUpdaterService: MostRecentIndexedVersion = " << version.content_version;
++    std::vector<std::string> tokens =
++        base::SplitString(version.content_version, ".", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
++    int i = 0;
++    bool failed = false;
++    for (const std::string& token : tokens) {
++      // parse as number
++      int n = 0;
++      if (!base::StringToInt(token, &n)) {
 +        failed = true;
 +        break;
-+    }
-+  }
++      }
 +
-+  if (failed) {
-+    LOG(WARNING) << "AdBlockUpdaterService: failed to parse most recent version as x.y.z.w dot-separated integers";
-+  } else {
-+    if (!base::Time::FromUTCExploded(e, &t))
-+      LOG(WARNING) << "AdBlockUpdaterService: failed to convert version to time.";
++      switch (i++) {
++        case 0:
++          e.year = 2019 + n;
++          break;
++        case 1:
++          e.month = n + 1;
++          break;
++        case 2:
++          e.day_of_month = n + 1;
++          break;
++        case 3:
++          e.second = n % 60;
++          n -= e.second;
++          n /= 60;
++          e.minute = n % 60;
++          e.hour = n / 60;
++          break;
++        default:
++          failed = true;
++          break;
++      }
++    }
++
++    if (failed) {
++      LOG(WARNING) << "AdBlockUpdaterService: failed to parse most recent version as x.y.z.w dot-separated integers";
++    } else {
++      if (!base::Time::FromUTCExploded(e, &t))
++        LOG(WARNING) << "AdBlockUpdaterService: failed to convert version to time.";
++    }
 +  }
 +
 +  NotifyObservers(AdblockEvent::ADBLOCK_CHECKING_FOR_UPDATES, AdblockError::NONE);
@@ -1520,6 +1537,7 @@ new file mode 100644
 +
 +void AdBlockUpdaterService::SetAdBlockFiltersURL(const std::string url) {
 +  pref_service_->SetString(kAdBlockFiltersURL, url);
++  pref_service_->SetTime(kAdBlockLastCheckTime, base::Time());
 +}
 +
 +std::string AdBlockUpdaterService::GetMostRecentIndexedVersion() {
@@ -1542,6 +1560,7 @@ new file mode 100644
 +
 +void AdBlockUpdaterService::SetAdBlockUpdateTimeFrequency(int days) {
 +  pref_service_->SetInteger(kAdBlockFiltersCheckFrequency, days);
++  pref_service_->SetTime(kAdBlockLastCheckTime, base::Time());
 +  StartWithDelay(0);
 +}
 +
