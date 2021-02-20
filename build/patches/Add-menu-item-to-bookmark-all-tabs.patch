@@ -1,0 +1,483 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Thu, 18 Feb 2021 21:22:52 +0100
+Subject: Add menu item to bookmark all tabs
+
+---
+ chrome/android/java/res/menu/main_menu.xml    |  6 ++
+ .../java/res/menu/main_menu_regroup.xml       |  3 +
+ .../chrome/browser/ChromeTabbedActivity.java  | 23 +++++++
+ .../browser/bookmarks/BookmarkBridge.java     | 62 +++++++++++++++++++
+ .../browser/bookmarks/BookmarkUtils.java      |  4 ++
+ .../android/bookmarks/bookmark_bridge.cc      | 17 +++++
+ .../android/bookmarks/bookmark_bridge.h       |  4 ++
+ .../bookmarks/chrome_bookmark_client.cc       |  2 +
+ .../strings/android_chrome_strings.grd        |  3 +
+ components/bookmark_bar_strings.grdp          |  6 ++
+ .../browser/bookmark_load_details.cc          |  4 ++
+ .../bookmarks/browser/bookmark_load_details.h |  2 +
+ .../bookmarks/browser/bookmark_model.cc       |  3 +-
+ components/bookmarks/browser/bookmark_model.h |  7 +++
+ components/bookmarks/browser/bookmark_node.cc | 13 ++++
+ components/bookmarks/browser/bookmark_node.h  |  5 ++
+ 16 files changed, 163 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/android/java/res/menu/main_menu.xml b/chrome/android/java/res/menu/main_menu.xml
+--- a/chrome/android/java/res/menu/main_menu.xml
++++ b/chrome/android/java/res/menu/main_menu.xml
+@@ -119,6 +119,9 @@
+             android:icon="@drawable/vr_headset" />
+         <item android:id="@+id/managed_by_menu_id"
+             android:title="@string/managed" />
++        <item android:id="@+id/bookmark_all_tabs_menu_id"
++            android:title="@string/menu_bookmark_all_tabs"
++            android:icon="@drawable/ic_folder_blue_24dp" />
+         <item android:id="@+id/exit_id"
+             android:title="@string/menu_exit" />
+     </group>
+@@ -155,6 +158,9 @@
+         <item android:id="@id/preferences_id"
+             android:title="@string/menu_settings"
+             android:icon="@drawable/settings_cog" />
++        <item android:id="@+id/bookmark_all_tabs_menu_id"
++            android:title="@string/menu_bookmark_all_tabs"
++            android:icon="@drawable/ic_folder_blue_24dp" />
+         <item android:id="@+id/exit_id"
+             android:title="@string/menu_exit" />
+     </group>
+diff --git a/chrome/android/java/res/menu/main_menu_regroup.xml b/chrome/android/java/res/menu/main_menu_regroup.xml
+--- a/chrome/android/java/res/menu/main_menu_regroup.xml
++++ b/chrome/android/java/res/menu/main_menu_regroup.xml
+@@ -184,6 +184,9 @@
+             android:icon="@drawable/vr_headset" />
+         <item android:id="@+id/managed_by_menu_id"
+             android:title="@string/managed" />
++        <item android:id="@+id/bookmark_all_tabs_menu_id"
++            android:title="@string/menu_bookmark_all_tabs"
++            android:icon="@drawable/ic_folder_blue_24dp" />
+         <item android:id="@+id/exit_id"
+             android:title="@string/menu_exit"
+             android:icon="@drawable/ic_exit_to_app_white_24dp"/>
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -58,6 +58,8 @@ import org.chromium.chrome.browser.ApplicationLifetime;
+ import org.chromium.chrome.browser.app.tabmodel.AsyncTabParamsManagerSingleton;
+ import org.chromium.chrome.browser.app.tabmodel.ChromeNextTabPolicySupplier;
+ import org.chromium.chrome.browser.app.tabmodel.TabWindowManagerSingleton;
++import org.chromium.chrome.browser.bookmarks.BookmarkBridge;
++import org.chromium.chrome.browser.bookmarks.BookmarkModel;
+ import org.chromium.chrome.browser.bookmarks.BookmarkUtils;
+ import org.chromium.chrome.browser.compositor.CompositorViewHolder;
+ import org.chromium.chrome.browser.compositor.bottombar.ephemeraltab.EphemeralTabCoordinator;
+@@ -1796,6 +1798,8 @@ public class ChromeTabbedActivity extends ChromeActivity<ChromeActivityComponent
+             // Close both incognito and normal tabs
+             getTabModelSelector().closeAllTabs();
+             RecordUserAction.record("MobileMenuCloseAllTabs");
++        } else if (id == R.id.bookmark_all_tabs_menu_id) {
++            bookmarkAllTabs();
+         } else if (id == R.id.close_all_incognito_tabs_menu_id) {
+             // Close only incognito tabs
+             getTabModelSelector().getModel(true).closeAllTabs();
+@@ -1832,6 +1836,25 @@ public class ChromeTabbedActivity extends ChromeActivity<ChromeActivityComponent
+         mTabModalHandler.onOmniboxFocusChanged(hasFocus);
+     }
+ 
++    private void bookmarkAllTabs() {
++        TabModel tabModel = getTabModelSelector().getCurrentModel();
++        int count = tabModel.getCount();
++        Log.i(TAG, "bookmarkAllTabs(): %d tabs to bookmark", count);
++        if (count == 0) {
++            return;
++        }
++
++        final BookmarkBridge bridge = mBookmarkBridgeSupplier.get();
++        for (int i = 0; i < tabModel.getCount(); i++) {
++            Tab tab = tabModel.getTabAt(i);
++            if (tab.isNativePage()) {
++                continue;
++            }
++            bridge.addToTabsCollection(this, tab);
++        }
++        bridge.finishedAddingToTabsCollection(this, getSnackbarManager());
++    }
++
+     private void recordLauncherShortcutAction(boolean isIncognito) {
+         if (isIncognito) {
+             RecordUserAction.record("Android.LauncherShortcut.NewIncognitoTab");
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkBridge.java
+@@ -4,6 +4,7 @@
+ 
+ package org.chromium.chrome.browser.bookmarks;
+ 
++import android.app.Activity;
+ import android.content.Intent;
+ import android.content.Context;
+ import android.content.pm.PackageManager;
+@@ -18,6 +19,7 @@ import androidx.annotation.Nullable;
+ import androidx.annotation.VisibleForTesting;
+ 
+ import org.chromium.base.ContextUtils;
++import org.chromium.base.Log;
+ import org.chromium.base.ObserverList;
+ import org.chromium.base.ThreadUtils;
+ import org.chromium.base.annotations.CalledByNative;
+@@ -26,6 +28,10 @@ import org.chromium.base.metrics.RecordHistogram;
+ import org.chromium.chrome.browser.partnerbookmarks.PartnerBookmarksShim;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.tab.Tab;
++import org.chromium.chrome.browser.ui.messages.snackbar.Snackbar;
++import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
++import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager.SnackbarController;
++import org.chromium.chrome.R;
+ import org.chromium.components.bookmarks.BookmarkId;
+ import org.chromium.components.bookmarks.BookmarkType;
+ import org.chromium.components.url_formatter.SchemeDisplay;
+@@ -45,6 +51,7 @@ import java.util.List;
+  * bookmark model stored in native.
+  */
+ public class BookmarkBridge {
++    private static final String TAG = "BookmarkBridge";
+     private final Profile mProfile;
+     private boolean mIsDoingExtensiveChanges;
+     private long mNativeBookmarkBridge;
+@@ -526,6 +533,16 @@ public class BookmarkBridge {
+                 mNativeBookmarkBridge, BookmarkBridge.this);
+     }
+ 
++    /**
++     * @return The BookmarkId for the Tabs collecction folder node
++     */
++    public BookmarkId getTabsCollectionFolderId() {
++        ThreadUtils.assertOnUiThread();
++        assert mIsNativeBookmarkModelLoaded;
++        return BookmarkBridgeJni.get().getTabsCollectionFolderId(
++                mNativeBookmarkBridge, BookmarkBridge.this);
++    }
++
+     /**
+      * @return Id representing the special "other" folder from bookmark model.
+      */
+@@ -895,6 +912,50 @@ public class BookmarkBridge {
+                 mNativeBookmarkBridge, BookmarkBridge.this, title, url);
+     }
+ 
++    // Used to bookmark all tabs in a specific folder, created if not existing
++    public BookmarkId addToTabsCollection(Context context, Tab tab) {
++        BookmarkId parent = getMobileFolderId();
++        long existingId = getUserBookmarkIdForTab(tab);
++        if (existingId != BookmarkId.INVALID_ID) {
++            BookmarkId existingBookmarkId = new BookmarkId(existingId, BookmarkType.NORMAL);
++            BookmarkItem existingBookmark = getBookmarkById(existingBookmarkId);
++            if (parent.equals(existingBookmark.getParentId())) {
++                // bookmark already exists in the tabs collection folder
++                return existingBookmarkId;
++            }
++        }
++        BookmarkId bookmarkId =
++                addBookmark(parent, getChildCount(parent), tab.getTitle(), tab.getUrl().getSpec());
++
++        if (bookmarkId == null) {
++            Log.e(TAG,
++                    "Failed to add bookmarks: parentTypeAndId %s", parent);
++        }
++        return bookmarkId;
++     }
++
++     public void finishedAddingToTabsCollection(Activity activity, SnackbarManager snackbarManager) {
++        BookmarkId parent = getMobileFolderId();
++
++        BookmarkItem bookmarkItem = getBookmarkById(parent);
++        String folderName;
++        if (bookmarkItem != null) {
++            folderName = bookmarkItem.getTitle();
++        } else {
++            folderName = "";
++        }
++        SnackbarController snackbarController = new SnackbarController() {
++            @Override
++            public void onAction(Object actionData) {
++            }
++        };
++        Snackbar snackbar = Snackbar.make(folderName, snackbarController, Snackbar.TYPE_ACTION,
++                        Snackbar.UMA_BOOKMARK_ADDED)
++                        .setTemplateText(activity.getString(R.string.bookmark_page_saved_folder));
++//        snackbar.setSingleLine(false).setAction(activity.getString(R.string.bookmark_item_edit), null);
++        snackbarManager.showSnackbar(snackbar);
++    }
++
+     /**
+      * @param url The URL of the reading list item.
+      * @return The reading list item with the URL, or null if no such reading list item.
+@@ -1127,6 +1188,7 @@ public class BookmarkBridge {
+         void getAllFoldersWithDepths(long nativeBookmarkBridge, BookmarkBridge caller,
+                 List<BookmarkId> folderList, List<Integer> depthList);
+         BookmarkId getRootFolderId(long nativeBookmarkBridge, BookmarkBridge caller);
++        BookmarkId getTabsCollectionFolderId(long nativeBookmarkBridge, BookmarkBridge caller);
+         BookmarkId getMobileFolderId(long nativeBookmarkBridge, BookmarkBridge caller);
+         BookmarkId getOtherFolderId(long nativeBookmarkBridge, BookmarkBridge caller);
+         BookmarkId getDesktopFolderId(long nativeBookmarkBridge, BookmarkBridge caller);
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkUtils.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkUtils.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkUtils.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkUtils.java
+@@ -439,6 +439,7 @@ public class BookmarkUtils {
+         List<BookmarkId> topLevelFolders = new ArrayList<>();
+         BookmarkId desktopNodeId = bookmarkModel.getDesktopFolderId();
+         BookmarkId mobileNodeId = bookmarkModel.getMobileFolderId();
++        BookmarkId tabsCollectionNodeId = bookmarkModel.getTabsCollectionFolderId();
+         BookmarkId othersNodeId = bookmarkModel.getOtherFolderId();
+ 
+         List<BookmarkId> specialFoldersIds =
+@@ -464,6 +465,9 @@ public class BookmarkUtils {
+         if (bookmarkModel.isFolderVisible(mobileNodeId)) {
+             topLevelFolders.add(mobileNodeId);
+         }
++        if (bookmarkModel.isFolderVisible(tabsCollectionNodeId)) {
++            topLevelFolders.add(tabsCollectionNodeId);
++        }
+         if (bookmarkModel.isFolderVisible(desktopNodeId)) {
+             topLevelFolders.add(desktopNodeId);
+         }
+diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.cc b/chrome/browser/android/bookmarks/bookmark_bridge.cc
+--- a/chrome/browser/android/bookmarks/bookmark_bridge.cc
++++ b/chrome/browser/android/bookmarks/bookmark_bridge.cc
+@@ -388,6 +388,11 @@ void BookmarkBridge::GetTopLevelFolderIDs(
+         top_level_folders.push_back(node.get());
+     }
+ 
++    for (const auto& node : bookmark_model_->tabs_collection_node()->children()) {
++      if (node->is_folder())
++        top_level_folders.push_back(node.get());
++    }
++
+     for (const auto& node : bookmark_model_->bookmark_bar_node()->children()) {
+       if (node->is_folder())
+         top_level_folders.push_back(node.get());
+@@ -426,6 +431,7 @@ void BookmarkBridge::GetAllFoldersWithDepths(
+   // Vector to temporarily contain all child bookmarks at same level for sorting
+   std::vector<const BookmarkNode*> bookmarks = {
+       bookmark_model_->mobile_node(),
++      bookmark_model_->tabs_collection_node(),
+       bookmark_model_->bookmark_bar_node(),
+       bookmark_model_->other_node(),
+   };
+@@ -480,6 +486,17 @@ ScopedJavaLocalRef<jobject> BookmarkBridge::GetMobileFolderId(
+   return folder_id_obj;
+ }
+ 
++ScopedJavaLocalRef<jobject> BookmarkBridge::GetTabsCollectionFolderId(
++    JNIEnv* env,
++    const JavaParamRef<jobject>& obj) {
++  DCHECK_CURRENTLY_ON(BrowserThread::UI);
++  const BookmarkNode* tabs_collection_node = bookmark_model_->tabs_collection_node();
++  ScopedJavaLocalRef<jobject> folder_id_obj =
++      JavaBookmarkIdCreateBookmarkId(
++          env, tabs_collection_node->id(), GetBookmarkType(tabs_collection_node));
++  return folder_id_obj;
++}
++
+ ScopedJavaLocalRef<jobject> BookmarkBridge::GetOtherFolderId(
+     JNIEnv* env,
+     const JavaParamRef<jobject>& obj) {
+diff --git a/chrome/browser/android/bookmarks/bookmark_bridge.h b/chrome/browser/android/bookmarks/bookmark_bridge.h
+--- a/chrome/browser/android/bookmarks/bookmark_bridge.h
++++ b/chrome/browser/android/bookmarks/bookmark_bridge.h
+@@ -107,6 +107,10 @@ class BookmarkBridge : public bookmarks::BaseBookmarkModelObserver,
+       JNIEnv* env,
+       const base::android::JavaParamRef<jobject>& obj);
+ 
++  base::android::ScopedJavaLocalRef<jobject> GetTabsCollectionFolderId(
++      JNIEnv* env,
++      const base::android::JavaParamRef<jobject>& obj);
++
+   base::android::ScopedJavaLocalRef<jobject> GetOtherFolderId(
+       JNIEnv* env,
+       const base::android::JavaParamRef<jobject>& obj);
+diff --git a/chrome/browser/bookmarks/chrome_bookmark_client.cc b/chrome/browser/bookmarks/chrome_bookmark_client.cc
+--- a/chrome/browser/bookmarks/chrome_bookmark_client.cc
++++ b/chrome/browser/bookmarks/chrome_bookmark_client.cc
+@@ -105,6 +105,8 @@ bool ChromeBookmarkClient::IsPermanentNodeVisibleWhenEmpty(
+       return !is_mobile;
+     case bookmarks::BookmarkNode::MOBILE:
+       return is_mobile;
++    case bookmarks::BookmarkNode::TABS_COLLECTION:
++      return is_mobile;
+   }
+ 
+   return false;
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -2987,6 +2987,9 @@ Data from your Incognito session will only be cleared from Chrome when you <ph n
+       <message name="IDS_MENU_TRACK_PRICES" desc="Menu item for tracking prices on tabs. [CHAR-LIMIT=27]">
+         Track prices
+       </message>
++      <message name="IDS_MENU_BOOKMARK_ALL_TABS" desc="Menu item to bookmark all tabs. [CHAR-LIMIT=27]">
++        Bookmark all tabs
++      </message>
+       <message name="IDS_MENU_GET_IMAGE_DESCRIPTIONS" desc="Menu item to start getting alt text accessibility image labels/descriptions [CHAR-LIMIT=27]">
+         Get image descriptions
+       </message>
+diff --git a/components/bookmark_bar_strings.grdp b/components/bookmark_bar_strings.grdp
+--- a/components/bookmark_bar_strings.grdp
++++ b/components/bookmark_bar_strings.grdp
+@@ -20,6 +20,9 @@
+     <message name="IDS_BOOKMARK_BAR_MOBILE_FOLDER_NAME" desc="Name shown in the tree for the mobile bookmarks folder">
+       Mobile bookmarks
+     </message>
++    <message name="IDS_BOOKMARK_BAR_TABS_COLLECTION_FOLDER_NAME" desc="Name shown in the tree for the tabs collection bookmarks folder">
++      Tabs collection
++    </message>
+     <message name="IDS_BOOKMARK_BAR_OTHER_FOLDER_NAME" desc="Name shown in the tree for the other bookmarks folder">
+       Other bookmarks
+     </message>
+@@ -34,6 +37,9 @@
+     <message name="IDS_BOOKMARK_BAR_MOBILE_FOLDER_NAME" desc="In Title Case: Name shown in the tree for the mobile bookmarks folder">
+       Mobile Bookmarks
+     </message>
++    <message name="IDS_BOOKMARK_BAR_TABS_COLLECTION_FOLDER_NAME" desc="Name shown in the tree for the tabs collection bookmarks folder">
++      Tabs Collection
++    </message>
+     <message name="IDS_BOOKMARK_BAR_OTHER_FOLDER_NAME" desc="In Title Case: Name shown in the tree for the other bookmarks folder">
+       Other Bookmarks
+     </message>
+diff --git a/components/bookmarks/browser/bookmark_load_details.cc b/components/bookmarks/browser/bookmark_load_details.cc
+--- a/components/bookmarks/browser/bookmark_load_details.cc
++++ b/components/bookmarks/browser/bookmark_load_details.cc
+@@ -34,6 +34,10 @@ BookmarkLoadDetails::BookmarkLoadDetails(BookmarkClient* client)
+       root_node_->Add(BookmarkPermanentNode::CreateMobileBookmarks(
+           max_id_++,
+           client->IsPermanentNodeVisibleWhenEmpty(BookmarkNode::MOBILE))));
++  tabs_collection_folder_node_ = static_cast<BookmarkPermanentNode*>(
++      root_node_->Add(BookmarkPermanentNode::CreateTabsCollectionBookmarks(
++          max_id_++,
++          client->IsPermanentNodeVisibleWhenEmpty(BookmarkNode::TABS_COLLECTION))));
+ }
+ 
+ BookmarkLoadDetails::~BookmarkLoadDetails() = default;
+diff --git a/components/bookmarks/browser/bookmark_load_details.h b/components/bookmarks/browser/bookmark_load_details.h
+--- a/components/bookmarks/browser/bookmark_load_details.h
++++ b/components/bookmarks/browser/bookmark_load_details.h
+@@ -42,6 +42,7 @@ class BookmarkLoadDetails {
+   BookmarkPermanentNode* bb_node() { return bb_node_; }
+   BookmarkPermanentNode* mobile_folder_node() { return mobile_folder_node_; }
+   BookmarkPermanentNode* other_folder_node() { return other_folder_node_; }
++  BookmarkPermanentNode* tabs_collection_folder_node() { return tabs_collection_folder_node_; }
+ 
+   TitledUrlIndex* index() { return index_.get(); }
+   std::unique_ptr<TitledUrlIndex> owned_index() { return std::move(index_); }
+@@ -96,6 +97,7 @@ class BookmarkLoadDetails {
+   BookmarkPermanentNode* bb_node_ = nullptr;
+   BookmarkPermanentNode* other_folder_node_ = nullptr;
+   BookmarkPermanentNode* mobile_folder_node_ = nullptr;
++  BookmarkPermanentNode* tabs_collection_folder_node_ = nullptr;
+   LoadManagedNodeCallback load_managed_node_callback_;
+   std::unique_ptr<TitledUrlIndex> index_;
+   BookmarkNode::MetaInfoMap model_meta_info_map_;
+diff --git a/components/bookmarks/browser/bookmark_model.cc b/components/bookmarks/browser/bookmark_model.cc
+--- a/components/bookmarks/browser/bookmark_model.cc
++++ b/components/bookmarks/browser/bookmark_model.cc
+@@ -559,7 +559,7 @@ bool BookmarkModel::HasBookmarks() {
+ bool BookmarkModel::HasNoUserCreatedBookmarksOrFolders() {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+   return bookmark_bar_node_->children().empty() &&
+-         other_node_->children().empty() && mobile_node_->children().empty();
++         other_node_->children().empty() && mobile_node_->children().empty() && tabs_collection_node_->children().empty();
+ }
+ 
+ bool BookmarkModel::IsBookmarked(const GURL& url) {
+@@ -800,6 +800,7 @@ void BookmarkModel::DoneLoading(std::unique_ptr<BookmarkLoadDetails> details) {
+   bookmark_bar_node_ = details->bb_node();
+   other_node_ = details->other_folder_node();
+   mobile_node_ = details->mobile_folder_node();
++  tabs_collection_node_ = details->tabs_collection_folder_node();
+ 
+   titled_url_index_->SetNodeSorter(
+       std::make_unique<TypedCountSorter>(client_.get()));
+diff --git a/components/bookmarks/browser/bookmark_model.h b/components/bookmarks/browser/bookmark_model.h
+--- a/components/bookmarks/browser/bookmark_model.h
++++ b/components/bookmarks/browser/bookmark_model.h
+@@ -116,6 +116,12 @@ class BookmarkModel : public BookmarkUndoProvider,
+     return mobile_node_;
+   }
+ 
++  // Returns the 'mobile' node. This is NULL until loaded.
++  const BookmarkNode* tabs_collection_node() const {
++    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++    return tabs_collection_node_;
++  }
++
+   bool is_root_node(const BookmarkNode* node) const {
+     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+     return node == root_;
+@@ -389,6 +395,7 @@ class BookmarkModel : public BookmarkUndoProvider,
+   BookmarkPermanentNode* bookmark_bar_node_ = nullptr;
+   BookmarkPermanentNode* other_node_ = nullptr;
+   BookmarkPermanentNode* mobile_node_ = nullptr;
++  BookmarkPermanentNode* tabs_collection_node_ = nullptr;
+ 
+   // The maximum ID assigned to the bookmark nodes in the model.
+   int64_t next_node_id_ = 1;
+diff --git a/components/bookmarks/browser/bookmark_node.cc b/components/bookmarks/browser/bookmark_node.cc
+--- a/components/bookmarks/browser/bookmark_node.cc
++++ b/components/bookmarks/browser/bookmark_node.cc
+@@ -40,6 +40,8 @@ const char BookmarkNode::kOtherBookmarksNodeGuid[] =
+     "00000000-0000-4000-a000-000000000003";
+ const char BookmarkNode::kMobileBookmarksNodeGuid[] =
+     "00000000-0000-4000-a000-000000000004";
++const char BookmarkNode::kTabsCollectionBookmarksNodeGuid[] =
++    "00000000-0000-4000-a000-000000000006";
+ const char BookmarkNode::kManagedNodeGuid[] =
+     "00000000-0000-4000-a000-000000000005";
+ 
+@@ -198,6 +200,17 @@ BookmarkPermanentNode::CreateMobileBookmarks(int64_t id,
+       visible_when_empty));
+ }
+ 
++// static
++std::unique_ptr<BookmarkPermanentNode>
++BookmarkPermanentNode::CreateTabsCollectionBookmarks(int64_t id,
++                                             bool visible_when_empty) {
++  // base::WrapUnique() used because the constructor is private.
++  return base::WrapUnique(new BookmarkPermanentNode(
++      id, TABS_COLLECTION, kTabsCollectionBookmarksNodeGuid,
++      l10n_util::GetStringUTF16(IDS_BOOKMARK_BAR_TABS_COLLECTION_FOLDER_NAME),
++      visible_when_empty));
++}
++
+ BookmarkPermanentNode::BookmarkPermanentNode(int64_t id,
+                                              Type type,
+                                              const std::string& guid,
+diff --git a/components/bookmarks/browser/bookmark_node.h b/components/bookmarks/browser/bookmark_node.h
+--- a/components/bookmarks/browser/bookmark_node.h
++++ b/components/bookmarks/browser/bookmark_node.h
+@@ -35,6 +35,7 @@ class BookmarkNode : public ui::TreeNode<BookmarkNode>, public TitledUrlNode {
+     FOLDER,
+     BOOKMARK_BAR,
+     OTHER_NODE,
++    TABS_COLLECTION,
+     MOBILE
+   };
+ 
+@@ -50,6 +51,7 @@ class BookmarkNode : public ui::TreeNode<BookmarkNode>, public TitledUrlNode {
+   static const char kBookmarkBarNodeGuid[];
+   static const char kOtherBookmarksNodeGuid[];
+   static const char kMobileBookmarksNodeGuid[];
++  static const char kTabsCollectionBookmarksNodeGuid[];
+   static const char kManagedNodeGuid[];
+ 
+   // Creates a new node with |id|, |guid| and |url|.
+@@ -241,6 +243,9 @@ class BookmarkPermanentNode : public BookmarkNode {
+   static std::unique_ptr<BookmarkPermanentNode> CreateMobileBookmarks(
+       int64_t id,
+       bool visible_when_empty);
++  static std::unique_ptr<BookmarkPermanentNode> CreateTabsCollectionBookmarks(
++      int64_t id,
++      bool visible_when_empty);
+ 
+   // Constructor is private to disallow the construction of permanent nodes
+   // other than the well-known ones, see factory methods.
+-- 
+2.17.1
+

@@ -1,15 +1,21 @@
+# 88.0.4324.187
+* fix exit menu item not working in tablet mode
+* add menu item to bookmark all tabs (fixes https://github.com/bromite/bromite/issues/570)
+* enable app overflow menu icons by default
+* UI for adblock filters (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/811)
+* dropped patch to not permit user-installed certificates
+* ignore enterprise policies for secure DNS (fixes https://github.com/bromite/bromite/issues/832)
+
 # 88.0.4324.185
 * fix favicons fallback search (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/788)
 * fix potential DIAL crash when network state changes (thanks to @Ahrotahn)
 * fix crash when opening links in incognito-only mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/899)
 * disallow empty custom user agent (thanks to @uazo)
-* dropped patch to not permit user-installed certificates
 
 # 88.0.4324.149
 * fix proxy PAC URL option not working (fixes https://github.com/bromite/bromite/issues/908)
 * store proxy configuration in LocalState instead of Profile (thanks to @uazo)
 * fix toggle for reversing the meaning of bypass rules (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/884)
-* ignore managed state and policies for secure DNS (fixes https://github.com/bromite/bromite/issues/832)
 * do not permit user-installed certificates
 
 # 88.0.4324.141
