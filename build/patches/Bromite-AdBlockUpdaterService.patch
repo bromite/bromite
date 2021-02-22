@@ -13,11 +13,11 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  chrome/android/chrome_java_sources.gni        |   2 +
  .../java/res/layout/adblock_editor.xml        |  67 ++++
  chrome/android/java/res/values/values.xml     |   2 +
- .../java/res/xml/adblock_preferences.xml      |  43 +++
+ .../java/res/xml/adblock_preferences.xml      |  43 ++
  .../android/java/res/xml/main_preferences.xml |   5 +
  .../chrome/browser/app/ChromeActivity.java    |  21 +
  .../browser/settings/AdBlockEditor.java       |  93 +++++
- .../browser/settings/AdBlockPreferences.java  | 173 +++++++++
+ .../browser/settings/AdBlockPreferences.java  | 173 ++++++++
  .../chrome/browser/tabmodel/TabModelImpl.java |   2 +-
  chrome/app/generated_resources.grd            |  46 +++
  chrome/browser/after_startup_task_utils.cc    |   5 +
@@ -36,10 +36,10 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  .../sessions/session_restore_android.cc       |   4 +-
  .../strings/android_chrome_strings.grd        |  14 +
  components/component_updater/BUILD.gn         |   6 +
- .../adblock_updater_service.cc                | 364 ++++++++++++++++++
- .../adblock_updater_service.h                 | 125 ++++++
- .../download_filters_task.cc                  | 237 ++++++++++++
- .../component_updater/download_filters_task.h | 131 +++++++
+ .../adblock_updater_service.cc                | 378 ++++++++++++++++++
+ .../adblock_updater_service.h                 | 127 ++++++
+ .../download_filters_task.cc                  | 237 +++++++++++
+ .../component_updater/download_filters_task.h | 131 ++++++
  ...ent_subresource_filter_throttle_manager.cc |  11 +
  .../content/browser/ruleset_publisher.h       |   2 +
  .../content/browser/ruleset_publisher_impl.cc |   5 +
@@ -51,7 +51,7 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  .../browser/subresource_filter_features.cc    | 113 +-----
  .../core/common/common_features.cc            |   2 +-
  .../navigation_throttle_runner.cc             |   5 -
- 42 files changed, 1706 insertions(+), 141 deletions(-)
+ 42 files changed, 1722 insertions(+), 141 deletions(-)
  create mode 100644 chrome/android/java/res/layout/adblock_editor.xml
  create mode 100644 chrome/android/java/res/xml/adblock_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
@@ -1211,7 +1211,7 @@ diff --git a/components/component_updater/adblock_updater_service.cc b/component
 new file mode 100644
 --- /dev/null
 +++ b/components/component_updater/adblock_updater_service.cc
-@@ -0,0 +1,364 @@
+@@ -0,0 +1,378 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1375,7 +1375,8 @@ new file mode 100644
 +  last_update_ = pref_service_->GetTime(kAdBlockLastCheckTime);
 +
 +  auto version = ruleset_service_->GetMostRecentlyIndexedVersion();
-+  if (!version.content_version.empty()) {
++  base::Time t = base::Time();
++  if (ConvertVersionToTime(version.content_version, &t)==true) {
 +    // Check if the request is too soon.
 +    if (!last_update_.is_null()) {
 +      int deltaCheck = is_foreground == false ? next_check_delay_ : on_demand_check_delay;
@@ -1405,55 +1406,10 @@ new file mode 100644
 +  last_update_ = base::Time::Now();
 +  pref_service_->SetTime(kAdBlockLastCheckTime, last_update_);
 +
-+  base::Time::Exploded e = {0};
-+  base::Time t = base::Time();
 +  auto version = ruleset_service_->GetMostRecentlyIndexedVersion();
-+  if (version.content_version.empty()) {
-+    LOG(INFO) << "AdBlockUpdaterService: MostRecentIndexedVersion is empty";
-+  } else {
-+    LOG(INFO) << "AdBlockUpdaterService: MostRecentIndexedVersion = " << version.content_version;
-+    std::vector<std::string> tokens =
-+        base::SplitString(version.content_version, ".", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
-+    int i = 0;
-+    bool failed = false;
-+    for (const std::string& token : tokens) {
-+      // parse as number
-+      int n = 0;
-+      if (!base::StringToInt(token, &n)) {
-+        failed = true;
-+        break;
-+      }
-+
-+      switch (i++) {
-+        case 0:
-+          e.year = 2019 + n;
-+          break;
-+        case 1:
-+          e.month = n + 1;
-+          break;
-+        case 2:
-+          e.day_of_month = n + 1;
-+          break;
-+        case 3:
-+          e.second = n % 60;
-+          n -= e.second;
-+          n /= 60;
-+          e.minute = n % 60;
-+          e.hour = n / 60;
-+          break;
-+        default:
-+          failed = true;
-+          break;
-+      }
-+    }
-+
-+    if (failed) {
-+      LOG(WARNING) << "AdBlockUpdaterService: failed to parse most recent version as x.y.z.w dot-separated integers";
-+    } else {
-+      if (!base::Time::FromUTCExploded(e, &t))
-+        LOG(WARNING) << "AdBlockUpdaterService: failed to convert version to time.";
-+    }
-+  }
++  base::Time t = base::Time();
++  LOG(INFO) << "AdBlockUpdaterService: MostRecentIndexedVersion = " << version.content_version;
++  ConvertVersionToTime(version.content_version, &t);
 +
 +  NotifyObservers(AdblockEvent::ADBLOCK_CHECKING_FOR_UPDATES, AdblockError::NONE);
 +
@@ -1469,6 +1425,62 @@ new file mode 100644
 +  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
 +      base::BindOnce(&DownloadFiltersTask::Run, base::Unretained(task.get())));
 +  tasks_.insert(task);
++}
++
++bool AdBlockUpdaterService::ConvertVersionToTime(const std::string& version, base::Time* t)
++{
++  *t = base::Time();
++  if (version.empty()) {
++    LOG(INFO) << "AdBlockUpdaterService: version is empty";
++    return false;
++  }
++
++  base::Time::Exploded e = {0};
++  std::vector<std::string> tokens =
++      base::SplitString(version, ".", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
++  int i = 0;
++  bool failed = false;
++  for (const std::string& token : tokens) {
++    // parse as number
++    int n = 0;
++    if (!base::StringToInt(token, &n)) {
++      failed = true;
++      break;
++    }
++
++    switch (i++) {
++      case 0:
++        e.year = 2019 + n;
++        break;
++      case 1:
++        e.month = n + 1;
++        break;
++      case 2:
++        e.day_of_month = n + 1;
++        break;
++      case 3:
++        e.second = n % 60;
++        n -= e.second;
++        n /= 60;
++        e.minute = n % 60;
++        e.hour = n / 60;
++        break;
++      default:
++        failed = true;
++        break;
++    }
++  }
++
++  if (failed) {
++    LOG(WARNING) << "AdBlockUpdaterService: failed to parse most recent version as x.y.z.w dot-separated integers";
++  } else {
++    if (!base::Time::FromUTCExploded(e, t)) {
++      failed = true;
++      LOG(WARNING) << "AdBlockUpdaterService: failed to convert version to time.";
++    }
++  }
++
++  return failed;
 +}
 +
 +void AdBlockUpdaterService::OnUpdateComplete(Callback on_finished,
@@ -1559,9 +1571,11 @@ new file mode 100644
 +}
 +
 +void AdBlockUpdaterService::SetAdBlockUpdateTimeFrequency(int days) {
-+  pref_service_->SetInteger(kAdBlockFiltersCheckFrequency, days);
-+  pref_service_->SetTime(kAdBlockLastCheckTime, base::Time());
-+  StartWithDelay(0);
++  if (pref_service_->GetInteger(kAdBlockFiltersCheckFrequency) != days) {
++    pref_service_->SetInteger(kAdBlockFiltersCheckFrequency, days);
++    pref_service_->SetTime(kAdBlockLastCheckTime, base::Time());
++    StartWithDelay(0);
++  }
 +}
 +
 +// static
@@ -1580,7 +1594,7 @@ diff --git a/components/component_updater/adblock_updater_service.h b/components
 new file mode 100644
 --- /dev/null
 +++ b/components/component_updater/adblock_updater_service.h
-@@ -0,0 +1,125 @@
+@@ -0,0 +1,127 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -1685,6 +1699,8 @@ new file mode 100644
 +  void OnDemandUpdateInternal(bool is_foreground, Callback on_finished);
 +  void OnUpdateComplete(Callback callback, scoped_refptr<DownloadFiltersTask> task, AdblockError error);
 +  void RulesetPublishedCallback();
++
++  bool ConvertVersionToTime(const std::string& version, base::Time* t);
 +
 +  base::ObserverList<Observer>::Unchecked observer_list_;
 +  base::ThreadChecker thread_checker_;
