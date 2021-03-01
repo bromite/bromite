@@ -1,3 +1,11 @@
+# 88.0.4324.207
+* add flag for save-data-header
+* add option to force tablet UI
+* fix bug with wrong last checked time (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/941)
+* fix bug with adblock filters not being downloaded correctly (fixes https://github.com/bromite/bromite/issues/960)
+* move up bookmark all tabs menu item (fixes https://github.com/bromite/bromite/issues/943)
+* fix icons for exit and view source menu items
+
 # 88.0.4324.187
 * fix exit menu item not working in tablet mode
 * add menu item to bookmark all tabs (fixes https://github.com/bromite/bromite/issues/570)
