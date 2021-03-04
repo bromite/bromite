@@ -2,23 +2,13 @@ From: csagan5 <32685696+csagan5@users.noreply.github.com>
 Date: Tue, 28 Jul 2020 12:28:58 +0200
 Subject: Block gateway attacks via websockets
 
+FILE:Block-gateway-attacks-via-websockets.patch
 ---
- content/public/common/content_features.cc     |  2 +-
- .../renderer/core/loader/base_fetch_context.h |  1 +
- .../core/loader/frame_fetch_context.cc        | 18 +++++++++++++
- .../core/loader/frame_fetch_context.h         |  1 +
- .../core/loader/worker_fetch_context.cc       | 19 +++++++++++++
- .../core/loader/worker_fetch_context.h        |  1 +
- .../background_fetch_manager.cc               |  2 --
- .../websockets/websocket_channel_impl.cc      |  5 ++++
- .../modules/websockets/websocket_common.cc    | 27 +++++++++++++++++++
- .../modules/websockets/websocket_common.h     |  4 +++
- 10 files changed, 77 insertions(+), 3 deletions(-)
-
 diff --git a/content/public/common/content_features.cc b/content/public/common/content_features.cc
+index 47038f78be..e6863517f6 100644
 --- a/content/public/common/content_features.cc
 +++ b/content/public/common/content_features.cc
-@@ -96,7 +96,7 @@ const base::Feature kBlockCredentialedSubresources{
+@@ -92,7 +92,7 @@ const base::Feature kBlockCredentialedSubresources{
  //
  // https://wicg.github.io/cors-rfc1918/#integration-fetch
  const base::Feature kBlockInsecurePrivateNetworkRequests{
@@ -26,22 +16,24 @@ diff --git a/content/public/common/content_features.cc b/content/public/common/c
 +    "BlockInsecurePrivateNetworkRequests", base::FEATURE_ENABLED_BY_DEFAULT};
  
  // Use ThreadPriority::DISPLAY for browser UI and IO threads.
- #if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+ #if defined(OS_ANDROID) || BUILDFLAG(IS_CHROMEOS_ASH)
 diff --git a/third_party/blink/renderer/core/loader/base_fetch_context.h b/third_party/blink/renderer/core/loader/base_fetch_context.h
+index 3d705c54a1..3fb0f1da8f 100644
 --- a/third_party/blink/renderer/core/loader/base_fetch_context.h
 +++ b/third_party/blink/renderer/core/loader/base_fetch_context.h
-@@ -67,6 +67,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
-   virtual PreviewsResourceLoadingHints* GetPreviewsResourceLoadingHints()
-       const = 0;
+@@ -81,6 +81,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
+ 
+   virtual SubresourceFilter* GetSubresourceFilter() const = 0;
    virtual bool ShouldBlockWebSocketByMixedContentCheck(const KURL&) const = 0;
 +  virtual bool ShouldBlockGateWayAttacks(network::mojom::IPAddressSpace requestor_space, const KURL&) const = 0;
    virtual std::unique_ptr<WebSocketHandshakeThrottle>
    CreateWebSocketHandshakeThrottle() = 0;
  
 diff --git a/third_party/blink/renderer/core/loader/frame_fetch_context.cc b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
+index 97b148cd88..1a18627bae 100644
 --- a/third_party/blink/renderer/core/loader/frame_fetch_context.cc
 +++ b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
-@@ -750,6 +750,24 @@ bool FrameFetchContext::ShouldBlockRequestByInspector(const KURL& url) const {
+@@ -556,6 +556,24 @@ bool FrameFetchContext::ShouldBlockRequestByInspector(const KURL& url) const {
    return should_block_request;
  }
  
@@ -67,9 +59,10 @@ diff --git a/third_party/blink/renderer/core/loader/frame_fetch_context.cc b/thi
      const ResourceRequest& resource_request,
      const FetchInitiatorInfo& fetch_initiator_info,
 diff --git a/third_party/blink/renderer/core/loader/frame_fetch_context.h b/third_party/blink/renderer/core/loader/frame_fetch_context.h
+index 89d4825f3f..075fccb21f 100644
 --- a/third_party/blink/renderer/core/loader/frame_fetch_context.h
 +++ b/third_party/blink/renderer/core/loader/frame_fetch_context.h
-@@ -163,6 +163,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
+@@ -162,6 +162,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
    bool ShouldBlockWebSocketByMixedContentCheck(const KURL&) const override;
    std::unique_ptr<WebSocketHandshakeThrottle> CreateWebSocketHandshakeThrottle()
        override;
@@ -78,6 +71,7 @@ diff --git a/third_party/blink/renderer/core/loader/frame_fetch_context.h b/thir
        mojom::blink::RequestContextType request_context,
        const base::Optional<ResourceRequest::RedirectInfo>& redirect_info,
 diff --git a/third_party/blink/renderer/core/loader/worker_fetch_context.cc b/third_party/blink/renderer/core/loader/worker_fetch_context.cc
+index a2a9bc9b41..35ca40c1ed 100644
 --- a/third_party/blink/renderer/core/loader/worker_fetch_context.cc
 +++ b/third_party/blink/renderer/core/loader/worker_fetch_context.cc
 @@ -26,6 +26,7 @@
@@ -88,7 +82,7 @@ diff --git a/third_party/blink/renderer/core/loader/worker_fetch_context.cc b/th
  #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
  #include "third_party/blink/renderer/platform/supplementable.h"
  #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
-@@ -97,6 +98,24 @@ bool WorkerFetchContext::ShouldBlockRequestByInspector(const KURL& url) const {
+@@ -92,6 +93,24 @@ bool WorkerFetchContext::ShouldBlockRequestByInspector(const KURL& url) const {
    return should_block_request;
  }
  
@@ -114,9 +108,10 @@ diff --git a/third_party/blink/renderer/core/loader/worker_fetch_context.cc b/th
      const ResourceRequest& resource_request,
      const FetchInitiatorInfo& fetch_initiator_info,
 diff --git a/third_party/blink/renderer/core/loader/worker_fetch_context.h b/third_party/blink/renderer/core/loader/worker_fetch_context.h
+index 2129f25db5..b478e0f5da 100644
 --- a/third_party/blink/renderer/core/loader/worker_fetch_context.h
 +++ b/third_party/blink/renderer/core/loader/worker_fetch_context.h
-@@ -64,6 +64,7 @@ class WorkerFetchContext final : public BaseFetchContext {
+@@ -62,6 +62,7 @@ class WorkerFetchContext final : public BaseFetchContext {
    bool ShouldBlockWebSocketByMixedContentCheck(const KURL&) const override;
    std::unique_ptr<WebSocketHandshakeThrottle> CreateWebSocketHandshakeThrottle()
        override;
@@ -125,6 +120,7 @@ diff --git a/third_party/blink/renderer/core/loader/worker_fetch_context.h b/thi
        mojom::blink::RequestContextType request_context,
        const base::Optional<ResourceRequest::RedirectInfo>& redirect_info,
 diff --git a/third_party/blink/renderer/modules/background_fetch/background_fetch_manager.cc b/third_party/blink/renderer/modules/background_fetch/background_fetch_manager.cc
+index d9012d9716..9e317d6ef4 100644
 --- a/third_party/blink/renderer/modules/background_fetch/background_fetch_manager.cc
 +++ b/third_party/blink/renderer/modules/background_fetch/background_fetch_manager.cc
 @@ -106,7 +106,6 @@ bool ShouldBlockDanglingMarkup(const KURL& request_url) {
@@ -144,6 +140,7 @@ diff --git a/third_party/blink/renderer/modules/background_fetch/background_fetc
    return false;
  }
 diff --git a/third_party/blink/renderer/modules/websockets/websocket_channel_impl.cc b/third_party/blink/renderer/modules/websockets/websocket_channel_impl.cc
+index bd6db3af29..7c28e9d07f 100644
 --- a/third_party/blink/renderer/modules/websockets/websocket_channel_impl.cc
 +++ b/third_party/blink/renderer/modules/websockets/websocket_channel_impl.cc
 @@ -214,6 +214,11 @@ bool WebSocketChannelImpl::Connect(const KURL& url, const String& protocol) {
@@ -159,6 +156,7 @@ diff --git a/third_party/blink/renderer/modules/websockets/websocket_channel_imp
      feature_handle_for_scheduler_ = scheduler->RegisterFeature(
          SchedulingPolicy::Feature::kWebSocket,
 diff --git a/third_party/blink/renderer/modules/websockets/websocket_common.cc b/third_party/blink/renderer/modules/websockets/websocket_common.cc
+index 009f487eea..e89ec105bf 100644
 --- a/third_party/blink/renderer/modules/websockets/websocket_common.cc
 +++ b/third_party/blink/renderer/modules/websockets/websocket_common.cc
 @@ -79,6 +79,15 @@ WebSocketCommon::ConnectResult WebSocketCommon::Connect(
@@ -203,6 +201,7 @@ diff --git a/third_party/blink/renderer/modules/websockets/websocket_common.cc b
                                      const String& reason,
                                      WebSocketChannel* channel,
 diff --git a/third_party/blink/renderer/modules/websockets/websocket_common.h b/third_party/blink/renderer/modules/websockets/websocket_common.h
+index 40f454f33e..e2f9c6620a 100644
 --- a/third_party/blink/renderer/modules/websockets/websocket_common.h
 +++ b/third_party/blink/renderer/modules/websockets/websocket_common.h
 @@ -10,6 +10,8 @@
@@ -223,6 +222,3 @@ diff --git a/third_party/blink/renderer/modules/websockets/websocket_common.h b/
    // The following methods are public for testing.
  
    // Returns true if |protocol| is a valid WebSocket subprotocol name.
--- 
-2.17.1
-
