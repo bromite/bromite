@@ -5,10 +5,49 @@ Subject: Timezone customization
 Allow specifying a custom timezone, or using a random one.
 
 See also: https://github.com/bromite/bromite/wiki/TimezoneOverride
-FILE:Timezone-customization.patch
 ---
+ .../ChromeSiteSettingsDelegate.java           |  16 ++
+ .../browser_ui/site_settings/android/BUILD.gn |   3 +
+ .../res/layout/time_zone_select_dialog.xml    |  36 ++++
+ ...ezoneoverride_site_settings_preference.xml |  68 ++++++
+ .../res/xml/single_website_preferences.xml    |   2 +
+ .../res/xml/site_settings_preferences.xml     |   4 +
+ .../java/res/xml/website_preferences.xml      |   9 +
+ .../ContentSettingsResources.java             |  29 +++
+ .../site_settings/SingleCategorySettings.java |  71 ++++++-
+ .../site_settings/SingleWebsiteSettings.java  |  20 ++
+ .../site_settings/SiteSettings.java           |   2 +-
+ .../site_settings/SiteSettingsCategory.java   |   9 +-
+ .../site_settings/SiteSettingsDelegate.java   |   2 +
+ ...imezoneOverrideSiteSettingsPreference.java | 193 ++++++++++++++++++
+ .../browser_ui/site_settings/Website.java     |  10 +
+ .../WebsitePermissionsFetcher.java            |   3 +
+ .../WebsitePreferenceBridge.java              |  12 ++
+ .../android/website_preference_bridge.cc      |  16 ++
+ .../strings/android/site_settings.grdp        |  35 ++++
+ .../browser/content_settings_pref_provider.cc |  16 ++
+ .../browser/content_settings_pref_provider.h  |   5 +
+ .../core/browser/content_settings_registry.cc |  12 ++
+ .../core/browser/content_settings_utils.cc    |   7 +
+ .../core/browser/host_content_settings_map.cc |   8 +
+ .../core/browser/host_content_settings_map.h  |   3 +
+ .../core/common/content_settings.cc           |   4 +-
+ .../core/common/content_settings.h            |   2 +
+ .../core/common/content_settings.mojom        |   2 +
+ .../common/content_settings_mojom_traits.cc   |   4 +-
+ .../common/content_settings_mojom_traits.h    |  10 +
+ .../core/common/content_settings_types.h      |   3 +
+ .../core/common/pref_names.cc                 |   3 +
+ .../content_settings/core/common/pref_names.h |   2 +
+ .../renderer/content_settings_agent_impl.cc   |  89 ++++++++
+ .../renderer/content_settings_agent_impl.h    |   4 +
+ .../WebLayerSiteSettingsDelegate.java         |   3 +
+ 36 files changed, 707 insertions(+), 10 deletions(-)
+ create mode 100755 components/browser_ui/site_settings/android/java/res/layout/time_zone_select_dialog.xml
+ create mode 100755 components/browser_ui/site_settings/android/java/res/layout/timezoneoverride_site_settings_preference.xml
+ create mode 100755 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/TimezoneOverrideSiteSettingsPreference.java
+
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/site_settings/ChromeSiteSettingsDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/site_settings/ChromeSiteSettingsDelegate.java
-index e931dd0668..1bb6492f2e 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/site_settings/ChromeSiteSettingsDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/site_settings/ChromeSiteSettingsDelegate.java
 @@ -40,6 +40,10 @@ import org.chromium.content_public.common.ContentSwitches;
@@ -40,7 +79,6 @@ index e931dd0668..1bb6492f2e 100644
 +    }
  }
 diff --git a/components/browser_ui/site_settings/android/BUILD.gn b/components/browser_ui/site_settings/android/BUILD.gn
-index dfa022b435..f3a79e1eed 100644
 --- a/components/browser_ui/site_settings/android/BUILD.gn
 +++ b/components/browser_ui/site_settings/android/BUILD.gn
 @@ -72,6 +72,7 @@ android_library("java") {
@@ -62,7 +100,6 @@ index dfa022b435..f3a79e1eed 100644
    deps = [
 diff --git a/components/browser_ui/site_settings/android/java/res/layout/time_zone_select_dialog.xml b/components/browser_ui/site_settings/android/java/res/layout/time_zone_select_dialog.xml
 new file mode 100755
-index 0000000000..05ac75a4cb
 --- /dev/null
 +++ b/components/browser_ui/site_settings/android/java/res/layout/time_zone_select_dialog.xml
 @@ -0,0 +1,36 @@
@@ -105,7 +142,6 @@ index 0000000000..05ac75a4cb
 \ No newline at end of file
 diff --git a/components/browser_ui/site_settings/android/java/res/layout/timezoneoverride_site_settings_preference.xml b/components/browser_ui/site_settings/android/java/res/layout/timezoneoverride_site_settings_preference.xml
 new file mode 100755
-index 0000000000..e7570d55a1
 --- /dev/null
 +++ b/components/browser_ui/site_settings/android/java/res/layout/timezoneoverride_site_settings_preference.xml
 @@ -0,0 +1,68 @@
@@ -178,7 +214,6 @@ index 0000000000..e7570d55a1
 +
 +</LinearLayout>
 diff --git a/components/browser_ui/site_settings/android/java/res/xml/single_website_preferences.xml b/components/browser_ui/site_settings/android/java/res/xml/single_website_preferences.xml
-index e146a00c25..239f3f7a94 100644
 --- a/components/browser_ui/site_settings/android/java/res/xml/single_website_preferences.xml
 +++ b/components/browser_ui/site_settings/android/java/res/xml/single_website_preferences.xml
 @@ -33,6 +33,8 @@
@@ -191,7 +226,6 @@ index e146a00c25..239f3f7a94 100644
          android:key="site_usage"
          android:title="@string/website_settings_usage_category" />
 diff --git a/components/browser_ui/site_settings/android/java/res/xml/site_settings_preferences.xml b/components/browser_ui/site_settings/android/java/res/xml/site_settings_preferences.xml
-index cda3d4d1b6..5a9d17a93a 100644
 --- a/components/browser_ui/site_settings/android/java/res/xml/site_settings_preferences.xml
 +++ b/components/browser_ui/site_settings/android/java/res/xml/site_settings_preferences.xml
 @@ -41,6 +41,10 @@
@@ -206,7 +240,6 @@ index cda3d4d1b6..5a9d17a93a 100644
      <org.chromium.components.browser_ui.settings.ChromeBasePreference
          android:fragment="org.chromium.components.browser_ui.site_settings.SingleCategorySettings"
 diff --git a/components/browser_ui/site_settings/android/java/res/xml/website_preferences.xml b/components/browser_ui/site_settings/android/java/res/xml/website_preferences.xml
-index 0745adba2d..35d1cfc9da 100644
 --- a/components/browser_ui/site_settings/android/java/res/xml/website_preferences.xml
 +++ b/components/browser_ui/site_settings/android/java/res/xml/website_preferences.xml
 @@ -13,6 +13,12 @@
@@ -233,7 +266,6 @@ index 0745adba2d..35d1cfc9da 100644
      <!-- A checkbox for enabling a quiet ui for notification prompts. Only shown in the Notifications category. -->
      <org.chromium.components.browser_ui.settings.ChromeBaseCheckBoxPreference
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java
-index cf4e3bfeeb..2f86ee66b6 100644
 --- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java
 @@ -227,6 +227,11 @@ public class ContentSettingsResources {
@@ -287,7 +319,6 @@ index cf4e3bfeeb..2f86ee66b6 100644
          assert false;
          return null;
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleCategorySettings.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleCategorySettings.java
-index 68ba45b1a3..9cfdace0f0 100644
 --- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleCategorySettings.java
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleCategorySettings.java
 @@ -54,6 +54,10 @@ import org.chromium.components.prefs.PrefService;
@@ -473,7 +504,6 @@ index 68ba45b1a3..9cfdace0f0 100644
          binaryToggle.setOnPreferenceChangeListener(this);
          binaryToggle.setTitle(ContentSettingsResources.getTitle(contentType));
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java
-index 6af75b0627..c3d3232742 100644
 --- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java
 @@ -135,6 +135,8 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
@@ -511,7 +541,6 @@ index 6af75b0627..c3d3232742 100644
          CharSequence[] descriptions = new String[2];
          keys[0] = ContentSetting.toString(ContentSettingValues.ALLOW);
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java
-index a056976a73..eac4bb7261 100644
 --- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettings.java
 @@ -113,7 +113,7 @@ public class SiteSettings
@@ -524,7 +553,6 @@ index a056976a73..eac4bb7261 100644
                  p.setSummary(ContentSettingsResources.getCategorySummary(contentType, checked));
              }
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsCategory.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsCategory.java
-index 5c0f84d697..53c1b13931 100644
 --- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsCategory.java
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsCategory.java
 @@ -42,7 +42,7 @@ public class SiteSettingsCategory {
@@ -568,7 +596,6 @@ index 5c0f84d697..53c1b13931 100644
                  assert false;
                  return "";
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsDelegate.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsDelegate.java
-index d3ee6e055a..22d0974e9c 100644
 --- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsDelegate.java
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsDelegate.java
 @@ -123,4 +123,6 @@ public interface SiteSettingsDelegate {
@@ -580,7 +607,6 @@ index d3ee6e055a..22d0974e9c 100644
  }
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/TimezoneOverrideSiteSettingsPreference.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/TimezoneOverrideSiteSettingsPreference.java
 new file mode 100755
-index 0000000000..c7bbe69448
 --- /dev/null
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/TimezoneOverrideSiteSettingsPreference.java
 @@ -0,0 +1,193 @@
@@ -778,7 +804,6 @@ index 0000000000..c7bbe69448
 +    }
 +}
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/Website.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/Website.java
-index 155a322d8b..734c39256e 100644
 --- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/Website.java
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/Website.java
 @@ -232,6 +232,16 @@ public final class Website implements Serializable {
@@ -799,7 +824,6 @@ index 155a322d8b..734c39256e 100644
          // We want to call setContentSetting even after explicitly setting
          // mContentSettingException above because this will trigger the actual change
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/WebsitePermissionsFetcher.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/WebsitePermissionsFetcher.java
-index a742e9a8d3..1eb28eb86e 100644
 --- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/WebsitePermissionsFetcher.java
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/WebsitePermissionsFetcher.java
 @@ -64,6 +64,7 @@ public class WebsitePermissionsFetcher {
@@ -820,7 +844,6 @@ index a742e9a8d3..1eb28eb86e 100644
          queue.next();
      }
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/WebsitePreferenceBridge.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/WebsitePreferenceBridge.java
-index 3975f0abb2..97d8b193b8 100644
 --- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/WebsitePreferenceBridge.java
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/WebsitePreferenceBridge.java
 @@ -223,6 +223,8 @@ public class WebsitePreferenceBridge {
@@ -856,7 +879,6 @@ index 3975f0abb2..97d8b193b8 100644
      }
  }
 diff --git a/components/browser_ui/site_settings/android/website_preference_bridge.cc b/components/browser_ui/site_settings/android/website_preference_bridge.cc
-index 0bc9fdb61f..615ca40fcc 100644
 --- a/components/browser_ui/site_settings/android/website_preference_bridge.cc
 +++ b/components/browser_ui/site_settings/android/website_preference_bridge.cc
 @@ -918,3 +918,19 @@ static jboolean JNI_WebsitePreferenceBridge_GetLocationAllowedByPolicy(
@@ -880,7 +902,6 @@ index 0bc9fdb61f..615ca40fcc 100644
 +  return ConvertUTF8ToJavaString(env, timezone);
 +}
 diff --git a/components/browser_ui/strings/android/site_settings.grdp b/components/browser_ui/strings/android/site_settings.grdp
-index a48547185b..fa0c75aa7d 100644
 --- a/components/browser_ui/strings/android/site_settings.grdp
 +++ b/components/browser_ui/strings/android/site_settings.grdp
 @@ -69,6 +69,9 @@
@@ -933,7 +954,6 @@ index a48547185b..fa0c75aa7d 100644
  
    <message name="IDS_WEBSITE_SETTINGS_CATEGORY_SOUND_ALLOWED" desc="Summary text explaining that sites are allowed to play sound and that it is the recommended setting.">
 diff --git a/components/content_settings/core/browser/content_settings_pref_provider.cc b/components/content_settings/core/browser/content_settings_pref_provider.cc
-index a00cacb48f..345ebb2727 100644
 --- a/components/content_settings/core/browser/content_settings_pref_provider.cc
 +++ b/components/content_settings/core/browser/content_settings_pref_provider.cc
 @@ -107,6 +107,8 @@ void PrefProvider::RegisterProfilePrefs(
@@ -972,7 +992,6 @@ index a00cacb48f..345ebb2727 100644
 +
  }  // namespace content_settings
 diff --git a/components/content_settings/core/browser/content_settings_pref_provider.h b/components/content_settings/core/browser/content_settings_pref_provider.h
-index 7c16ebc5e3..f5b24f76db 100644
 --- a/components/content_settings/core/browser/content_settings_pref_provider.h
 +++ b/components/content_settings/core/browser/content_settings_pref_provider.h
 @@ -63,6 +63,9 @@ class PrefProvider : public UserModifiableProvider {
@@ -995,7 +1014,6 @@ index 7c16ebc5e3..f5b24f76db 100644
  };
  
 diff --git a/components/content_settings/core/browser/content_settings_registry.cc b/components/content_settings/core/browser/content_settings_registry.cc
-index 9281722b90..931aed181c 100644
 --- a/components/content_settings/core/browser/content_settings_registry.cc
 +++ b/components/content_settings/core/browser/content_settings_registry.cc
 @@ -598,6 +598,18 @@ void ContentSettingsRegistry::Init() {
@@ -1018,7 +1036,6 @@ index 9281722b90..931aed181c 100644
  
  void ContentSettingsRegistry::Register(
 diff --git a/components/content_settings/core/browser/content_settings_utils.cc b/components/content_settings/core/browser/content_settings_utils.cc
-index b462833a61..e3493a7ae2 100644
 --- a/components/content_settings/core/browser/content_settings_utils.cc
 +++ b/components/content_settings/core/browser/content_settings_utils.cc
 @@ -145,6 +145,13 @@ void GetRendererContentSettingRules(const HostContentSettingsMap* map,
@@ -1036,7 +1053,6 @@ index b462833a61..e3493a7ae2 100644
  
  bool IsMorePermissive(ContentSetting a, ContentSetting b) {
 diff --git a/components/content_settings/core/browser/host_content_settings_map.cc b/components/content_settings/core/browser/host_content_settings_map.cc
-index 500a6da178..e39f388420 100644
 --- a/components/content_settings/core/browser/host_content_settings_map.cc
 +++ b/components/content_settings/core/browser/host_content_settings_map.cc
 @@ -586,6 +586,14 @@ void HostContentSettingsMap::SetClockForTesting(base::Clock* clock) {
@@ -1055,7 +1071,6 @@ index 500a6da178..e39f388420 100644
    auto* content_setting_registry =
        content_settings::ContentSettingsRegistry::GetInstance();
 diff --git a/components/content_settings/core/browser/host_content_settings_map.h b/components/content_settings/core/browser/host_content_settings_map.h
-index 462e8a6b28..7194765853 100644
 --- a/components/content_settings/core/browser/host_content_settings_map.h
 +++ b/components/content_settings/core/browser/host_content_settings_map.h
 @@ -327,6 +327,9 @@ class HostContentSettingsMap : public content_settings::Observer,
@@ -1069,14 +1084,13 @@ index 462e8a6b28..7194765853 100644
    friend class base::RefCountedThreadSafe<HostContentSettingsMap>;
    friend class content_settings::TestUtils;
 diff --git a/components/content_settings/core/common/content_settings.cc b/components/content_settings/core/common/content_settings.cc
-index b76c3410b5..44edfd0284 100644
 --- a/components/content_settings/core/common/content_settings.cc
 +++ b/components/content_settings/core/common/content_settings.cc
 @@ -94,6 +94,7 @@ constexpr HistogramValue kHistogramValue[] = {
      {ContentSettingsType::PERMISSION_AUTOREVOCATION_DATA, 72},
      {ContentSettingsType::FILE_SYSTEM_LAST_PICKED_DIRECTORY, 73},
      {ContentSettingsType::DISPLAY_CAPTURE, 74},
-+    //{ContentSettingsType::TIMEZONE_OVERRIDE, 75}, comment for again line 118 failed
++    //{ContentSettingsType::TIMEZONE_OVERRIDE, 75}, removed, see line 118
  };
  
  }  // namespace
@@ -1091,7 +1105,6 @@ index b76c3410b5..44edfd0284 100644
  
  RendererContentSettingRules::RendererContentSettingRules() {}
 diff --git a/components/content_settings/core/common/content_settings.h b/components/content_settings/core/common/content_settings.h
-index 5d2109d96d..96db50dbc8 100644
 --- a/components/content_settings/core/common/content_settings.h
 +++ b/components/content_settings/core/common/content_settings.h
 @@ -79,6 +79,8 @@ struct RendererContentSettingRules {
@@ -1104,7 +1117,6 @@ index 5d2109d96d..96db50dbc8 100644
  
  namespace content_settings {
 diff --git a/components/content_settings/core/common/content_settings.mojom b/components/content_settings/core/common/content_settings.mojom
-index 7df2cdb732..3cd8c2efa2 100644
 --- a/components/content_settings/core/common/content_settings.mojom
 +++ b/components/content_settings/core/common/content_settings.mojom
 @@ -77,4 +77,6 @@ struct RendererContentSettingRules {
@@ -1115,7 +1127,6 @@ index 7df2cdb732..3cd8c2efa2 100644
 +  string timezone_override_value;
  };
 diff --git a/components/content_settings/core/common/content_settings_mojom_traits.cc b/components/content_settings/core/common/content_settings_mojom_traits.cc
-index dae4b74aec..30ff993809 100644
 --- a/components/content_settings/core/common/content_settings_mojom_traits.cc
 +++ b/components/content_settings/core/common/content_settings_mojom_traits.cc
 @@ -100,7 +100,9 @@ bool StructTraits<content_settings::mojom::RendererContentSettingRulesDataView,
@@ -1130,7 +1141,6 @@ index dae4b74aec..30ff993809 100644
  
  }  // namespace mojo
 diff --git a/components/content_settings/core/common/content_settings_mojom_traits.h b/components/content_settings/core/common/content_settings_mojom_traits.h
-index e58b9a6953..acabb350fa 100644
 --- a/components/content_settings/core/common/content_settings_mojom_traits.h
 +++ b/components/content_settings/core/common/content_settings_mojom_traits.h
 @@ -145,6 +145,16 @@ struct StructTraits<
@@ -1151,7 +1161,6 @@ index e58b9a6953..acabb350fa 100644
        content_settings::mojom::RendererContentSettingRulesDataView data,
        RendererContentSettingRules* out);
 diff --git a/components/content_settings/core/common/content_settings_types.h b/components/content_settings/core/common/content_settings_types.h
-index a7ea788112..0537569359 100644
 --- a/components/content_settings/core/common/content_settings_types.h
 +++ b/components/content_settings/core/common/content_settings_types.h
 @@ -231,6 +231,9 @@ enum class ContentSettingsType : int32_t {
@@ -1165,7 +1174,6 @@ index a7ea788112..0537569359 100644
    // TODO(crbug.com/1150788): Apply this to getDisplayMedia() as well.
    // No values are stored for this type, this is solely needed to be able to
 diff --git a/components/content_settings/core/common/pref_names.cc b/components/content_settings/core/common/pref_names.cc
-index 8b4ebc8390..4352dc7775 100644
 --- a/components/content_settings/core/common/pref_names.cc
 +++ b/components/content_settings/core/common/pref_names.cc
 @@ -128,4 +128,7 @@ const char kQuietNotificationPermissionUiEnablingMethod[] =
@@ -1177,7 +1185,6 @@ index 8b4ebc8390..4352dc7775 100644
 +
  }  // namespace prefs
 diff --git a/components/content_settings/core/common/pref_names.h b/components/content_settings/core/common/pref_names.h
-index 23533df766..2a070a8291 100644
 --- a/components/content_settings/core/common/pref_names.h
 +++ b/components/content_settings/core/common/pref_names.h
 @@ -71,6 +71,8 @@ extern const char kQuietNotificationPermissionUiEnablingMethod[];
@@ -1190,7 +1197,6 @@ index 23533df766..2a070a8291 100644
  
  #endif  // COMPONENTS_CONTENT_SETTINGS_CORE_COMMON_PREF_NAMES_H_
 diff --git a/components/content_settings/renderer/content_settings_agent_impl.cc b/components/content_settings/renderer/content_settings_agent_impl.cc
-index b6b38ab9a2..bb3a88c917 100644
 --- a/components/content_settings/renderer/content_settings_agent_impl.cc
 +++ b/components/content_settings/renderer/content_settings_agent_impl.cc
 @@ -9,8 +9,10 @@
@@ -1318,7 +1324,6 @@ index b6b38ab9a2..bb3a88c917 100644
 +
  }  // namespace content_settings
 diff --git a/components/content_settings/renderer/content_settings_agent_impl.h b/components/content_settings/renderer/content_settings_agent_impl.h
-index f5f55e59b0..4dd01a342f 100644
 --- a/components/content_settings/renderer/content_settings_agent_impl.h
 +++ b/components/content_settings/renderer/content_settings_agent_impl.h
 @@ -177,6 +177,10 @@ class ContentSettingsAgentImpl
@@ -1332,3 +1337,17 @@ index f5f55e59b0..4dd01a342f 100644
    DISALLOW_COPY_AND_ASSIGN(ContentSettingsAgentImpl);
  };
  
+diff --git a/weblayer/browser/java/org/chromium/weblayer_private/settings/WebLayerSiteSettingsDelegate.java b/weblayer/browser/java/org/chromium/weblayer_private/settings/WebLayerSiteSettingsDelegate.java
+--- a/weblayer/browser/java/org/chromium/weblayer_private/settings/WebLayerSiteSettingsDelegate.java
++++ b/weblayer/browser/java/org/chromium/weblayer_private/settings/WebLayerSiteSettingsDelegate.java
+@@ -148,4 +148,7 @@ public class WebLayerSiteSettingsDelegate
+ 
+     @Override
+     public void dismissPrivacySandboxSnackbar() {}
++
++    @Override
++    public void launchTimeZoneOverrideHelpAndFeedbackActivity(Activity currentActivity) {}
+ }
+-- 
+2.17.1
+
