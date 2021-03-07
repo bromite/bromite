@@ -11,7 +11,7 @@ for SimpleURLLoaders as well.
 ---
  chrome/android/java/res/values/values.xml     |   3 +
  .../java/res/xml/privacy_preferences.xml      |   4 +
- .../privacy/settings/PrivacySettings.java     |   5 +-
+ .../privacy/settings/PrivacySettings.java     |   6 +-
  .../chrome_autocomplete_provider_client.cc    |   2 +
  chrome/browser/browser_resources.grd          |   6 +
  chrome/browser/net/proxy_service_factory.cc   |  23 +-
@@ -33,7 +33,7 @@ for SimpleURLLoaders as well.
  .../proxy_config/proxy_config_dictionary.h    |   7 +-
  net/proxy_resolution/proxy_config.cc          |  52 ++-
  net/proxy_resolution/proxy_config.h           |   3 +
- 24 files changed, 997 insertions(+), 15 deletions(-)
+ 24 files changed, 998 insertions(+), 15 deletions(-)
  create mode 100644 chrome/browser/resources/proxy_config.css
  create mode 100644 chrome/browser/resources/proxy_config.html
  create mode 100644 chrome/browser/resources/proxy_config.js
@@ -70,27 +70,30 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
-@@ -51,12 +51,15 @@ public class PrivacySettings
-     private static final String PREF_CLEAR_BROWSING_DATA = "clear_browsing_data";
-     private static final String PREF_ALWAYS_INCOGNITO = "always_incognito";
-     public static final String PREF_ALLOW_CUSTOM_TAB_INTENTS = "allow_custom_tab_intents";
-+    private static final String PREF_PROXY_OPTIONS = "proxy";
-+
-     private static final String[] NEW_PRIVACY_PREFERENCE_ORDER = {PREF_CLEAR_BROWSING_DATA,
+@@ -54,7 +54,9 @@ public class PrivacySettings
              PREF_CAN_MAKE_PAYMENT, PREF_NETWORK_PREDICTIONS,
-             PREF_SECURE_DNS, PREF_DO_NOT_TRACK,
-             PREF_ALWAYS_INCOGNITO,
-             PREF_ALLOW_CUSTOM_TAB_INTENTS,
--            PREF_CLOSE_TABS_ON_EXIT
-+            PREF_CLOSE_TABS_ON_EXIT,
+             PREF_CLOSE_TABS_ON_EXIT,
+             PREF_SECURE_DNS, PREF_DO_NOT_TRACK, PREF_PRIVACY_SANDBOX,
+-            PREF_ALLOW_CUSTOM_TAB_INTENTS};
++            PREF_ALLOW_CUSTOM_TAB_INTENTS,
 +            PREF_PROXY_OPTIONS
-         };
++            };
  
      private ManagedPreferenceDelegate mManagedPreferenceDelegate;
+ 
+@@ -62,6 +64,8 @@ public class PrivacySettings
+ 
+     private static final String PREF_CLOSE_TABS_ON_EXIT = "close_tabs_on_exit";
+ 
++    private static final String PREF_PROXY_OPTIONS = "proxy";
++
+     @Override
+     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
+         PrivacyPreferencesManagerImpl privacyPrefManager =
 diff --git a/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc b/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc
 --- a/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc
 +++ b/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc
-@@ -331,6 +331,8 @@ ChromeAutocompleteProviderClient::GetBuiltinsToProvideAsUserTypes() {
+@@ -332,6 +332,8 @@ ChromeAutocompleteProviderClient::GetBuiltinsToProvideAsUserTypes() {
    std::vector<base::string16> builtins_to_provide;
    builtins_to_provide.push_back(
        base::ASCIIToUTF16(chrome::kChromeUIFlagsURL));
@@ -102,7 +105,7 @@ diff --git a/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc 
 diff --git a/chrome/browser/browser_resources.grd b/chrome/browser/browser_resources.grd
 --- a/chrome/browser/browser_resources.grd
 +++ b/chrome/browser/browser_resources.grd
-@@ -128,6 +128,12 @@
+@@ -136,6 +136,12 @@
          <include name="IDR_VIDEO_PLAYER_JS" file="resources\video_tutorials\video_player.js" type="BINDATA" />
        </if>
  
@@ -118,7 +121,7 @@ diff --git a/chrome/browser/browser_resources.grd b/chrome/browser/browser_resou
 diff --git a/chrome/browser/net/proxy_service_factory.cc b/chrome/browser/net/proxy_service_factory.cc
 --- a/chrome/browser/net/proxy_service_factory.cc
 +++ b/chrome/browser/net/proxy_service_factory.cc
-@@ -14,6 +14,9 @@
+@@ -15,6 +15,9 @@
  #include "content/public/browser/browser_thread.h"
  #include "net/proxy_resolution/configured_proxy_resolution_service.h"
  #include "net/proxy_resolution/proxy_config_service.h"
@@ -126,9 +129,9 @@ diff --git a/chrome/browser/net/proxy_service_factory.cc b/chrome/browser/net/pr
 +#include "components/prefs/pref_service.h"
 +#include "components/prefs/pref_registry_simple.h"
  
- #if defined(OS_CHROMEOS)
+ #if BUILDFLAG(IS_CHROMEOS_ASH)
  #include "chromeos/network/proxy/proxy_config_service_impl.h"
-@@ -58,7 +61,20 @@ ProxyServiceFactory::CreatePrefProxyConfigTrackerOfProfile(
+@@ -59,7 +62,20 @@ ProxyServiceFactory::CreatePrefProxyConfigTrackerOfProfile(
    return std::make_unique<chromeos::ProxyConfigServiceImpl>(
        profile_prefs, local_state_prefs, nullptr);
  #else
@@ -147,19 +150,18 @@ diff --git a/chrome/browser/net/proxy_service_factory.cc b/chrome/browser/net/pr
 +    local_state_prefs->CommitPendingWrite();
 +  }
 +  return std::make_unique<PrefProxyConfigTrackerImpl>(local_state_prefs, nullptr);
- #endif  // defined(OS_CHROMEOS)
+ #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
  }
  
-@@ -74,3 +90,8 @@ ProxyServiceFactory::CreatePrefProxyConfigTrackerOfLocalState(
+@@ -75,3 +91,8 @@ ProxyServiceFactory::CreatePrefProxyConfigTrackerOfLocalState(
                                                        nullptr);
- #endif  // defined(OS_CHROMEOS)
+ #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
  }
 +
 +// static
 +void ProxyServiceFactory::RegisterPrefs(PrefRegistrySimple* registry) {
 +  registry->RegisterBooleanPref("proxy_migrated", false);
 +}
-\ No newline at end of file
 diff --git a/chrome/browser/net/proxy_service_factory.h b/chrome/browser/net/proxy_service_factory.h
 --- a/chrome/browser/net/proxy_service_factory.h
 +++ b/chrome/browser/net/proxy_service_factory.h
@@ -183,16 +185,16 @@ diff --git a/chrome/browser/net/proxy_service_factory.h b/chrome/browser/net/pro
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
-@@ -401,6 +401,8 @@
- #include "chrome/browser/media/kaleidoscope/kaleidoscope_prefs.h"
+@@ -410,6 +410,8 @@
+ #include "chrome/browser/media/feeds/media_feeds_service.h"
  #endif
  
 +#include "chrome/browser/net/proxy_service_factory.h"
 +
  namespace {
  
- // Deprecated 9/2019
-@@ -642,6 +644,8 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+ #if BUILDFLAG(IS_CHROMEOS_ASH)
+@@ -697,6 +699,8 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
    PluginsResourceService::RegisterPrefs(registry);
  #endif
  
@@ -204,7 +206,7 @@ diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browse
 diff --git a/chrome/browser/prefs/chrome_command_line_pref_store.cc b/chrome/browser/prefs/chrome_command_line_pref_store.cc
 --- a/chrome/browser/prefs/chrome_command_line_pref_store.cc
 +++ b/chrome/browser/prefs/chrome_command_line_pref_store.cc
-@@ -155,7 +155,7 @@ void ChromeCommandLinePrefStore::ApplyProxyMode() {
+@@ -156,7 +156,7 @@ void ChromeCommandLinePrefStore::ApplyProxyMode() {
      SetValue(
          proxy_config::prefs::kProxy,
          std::make_unique<base::Value>(ProxyConfigDictionary::CreateFixedServers(
@@ -635,7 +637,7 @@ new file mode 100644
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -250,6 +250,8 @@ static_library("ui") {
+@@ -254,6 +254,8 @@ static_library("ui") {
      "webui/metrics_handler.h",
      "webui/net_export_ui.cc",
      "webui/net_export_ui.h",
@@ -647,15 +649,15 @@ diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
 diff --git a/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc b/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
 --- a/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
 +++ b/chrome/browser/ui/webui/chrome_web_ui_controller_factory.cc
-@@ -63,6 +63,7 @@
+@@ -62,6 +62,7 @@
  #include "chrome/browser/ui/webui/omnibox/omnibox_ui.h"
- #include "chrome/browser/ui/webui/policy_ui.h"
+ #include "chrome/browser/ui/webui/policy/policy_ui.h"
  #include "chrome/browser/ui/webui/predictors/predictors_ui.h"
 +#include "chrome/browser/ui/webui/proxy_config_ui.h"
  #include "chrome/browser/ui/webui/quota_internals/quota_internals_ui.h"
  #include "chrome/browser/ui/webui/settings/settings_ui.h"
- #include "chrome/browser/ui/webui/settings_utils.h"
-@@ -555,6 +556,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
+ #include "chrome/browser/ui/webui/settings/settings_utils.h"
+@@ -545,6 +546,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
      return &NewWebUI<MemoryInternalsUI>;
    if (url.host_piece() == chrome::kChromeUINetExportHost)
      return &NewWebUI<NetExportUI>;
@@ -1127,7 +1129,7 @@ new file mode 100644
 diff --git a/chrome/common/webui_url_constants.cc b/chrome/common/webui_url_constants.cc
 --- a/chrome/common/webui_url_constants.cc
 +++ b/chrome/common/webui_url_constants.cc
-@@ -32,6 +32,8 @@ const char kChromeUICertificateViewerHost[] = "view-cert";
+@@ -33,6 +33,8 @@ const char kChromeUICertificateViewerHost[] = "view-cert";
  const char kChromeUICertificateViewerURL[] = "chrome://view-cert/";
  const char kChromeUIChromeSigninHost[] = "chrome-signin";
  const char kChromeUIChromeSigninURL[] = "chrome://chrome-signin/";
@@ -1136,7 +1138,7 @@ diff --git a/chrome/common/webui_url_constants.cc b/chrome/common/webui_url_cons
  const char kChromeUIChromeURLsHost[] = "chrome-urls";
  const char kChromeUIChromeURLsURL[] = "chrome://chrome-urls/";
  const char kChromeUIComponentsHost[] = "components";
-@@ -322,6 +324,7 @@ bool IsSystemWebUIHost(base::StringPiece host) {
+@@ -325,6 +327,7 @@ bool IsSystemWebUIHost(base::StringPiece host) {
        kChromeUIMobileSetupHost,
        kChromeUIMultiDeviceSetupHost,
        kChromeUINetworkHost,
@@ -1144,9 +1146,9 @@ diff --git a/chrome/common/webui_url_constants.cc b/chrome/common/webui_url_cons
        kChromeUIOobeHost,
        kChromeUIOSCreditsHost,
        kChromeUIOSSettingsHost,
-@@ -518,6 +521,7 @@ const char* const kChromeHostURLs[] = {
+@@ -523,6 +526,7 @@ const char* const kChromeHostURLs[] = {
  #if !defined(OS_ANDROID)
- #if !defined(OS_CHROMEOS)
+ #if !BUILDFLAG(IS_CHROMEOS_ASH)
      kChromeUIAppLauncherPageHost,
 +    kChromeUIProxyConfigHost,
  #endif

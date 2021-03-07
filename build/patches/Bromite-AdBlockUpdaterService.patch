@@ -22,11 +22,11 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  chrome/app/generated_resources.grd            |  46 +++
  chrome/browser/after_startup_task_utils.cc    |   5 +
  chrome/browser/browser_process.h              |   7 +
- chrome/browser/browser_process_impl.cc        |  29 ++
+ chrome/browser/browser_process_impl.cc        |  28 ++
  chrome/browser/browser_process_impl.h         |   3 +
  chrome/browser/chrome_browser_main.cc         |   2 +
  .../browser/chrome_content_browser_client.cc  |  16 -
- chrome/browser/flags/BUILD.gn                 |  14 +-
+ chrome/browser/flags/BUILD.gn                 |  12 +
  .../flags/android/adblock_updater_bridge.cc   | 101 ++++++
  .../flags/android/adblock_updater_bridge.h    |  33 ++
  .../flags/android/cached_feature_flags.h      |   2 +
@@ -50,7 +50,7 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  .../browser/subresource_filter_features.cc    | 113 +-----
  .../core/common/common_features.cc            |   2 +-
  .../navigation_throttle_runner.cc             |   5 -
- 41 files changed, 1675 insertions(+), 141 deletions(-)
+ 41 files changed, 1673 insertions(+), 140 deletions(-)
  create mode 100644 chrome/android/java/res/layout/adblock_editor.xml
  create mode 100644 chrome/android/java/res/xml/adblock_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
@@ -66,15 +66,15 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
 diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_java_resources.gni
 --- a/chrome/android/chrome_java_resources.gni
 +++ b/chrome/android/chrome_java_resources.gni
-@@ -781,6 +781,7 @@ chrome_java_resources = [
-   "java/res/layout/account_picker_new_account_row_legacy.xml",
-   "java/res/layout/account_picker_row.xml",
-   "java/res/layout/account_picker_row_legacy.xml",
+@@ -589,6 +589,7 @@ chrome_java_resources = [
+   "java/res/drawable-xxxhdpi/verify_checkmark.png",
+   "java/res/drawable/accessibility_tab_switcher_divider.xml",
+   "java/res/drawable/account_picker_background.xml",
 +  "java/res/layout/adblock_editor.xml",
-   "java/res/layout/add_languages_main.xml",
-   "java/res/layout/add_to_homescreen_dialog.xml",
-   "java/res/layout/add_to_menu_dialog.xml",
-@@ -1046,6 +1047,7 @@ chrome_java_resources = [
+   "java/res/drawable/bg_white_dialog.xml",
+   "java/res/drawable/bookmark_title_bar_shadow.xml",
+   "java/res/drawable/bookmark_widget_list_selector.xml",
+@@ -973,6 +974,7 @@ chrome_java_resources = [
    "java/res/xml/about_chrome_preferences.xml",
    "java/res/xml/accessibility_preferences.xml",
    "java/res/xml/account_management_preferences.xml",
@@ -85,7 +85,7 @@ diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_ja
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
-@@ -1301,6 +1301,8 @@ chrome_java_sources = [
+@@ -1173,6 +1173,8 @@ chrome_java_sources = [
    "java/src/org/chromium/chrome/browser/payments/ui/ShoppingCart.java",
    "java/src/org/chromium/chrome/browser/permissions/PermissionSettingsBridge.java",
    "java/src/org/chromium/chrome/browser/photo_picker/DecoderServiceImpl.java",
@@ -244,7 +244,7 @@ diff --git a/chrome/android/java/res/xml/main_preferences.xml b/chrome/android/j
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
-@@ -59,6 +59,10 @@ import org.chromium.chrome.browser.ChromeActivitySessionTracker;
+@@ -61,6 +61,10 @@ import org.chromium.chrome.browser.ChromeActivitySessionTracker;
  import org.chromium.chrome.browser.ChromeApplication;
  import org.chromium.chrome.browser.ChromeWindow;
  import org.chromium.chrome.browser.DeferredStartupHandler;
@@ -255,7 +255,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
  import org.chromium.chrome.browser.IntentHandler;
  import org.chromium.chrome.browser.IntentHandler.IntentHandlerDelegate;
  import org.chromium.chrome.browser.IntentHandler.TabOpenType;
-@@ -106,6 +110,7 @@ import org.chromium.chrome.browser.gsa.ContextReporter;
+@@ -109,6 +113,7 @@ import org.chromium.chrome.browser.gsa.ContextReporter;
  import org.chromium.chrome.browser.gsa.GSAAccountChangeListener;
  import org.chromium.chrome.browser.gsa.GSAState;
  import org.chromium.chrome.browser.history.HistoryManagerUtils;
@@ -263,15 +263,15 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
  import org.chromium.chrome.browser.init.AsyncInitializationActivity;
  import org.chromium.chrome.browser.init.ProcessInitializationHandler;
  import org.chromium.chrome.browser.init.StartupTabPreloader;
-@@ -133,6 +138,7 @@ import org.chromium.chrome.browser.printing.TabPrinter;
+@@ -135,6 +140,7 @@ import org.chromium.chrome.browser.preferences.Pref;
+ import org.chromium.chrome.browser.printing.TabPrinter;
  import org.chromium.chrome.browser.profiles.Profile;
- import org.chromium.chrome.browser.settings.SettingsLauncher;
  import org.chromium.chrome.browser.settings.SettingsLauncherImpl;
 +import org.chromium.chrome.browser.settings.AdBlockPreferences;
  import org.chromium.chrome.browser.share.ShareDelegate;
  import org.chromium.chrome.browser.share.ShareDelegateImpl;
  import org.chromium.chrome.browser.tab.AccessibilityVisibilityHandler;
-@@ -159,6 +165,7 @@ import org.chromium.chrome.browser.ui.TabObscuringHandler;
+@@ -161,6 +167,7 @@ import org.chromium.chrome.browser.ui.TabObscuringHandler;
  import org.chromium.chrome.browser.ui.appmenu.AppMenuBlocker;
  import org.chromium.chrome.browser.ui.appmenu.AppMenuDelegate;
  import org.chromium.chrome.browser.ui.appmenu.AppMenuPropertiesDelegate;
@@ -279,7 +279,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
  import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
  import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager.SnackbarManageable;
  import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManagerProvider;
-@@ -1018,6 +1025,20 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
+@@ -1035,6 +1042,20 @@ public abstract class ChromeActivity<C extends ChromeActivityComponent>
       */
      @CallSuper
      protected void initDeferredStartupForActivity() {
@@ -591,7 +591,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabMod
 diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
-@@ -10242,6 +10242,52 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -10337,6 +10337,52 @@ Please help our engineers fix this problem. Tell us what happened right before y
        Never show this again.
      </message>
  
@@ -647,7 +647,7 @@ diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources
 diff --git a/chrome/browser/after_startup_task_utils.cc b/chrome/browser/after_startup_task_utils.cc
 --- a/chrome/browser/after_startup_task_utils.cc
 +++ b/chrome/browser/after_startup_task_utils.cc
-@@ -36,6 +36,8 @@
+@@ -39,6 +39,8 @@
  #include "ui/views/linux_ui/linux_ui.h"
  #endif
  
@@ -656,29 +656,29 @@ diff --git a/chrome/browser/after_startup_task_utils.cc b/chrome/browser/after_s
  using content::BrowserThread;
  using content::WebContents;
  using content::WebContentsObserver;
-@@ -138,6 +140,9 @@ void SetBrowserStartupIsComplete() {
+@@ -141,6 +143,9 @@ void SetBrowserStartupIsComplete() {
    g_after_startup_tasks.Get().clear();
    g_after_startup_tasks.Get().shrink_to_fit();
  
 +  // initialize scheduled updates for the AdBlock updater
 +  g_browser_process->adblock_updater()->Start();
 +
- #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-   // Make sure we complete the startup notification sequence, or launchers will
-   // get confused by not receiving the expected message from the main process.
+ // TODO(crbug.com/1052397): Revisit the macro expression once build flag switch
+ // of lacros-chrome is complete.
+ #if defined(OS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)
 diff --git a/chrome/browser/browser_process.h b/chrome/browser/browser_process.h
 --- a/chrome/browser/browser_process.h
 +++ b/chrome/browser/browser_process.h
-@@ -21,6 +21,7 @@
- #include "build/build_config.h"
+@@ -22,6 +22,7 @@
+ #include "build/chromeos_buildflags.h"
  #include "chrome/common/buildflags.h"
  #include "media/media_buildflags.h"
 +#include "components/component_updater/adblock_updater_service.h"
  
  class BackgroundModeManager;
  class BrowserProcessPlatformPart;
-@@ -66,6 +67,10 @@ class ComponentUpdateService;
- class SupervisedUserWhitelistInstaller;
+@@ -66,6 +67,10 @@ namespace component_updater {
+ class ComponentUpdateService;
  }
  
 +namespace adblock_updater {
@@ -688,24 +688,23 @@ diff --git a/chrome/browser/browser_process.h b/chrome/browser/browser_process.h
  namespace extensions {
  class EventRouterForwarder;
  }
-@@ -244,6 +249,8 @@ class BrowserProcess {
- 
-   virtual component_updater::ComponentUpdateService* component_updater() = 0;
+@@ -235,6 +240,8 @@ class BrowserProcess {
+   virtual void StartAutoupdateTimer() = 0;
+ #endif
  
 +  virtual adblock_updater::AdBlockUpdaterService* adblock_updater() = 0;
 +
- #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
-   virtual component_updater::SupervisedUserWhitelistInstaller*
-   supervised_user_whitelist_installer() = 0;
+   virtual component_updater::ComponentUpdateService* component_updater() = 0;
+ 
+   virtual MediaFileSystemRegistry* media_file_system_registry() = 0;
 diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_process_impl.cc
 --- a/chrome/browser/browser_process_impl.cc
 +++ b/chrome/browser/browser_process_impl.cc
-@@ -1047,6 +1047,35 @@ BrowserProcessImpl::component_updater() {
-   return component_updater_.get();
+@@ -1010,6 +1010,34 @@ void BrowserProcessImpl::StartAutoupdateTimer() {
  }
+ #endif
  
-+adblock_updater::AdBlockUpdaterService*
-+BrowserProcessImpl::adblock_updater() {
++adblock_updater::AdBlockUpdaterService* BrowserProcessImpl::adblock_updater() {
 +  if (adblock_updater_)
 +    return adblock_updater_.get();
 +
@@ -733,33 +732,33 @@ diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_pro
 +  return adblock_updater_.get();
 +}
 +
- #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
- component_updater::SupervisedUserWhitelistInstaller*
- BrowserProcessImpl::supervised_user_whitelist_installer() {
+ component_updater::ComponentUpdateService*
+ BrowserProcessImpl::component_updater() {
+   if (component_updater_)
 diff --git a/chrome/browser/browser_process_impl.h b/chrome/browser/browser_process_impl.h
 --- a/chrome/browser/browser_process_impl.h
 +++ b/chrome/browser/browser_process_impl.h
-@@ -183,6 +183,7 @@ class BrowserProcessImpl : public BrowserProcess,
+@@ -184,6 +184,7 @@ class BrowserProcessImpl : public BrowserProcess,
  #endif
  
    component_updater::ComponentUpdateService* component_updater() override;
 +  adblock_updater::AdBlockUpdaterService* adblock_updater() override;
- #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
-   component_updater::SupervisedUserWhitelistInstaller*
-   supervised_user_whitelist_installer() override;
-@@ -367,6 +368,8 @@ class BrowserProcessImpl : public BrowserProcess,
+   MediaFileSystemRegistry* media_file_system_registry() override;
+   WebRtcLogUploader* webrtc_log_uploader() override;
+   network_time::NetworkTimeTracker* network_time_tracker() override;
+@@ -365,6 +366,8 @@ class BrowserProcessImpl : public BrowserProcess,
    // but some users of component updater only install per-user.
    std::unique_ptr<component_updater::ComponentUpdateService> component_updater_;
  
 +  std::unique_ptr<adblock_updater::AdBlockUpdaterService> adblock_updater_;
 +
- #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
-   std::unique_ptr<component_updater::SupervisedUserWhitelistInstaller>
-       supervised_user_whitelist_installer_;
+ #if BUILDFLAG(ENABLE_PLUGINS)
+   std::unique_ptr<PluginsResourceService> plugins_resource_service_;
+ #endif
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
-@@ -1594,6 +1594,8 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+@@ -1605,6 +1605,8 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
    if (!parsed_command_line().HasSwitch(switches::kDisableComponentUpdate)) {
      component_updater::RegisterComponentsForUpdate(profile_->IsOffTheRecord(),
                                                     profile_->GetPrefs());
@@ -771,7 +770,7 @@ diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_brows
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -68,7 +68,6 @@
+@@ -72,7 +72,6 @@
  #include "chrome/browser/hid/chrome_hid_delegate.h"
  #include "chrome/browser/interstitials/enterprise_util.h"
  #include "chrome/browser/lifetime/browser_shutdown.h"
@@ -779,15 +778,15 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  #include "chrome/browser/media/audio_service_util.h"
  #include "chrome/browser/media/router/media_router_feature.h"
  #include "chrome/browser/media/webrtc/audio_debug_recordings_handler.h"
-@@ -231,7 +230,6 @@
- #include "components/no_state_prefetch/common/prerender_types.mojom.h"
+@@ -242,7 +241,6 @@
  #include "components/no_state_prefetch/common/prerender_url_loader_throttle.h"
  #include "components/no_state_prefetch/common/prerender_util.h"
+ #include "components/omnibox/common/omnibox_features.h"
 -#include "components/page_load_metrics/browser/metrics_navigation_throttle.h"
  #include "components/page_load_metrics/browser/metrics_web_contents_observer.h"
+ #include "components/payments/content/payment_handler_navigation_throttle.h"
  #include "components/payments/content/payment_request_display_manager.h"
- #include "components/performance_manager/embedder/performance_manager_registry.h"
-@@ -3919,16 +3917,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
+@@ -3985,16 +3983,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
      content::NavigationHandle* handle) {
    std::vector<std::unique_ptr<content::NavigationThrottle>> throttles;
  
@@ -801,10 +800,10 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
 -        page_load_metrics::MetricsNavigationThrottle::Create(handle));
 -  }
 -
- #if defined(OS_CHROMEOS)
+ #if BUILDFLAG(IS_CHROMEOS_ASH)
    MaybeAddThrottle(
        chromeos::WebTimeLimitNavigationThrottle::MaybeCreateThrottleFor(handle),
-@@ -4037,10 +4025,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
+@@ -4101,10 +4089,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
                     &throttles);
  #endif
  
@@ -818,7 +817,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
 diff --git a/chrome/browser/flags/BUILD.gn b/chrome/browser/flags/BUILD.gn
 --- a/chrome/browser/flags/BUILD.gn
 +++ b/chrome/browser/flags/BUILD.gn
-@@ -14,6 +14,7 @@ android_library("java") {
+@@ -15,6 +15,7 @@ android_library("java") {
      "android/java/src/org/chromium/chrome/browser/flags/FeatureParamUtils.java",
      "android/java/src/org/chromium/chrome/browser/flags/IntCachedFieldTrialParameter.java",
      "android/java/src/org/chromium/chrome/browser/flags/StringCachedFieldTrialParameter.java",
@@ -826,34 +825,32 @@ diff --git a/chrome/browser/flags/BUILD.gn b/chrome/browser/flags/BUILD.gn
    ]
    deps = [
      "//base:base_java",
-@@ -21,7 +22,8 @@ android_library("java") {
-     "//chrome/browser/preferences:java",
-     "//third_party/android_deps:androidx_annotation_annotation_java",
+@@ -26,6 +27,7 @@ android_library("java") {
+   srcjar_deps = [
+     ":chrome_android_java_switches_srcjar",
+     ":chrome_browser_flags_enums_srcjar",
++    ":adblock_enums_javagen"
    ]
--  srcjar_deps = [ ":chrome_android_java_switches_srcjar" ]
-+  srcjar_deps = [ ":chrome_android_java_switches_srcjar",
-+                  ":adblock_enums_javagen" ]
    annotation_processor_deps = [ "//base/android/jni_generator:jni_processor" ]
  }
- 
-@@ -29,6 +31,7 @@ generate_jni("jni_headers") {
-   sources = [
+@@ -35,6 +37,7 @@ generate_jni("jni_headers") {
      "android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java",
      "android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java",
+     "android/java/src/org/chromium/chrome/browser/flags/ChromeSessionState.java",
 +    "android/java/src/org/chromium/chrome/browser/flags/AdblockUpdaterBridge.java",
    ]
  }
  
-@@ -36,6 +39,8 @@ static_library("flags_android") {
-   sources = [
-     "android/cached_feature_flags.cc",
+@@ -44,6 +47,8 @@ static_library("flags_android") {
      "android/cached_feature_flags.h",
+     "android/chrome_session_state.cc",
+     "android/chrome_session_state.h",
 +    "android/adblock_updater_bridge.cc",
 +    "android/adblock_updater_bridge.h",
    ]
    deps = [
      ":jni_headers",
-@@ -44,6 +49,13 @@ static_library("flags_android") {
+@@ -52,6 +57,13 @@ static_library("flags_android") {
    ]
  }
  
@@ -1136,9 +1133,9 @@ new file mode 100644
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
-@@ -615,6 +615,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
-   syncer::InvalidatorRegistrarWithMemory::RegisterPrefs(registry);
-   syncer::PerUserTopicSubscriptionManager::RegisterPrefs(registry);
+@@ -670,6 +670,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+   SSLConfigServiceManager::RegisterPrefs(registry);
+   subresource_filter::IndexedRulesetVersion::RegisterPrefs(registry);
    SystemNetworkContextManager::RegisterPrefs(registry);
 +  adblock_updater::AdBlockUpdaterService::RegisterPrefs(registry);
    update_client::RegisterPrefs(registry);
@@ -1147,7 +1144,7 @@ diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browse
 diff --git a/chrome/browser/sessions/session_restore_android.cc b/chrome/browser/sessions/session_restore_android.cc
 --- a/chrome/browser/sessions/session_restore_android.cc
 +++ b/chrome/browser/sessions/session_restore_android.cc
-@@ -43,7 +43,9 @@ content::WebContents* SessionRestore::RestoreForeignSessionTab(
+@@ -42,7 +42,9 @@ content::WebContents* SessionRestore::RestoreForeignSessionTab(
    TabAndroid* current_tab = TabAndroid::FromWebContents(web_contents);
    DCHECK(current_tab);
    if (disposition == WindowOpenDisposition::CURRENT_TAB) {
@@ -2048,7 +2045,7 @@ new file mode 100644
 diff --git a/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc b/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc
 --- a/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc
 +++ b/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc
-@@ -551,6 +551,17 @@ ContentSubresourceFilterThrottleManager::
+@@ -529,6 +529,17 @@ ContentSubresourceFilterThrottleManager::
        throttle->NotifyPageActivationWithRuleset(EnsureRulesetHandle(),
                                                  ad_tagging_state);
      }
@@ -2451,10 +2448,10 @@ diff --git a/components/subresource_filter/core/common/common_features.cc b/comp
 diff --git a/content/browser/renderer_host/navigation_throttle_runner.cc b/content/browser/renderer_host/navigation_throttle_runner.cc
 --- a/content/browser/renderer_host/navigation_throttle_runner.cc
 +++ b/content/browser/renderer_host/navigation_throttle_runner.cc
-@@ -131,11 +131,6 @@ void NavigationThrottleRunner::RegisterNavigationThrottles() {
-   // than other throttles that might care about those navigations, e.g.
-   // throttles handling pages with 407 errors that require extra authentication.
+@@ -134,11 +134,6 @@ void NavigationThrottleRunner::RegisterNavigationThrottles() {
    AddThrottle(HttpErrorNavigationThrottle::MaybeCreateThrottleFor(*request));
+ 
+   AddThrottle(BackForwardCacheThrottle::MaybeCreateThrottleFor(request));
 -
 -  // Insert all testing NavigationThrottles last.
 -  throttles_.insert(throttles_.end(),
