@@ -19,26 +19,47 @@ ld.lld: error: undefined symbol: notifier::NotifierOptions::NotifierOptions()
 >>> referenced by invalidation_service_util.cc:17 (../../components/invalidation/impl/invalidation_service_util.cc:17)
 >>>               impl/invalidation_service_util.o:(invalidation::ParseNotifierOptions(base::CommandLine const&)) in archive obj/components/invalidation/impl/libimpl.a
 ---
+ chrome/android/chrome_java_sources.gni        |   1 -
  chrome/android/java/AndroidManifest.xml       |   8 -
  .../android/java/res/xml/main_preferences.xml |   9 -
  .../chrome/browser/app/ChromeActivity.java    |  34 ----
- .../bookmarks/BookmarkItemsAdapter.java       |  30 +---
- .../bookmarks/BookmarkPromoHeader.java        | 161 +----------------
+ .../bookmarks/BookmarkItemsAdapter.java       |  30 +--
+ .../bookmarks/BookmarkPromoHeader.java        | 173 +-----------------
  .../DataReductionPreferenceFragment.java      |  24 +--
+ .../init/ChromeBrowserInitializer.java        |   2 -
+ .../init/ProcessInitializationHandler.java    |   2 -
  .../privacy/settings/PrivacySettings.java     |  44 +----
- .../chrome/browser/settings/MainSettings.java | 166 +-----------------
+ .../services/AccountsChangedReceiver.java     |   2 -
+ .../chrome/browser/settings/MainSettings.java | 166 +----------------
+ .../browser/signin/SigninHelperProvider.java  |  36 ----
  .../browser/sync/AndroidSyncSettings.java     |  28 +--
  .../settings/SyncAndServicesSettings.java     |   8 -
- .../android/signin/signin_manager_android.cc  |   1 -
- .../browser/signin/services/android/BUILD.gn  |   2 -
+ chrome/browser/BUILD.gn                       |   8 -
+ .../identity_services_provider_android.cc     |   9 -
+ .../browser/signin/services/android/BUILD.gn  |   1 -
  .../services/IdentityServicesProvider.java    |  14 --
+ .../ui/ConfirmImportSyncDataDialog.java       |   5 +-
+ .../ui/ConfirmSyncDataStateMachine.java       |  16 +-
+ .../signin/ui/SignOutDialogFragment.java      |  13 --
  .../signin/ui/SigninPromoController.java      |  23 +--
  .../strings/android_chrome_strings.grd        |  18 --
  .../signin/SystemAccountManagerDelegate.java  |  38 +---
- .../net/HttpNegotiateAuthenticator.java       |  88 +---------
+ .../net/HttpNegotiateAuthenticator.java       |  88 +--------
  .../chromoting/base/OAuthTokenFetcher.java    |   2 -
- 18 files changed, 26 insertions(+), 672 deletions(-)
+ 27 files changed, 26 insertions(+), 776 deletions(-)
+ delete mode 100644 chrome/android/java/src/org/chromium/chrome/browser/signin/SigninHelperProvider.java
 
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -1244,7 +1244,6 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/signin/SigninActivityLauncherImpl.java",
+   "java/src/org/chromium/chrome/browser/signin/SigninFragment.java",
+   "java/src/org/chromium/chrome/browser/signin/SigninFragmentBase.java",
+-  "java/src/org/chromium/chrome/browser/signin/SigninHelperProvider.java",
+   "java/src/org/chromium/chrome/browser/signin/SigninManagerImpl.java",
+   "java/src/org/chromium/chrome/browser/signin/SigninPromoUtil.java",
+   "java/src/org/chromium/chrome/browser/signin/SigninUtils.java",
 diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/AndroidManifest.xml
 --- a/chrome/android/java/AndroidManifest.xml
 +++ b/chrome/android/java/AndroidManifest.xml
@@ -284,17 +305,18 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
  
  import java.lang.annotation.Retention;
  import java.lang.annotation.RetentionPolicy;
-@@ -43,8 +27,7 @@ import java.lang.annotation.RetentionPolicy;
+@@ -43,9 +27,7 @@ import java.lang.annotation.RetentionPolicy;
   * Class that manages all the logic and UI behind the signin promo header in the bookmark
   * content UI. The header is shown only on certain situations, (e.g., not signed in).
   */
 -class BookmarkPromoHeader implements ProfileSyncService.SyncStateChangedListener,
 -                                     SignInStateObserver, ProfileDataCache.Observer,
-+class BookmarkPromoHeader implements ProfileDataCache.Observer,
-                                      AccountsChangeObserver {
+-                                     AccountsChangeObserver {
++class BookmarkPromoHeader {
      /**
       * Specifies the various states in which the Bookmarks promo can be.
-@@ -65,14 +48,10 @@ class BookmarkPromoHeader implements ProfileSyncService.SyncStateChangedListener
+      */
+@@ -65,14 +47,9 @@ class BookmarkPromoHeader implements ProfileSyncService.SyncStateChangedListener
      private static @Nullable @PromoState Integer sPromoStateForTests;
  
      private final Context mContext;
@@ -302,14 +324,14 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
 -    private final AccountManagerFacade mAccountManagerFacade;
      private final Runnable mPromoHeaderChangeAction;
  
-     private @Nullable ProfileDataCache mProfileDataCache;
+-    private @Nullable ProfileDataCache mProfileDataCache;
 -    private final @Nullable SigninPromoController mSigninPromoController;
      private @PromoState int mPromoState;
 -    private final @Nullable ProfileSyncService mProfileSyncService;
  
      /**
       * Initializes the class. Note that this will start listening to signin related events and
-@@ -82,47 +61,21 @@ class BookmarkPromoHeader implements ProfileSyncService.SyncStateChangedListener
+@@ -82,47 +59,17 @@ class BookmarkPromoHeader implements ProfileSyncService.SyncStateChangedListener
          mContext = context;
          mPromoHeaderChangeAction = promoHeaderChangeAction;
  
@@ -327,7 +349,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
              SharedPreferencesManager.getInstance().incrementInt(
                      ChromePreferenceKeys.SIGNIN_AND_SYNC_PROMO_SHOW_COUNT);
          }
- 
+-
 -        if (SigninPromoController.hasNotReachedImpressionLimit(
 -                    SigninAccessPoint.BOOKMARK_MANAGER)) {
 -            mProfileDataCache = ProfileDataCache.createProfileDataCache(mContext);
@@ -339,8 +361,6 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
 -            mProfileDataCache = null;
 -            mSigninPromoController = null;
 -        }
-+        mProfileDataCache = ProfileDataCache.createProfileDataCache(mContext);
-+        mProfileDataCache.addObserver(this);
      }
  
      /**
@@ -356,11 +376,10 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
 -        }
 -
 -        mSignInManager.removeSignInStateObserver(this);
-+        mProfileDataCache.removeObserver(this);
      }
  
      /**
-@@ -133,18 +86,6 @@ class BookmarkPromoHeader implements ProfileSyncService.SyncStateChangedListener
+@@ -133,18 +80,6 @@ class BookmarkPromoHeader implements ProfileSyncService.SyncStateChangedListener
          return mPromoState;
      }
  
@@ -379,7 +398,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
      /**
       * @return Sync promo header {@link ViewHolder} instance that can be used with
       *         {@link RecyclerView}.
-@@ -156,54 +97,11 @@ class BookmarkPromoHeader implements ProfileSyncService.SyncStateChangedListener
+@@ -156,54 +91,11 @@ class BookmarkPromoHeader implements ProfileSyncService.SyncStateChangedListener
          return new ViewHolder(view) {};
      }
  
@@ -435,7 +454,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
      }
  
      private @PromoState int calculatePromoState() {
-@@ -211,57 +109,9 @@ class BookmarkPromoHeader implements ProfileSyncService.SyncStateChangedListener
+@@ -211,71 +103,10 @@ class BookmarkPromoHeader implements ProfileSyncService.SyncStateChangedListener
              return sPromoStateForTests;
          }
  
@@ -490,12 +509,18 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
 -        triggerPromoUpdate();
 -    }
 -
-     // ProfileDataCache.Observer implementation.
-     @Override
-     public void onProfileDataUpdated(String accountEmail) {
-@@ -275,7 +125,6 @@ class BookmarkPromoHeader implements ProfileSyncService.SyncStateChangedListener
-     }
- 
+-    // ProfileDataCache.Observer implementation.
+-    @Override
+-    public void onProfileDataUpdated(String accountEmail) {
+-        triggerPromoUpdate();
+-    }
+-
+-    // AccountsChangeObserver implementation.
+-    @Override
+-    public void onAccountsChanged() {
+-        triggerPromoUpdate();
+-    }
+-
      private void triggerPromoUpdate() {
 -        detachPersonalizePromoView();
          mPromoHeaderChangeAction.run();
@@ -542,6 +567,44 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/datareduction/s
      }
  
      /**
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/init/ChromeBrowserInitializer.java b/chrome/android/java/src/org/chromium/chrome/browser/init/ChromeBrowserInitializer.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/init/ChromeBrowserInitializer.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/init/ChromeBrowserInitializer.java
+@@ -35,7 +35,6 @@ import org.chromium.chrome.browser.app.flags.ChromeCachedFlags;
+ import org.chromium.chrome.browser.crash.LogcatExtractionRunnable;
+ import org.chromium.chrome.browser.download.DownloadManagerService;
+ import org.chromium.chrome.browser.flags.ChromeSwitches;
+-import org.chromium.chrome.browser.signin.SigninHelperProvider;
+ import org.chromium.chrome.browser.webapps.ChromeWebApkHost;
+ import org.chromium.components.background_task_scheduler.BackgroundTaskSchedulerFactory;
+ import org.chromium.components.crash.browser.ChildProcessCrashObserver;
+@@ -354,7 +353,6 @@ public class ChromeBrowserInitializer {
+             LibraryPrefetcher.asyncPrefetchLibrariesToMemory();
+             getBrowserStartupController().startBrowserProcessesSync(
+                     LibraryProcessType.PROCESS_BROWSER, /*singleProcess=*/false);
+-            SigninHelperProvider.get();
+         } finally {
+             TraceEvent.end("ChromeBrowserInitializer.startChromeBrowserProcessesSync");
+         }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java b/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java
+@@ -75,7 +75,6 @@ import org.chromium.chrome.browser.rlz.RevenueStats;
+ import org.chromium.chrome.browser.searchwidget.SearchWidgetProvider;
+ import org.chromium.chrome.browser.share.clipboard.ClipboardImageFileProvider;
+ import org.chromium.chrome.browser.sharing.shared_clipboard.SharedClipboardShareActivity;
+-import org.chromium.chrome.browser.signin.SigninHelperProvider;
+ import org.chromium.chrome.browser.sync.SyncController;
+ import org.chromium.chrome.browser.uid.UniqueIdentificationGeneratorFactory;
+ import org.chromium.chrome.browser.uid.UuidBasedUniqueIdentificationGenerator;
+@@ -389,7 +388,6 @@ public class ProcessInitializationHandler {
+         deferredStartupHandler.addDeferredTask(new Runnable() {
+             @Override
+             public void run() {
+-                SigninHelperProvider.get().onMainActivityStart();
+                 RevenueStats.getInstance();
+             }
+         });
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
@@ -617,6 +680,25 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
      @Override
      public boolean onPreferenceChange(Preference preference, Object newValue) {
          String key = preference.getKey();
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/services/AccountsChangedReceiver.java b/chrome/android/java/src/org/chromium/chrome/browser/services/AccountsChangedReceiver.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/services/AccountsChangedReceiver.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/services/AccountsChangedReceiver.java
+@@ -15,7 +15,6 @@ import org.chromium.chrome.browser.init.BrowserParts;
+ import org.chromium.chrome.browser.init.ChromeBrowserInitializer;
+ import org.chromium.chrome.browser.init.EmptyBrowserParts;
+ import org.chromium.chrome.browser.profiles.Profile;
+-import org.chromium.chrome.browser.signin.SigninHelperProvider;
+ import org.chromium.chrome.browser.signin.services.IdentityServicesProvider;
+ import org.chromium.chrome.browser.signin.services.SigninPreferencesManager;
+ import org.chromium.components.signin.AccountTrackerService;
+@@ -52,7 +51,6 @@ public class AccountsChangedReceiver extends BroadcastReceiver {
+                                     Profile.getLastUsedRegularProfile());
+                     // TODO(bsazonov): Check whether invalidateAccountSeedStatus is needed here.
+                     trackerService.invalidateAccountSeedStatus(false /* don't refresh right now */);
+-                    SigninHelperProvider.get().validateAccountSettings(true);
+                 });
+             }
+ 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
@@ -912,6 +994,47 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSe
                  if (PREF_SEARCH_ENGINE.equals(preference.getKey())) {
                      return TemplateUrlServiceFactory.get().isDefaultSearchManaged();
                  }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninHelperProvider.java b/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninHelperProvider.java
+deleted file mode 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/signin/SigninHelperProvider.java
++++ /dev/null
+@@ -1,36 +0,0 @@
+-// Copyright 2020 The Chromium Authors. All rights reserved.
+-// Use of this source code is governed by a BSD-style license that can be
+-// found in the LICENSE file.
+-
+-package org.chromium.chrome.browser.signin;
+-
+-import androidx.annotation.MainThread;
+-
+-import org.chromium.chrome.browser.profiles.Profile;
+-import org.chromium.chrome.browser.signin.services.IdentityServicesProvider;
+-import org.chromium.chrome.browser.signin.services.SigninHelper;
+-import org.chromium.chrome.browser.signin.services.SigninPreferencesManager;
+-import org.chromium.chrome.browser.sync.SyncController;
+-
+-/**
+- * This class is used to get a singleton instance of {@link SigninHelper}.
+- */
+-public class SigninHelperProvider {
+-    private static SigninHelper sInstance;
+-
+-    /**
+-     * @return A singleton instance of {@link SigninHelper}.
+-     */
+-    @MainThread
+-    public static SigninHelper get() {
+-        if (sInstance == null) {
+-            // Initialize sync.
+-            SyncController.get();
+-            Profile profile = Profile.getLastUsedRegularProfile();
+-            sInstance = new SigninHelper(IdentityServicesProvider.get().getSigninManager(profile),
+-                    IdentityServicesProvider.get().getAccountTrackerService(profile),
+-                    SigninPreferencesManager.getInstance());
+-        }
+-        return sInstance;
+-    }
+-}
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/sync/AndroidSyncSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/sync/AndroidSyncSettings.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/sync/AndroidSyncSettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/sync/AndroidSyncSettings.java
@@ -977,29 +1100,72 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/sync/settings/S
  
          SettingsUtils.addPreferencesFromResource(this, R.xml.sync_and_services_preferences);
  
-diff --git a/chrome/browser/android/signin/signin_manager_android.cc b/chrome/browser/android/signin/signin_manager_android.cc
---- a/chrome/browser/android/signin/signin_manager_android.cc
-+++ b/chrome/browser/android/signin/signin_manager_android.cc
-@@ -141,7 +141,6 @@ SigninManagerAndroid::SigninManagerAndroid(
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -2871,8 +2871,6 @@ static_library("browser") {
+       "android/service_tab_launcher.h",
+       "android/shortcut_helper.cc",
+       "android/shortcut_helper.h",
+-      "android/signin/signin_manager_android.cc",
+-      "android/signin/signin_manager_android.h",
+       "android/signin/signin_metrics_utils.cc",
+       "android/signin/signin_promo_util_android.cc",
+       "android/signin/signin_promo_util_android.h",
+@@ -3178,8 +3176,6 @@ static_library("browser") {
+       "sharing/sharing_service_proxy_android.h",
+       "shell_integration_android.cc",
+       "signin/identity_services_provider_android.cc",
+-      "signin/signin_manager_android_factory.cc",
+-      "signin/signin_manager_android_factory.h",
+       "ssl/chrome_security_state_client.cc",
+       "ssl/chrome_security_state_client.h",
+       "ssl/chrome_security_state_model_delegate.cc",
+@@ -5521,10 +5517,6 @@ static_library("browser") {
+       "signin/logout_tab_helper.h",
+       "signin/process_dice_header_delegate_impl.cc",
+       "signin/process_dice_header_delegate_impl.h",
+-      "signin/signin_manager.cc",
+-      "signin/signin_manager.h",
+-      "signin/signin_manager_factory.cc",
+-      "signin/signin_manager_factory.h",
+     ]
+     if (is_win) {
+       sources += [
+diff --git a/chrome/browser/signin/identity_services_provider_android.cc b/chrome/browser/signin/identity_services_provider_android.cc
+--- a/chrome/browser/signin/identity_services_provider_android.cc
++++ b/chrome/browser/signin/identity_services_provider_android.cc
+@@ -6,7 +6,6 @@
+ #include "chrome/browser/profiles/profile_android.h"
+ #include "chrome/browser/signin/identity_manager_factory.h"
+ #include "chrome/browser/signin/services/android/jni_headers/IdentityServicesProvider_jni.h"
+-#include "chrome/browser/signin/signin_manager_android_factory.h"
+ #include "components/signin/public/identity_manager/identity_manager.h"
  
-   java_signin_manager_ = Java_SigninManagerImpl_create(
-       base::android::AttachCurrentThread(), reinterpret_cast<intptr_t>(this),
--      identity_manager_->LegacyGetAccountTrackerServiceJavaObject(),
-       identity_manager_->GetJavaObject(),
-       identity_manager_->GetIdentityMutatorJavaObject());
+ using base::android::JavaParamRef;
+@@ -29,11 +28,3 @@ JNI_IdentityServicesProvider_GetAccountTrackerService(
+       IdentityManagerFactory::GetForProfile(profile);
+   return identity_manager->LegacyGetAccountTrackerServiceJavaObject();
  }
+-
+-static ScopedJavaLocalRef<jobject>
+-JNI_IdentityServicesProvider_GetSigninManager(
+-    JNIEnv* env,
+-    const JavaParamRef<jobject>& j_profile_android) {
+-  Profile* profile = ProfileAndroid::FromProfileAndroid(j_profile_android);
+-  return SigninManagerAndroidFactory::GetJavaObjectForProfile(profile);
+-}
 diff --git a/chrome/browser/signin/services/android/BUILD.gn b/chrome/browser/signin/services/android/BUILD.gn
 --- a/chrome/browser/signin/services/android/BUILD.gn
 +++ b/chrome/browser/signin/services/android/BUILD.gn
-@@ -20,8 +20,6 @@ android_library("java") {
+@@ -20,7 +20,6 @@ android_library("java") {
      "java/src/org/chromium/chrome/browser/signin/services/IdentityServicesProvider.java",
      "java/src/org/chromium/chrome/browser/signin/services/ProfileDataCache.java",
      "java/src/org/chromium/chrome/browser/signin/services/ProfileDownloader.java",
 -    "java/src/org/chromium/chrome/browser/signin/services/SigninHelper.java",
--    "java/src/org/chromium/chrome/browser/signin/services/SigninManager.java",
+     "java/src/org/chromium/chrome/browser/signin/services/SigninManager.java",
      "java/src/org/chromium/chrome/browser/signin/services/SigninMetricsUtils.java",
      "java/src/org/chromium/chrome/browser/signin/services/SigninPreferencesManager.java",
-     "java/src/org/chromium/chrome/browser/signin/services/UnifiedConsentServiceBridge.java",
 diff --git a/chrome/browser/signin/services/android/java/src/org/chromium/chrome/browser/signin/services/IdentityServicesProvider.java b/chrome/browser/signin/services/android/java/src/org/chromium/chrome/browser/signin/services/IdentityServicesProvider.java
 --- a/chrome/browser/signin/services/android/java/src/org/chromium/chrome/browser/signin/services/IdentityServicesProvider.java
 +++ b/chrome/browser/signin/services/android/java/src/org/chromium/chrome/browser/signin/services/IdentityServicesProvider.java
@@ -1027,6 +1193,91 @@ diff --git a/chrome/browser/signin/services/android/java/src/org/chromium/chrome
 -        SigninManager getSigninManager(Profile profile);
      }
  }
+diff --git a/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/ConfirmImportSyncDataDialog.java b/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/ConfirmImportSyncDataDialog.java
+--- a/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/ConfirmImportSyncDataDialog.java
++++ b/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/ConfirmImportSyncDataDialog.java
+@@ -106,10 +106,7 @@ public class ConfirmImportSyncDataDialog
+         mConfirmImportOption.setRadioButtonGroup(radioGroup);
+         mKeepSeparateOption.setRadioButtonGroup(radioGroup);
+ 
+-        boolean isManagedAccount = IdentityServicesProvider.get()
+-                                           .getSigninManager(Profile.getLastUsedRegularProfile())
+-                                           .getManagementDomain()
+-                != null;
++        boolean isManagedAccount = false;
+         final AlertDialog alertDialog =
+                 new AlertDialog.Builder(getActivity(), R.style.Theme_Chromium_AlertDialog)
+                         .setPositiveButton(R.string.continue_button, this)
+diff --git a/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/ConfirmSyncDataStateMachine.java b/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/ConfirmSyncDataStateMachine.java
+--- a/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/ConfirmSyncDataStateMachine.java
++++ b/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/ConfirmSyncDataStateMachine.java
+@@ -175,9 +175,6 @@ public class ConfirmSyncDataStateMachine
+     }
+ 
+     private void requestNewAccountManagementStatus() {
+-        IdentityServicesProvider.get()
+-                .getSigninManager(Profile.getLastUsedRegularProfile())
+-                .isAccountManaged(mNewAccountName, this::setIsNewAccountManaged);
+     }
+ 
+     private void setIsNewAccountManaged(Boolean isManaged) {
+@@ -193,17 +190,8 @@ public class ConfirmSyncDataStateMachine
+         assert mNewAccountManaged != null;
+         assert mState == State.AFTER_NEW_ACCOUNT_DIALOG;
+ 
+-        if (mNewAccountManaged) {
+-            // Show 'logging into managed account' dialog
+-            // This will call back into onConfirm on success.
+-            mDelegate.showSignInToManagedAccountDialog(this,
+-                    IdentityServicesProvider.get()
+-                            .getSigninManager(Profile.getLastUsedRegularProfile())
+-                            .extractDomainName(mNewAccountName));
+-        } else {
+-            mDelegate.dismissAllDialogs();
+-            progress();
+-        }
++        mDelegate.dismissAllDialogs();
++        progress();
+     }
+ 
+     private void showProgressDialog() {
+diff --git a/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/SignOutDialogFragment.java b/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/SignOutDialogFragment.java
+--- a/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/SignOutDialogFragment.java
++++ b/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/SignOutDialogFragment.java
+@@ -19,7 +19,6 @@ import org.chromium.base.metrics.RecordHistogram;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.profiles.ProfileAccountManagementMetrics;
+ import org.chromium.chrome.browser.signin.services.IdentityServicesProvider;
+-import org.chromium.chrome.browser.signin.services.SigninManager;
+ import org.chromium.chrome.browser.signin.services.SigninMetricsUtils;
+ import org.chromium.components.signin.GAIAServiceType;
+ 
+@@ -67,12 +66,6 @@ public class SignOutDialogFragment
+             mGaiaServiceType =
+                     getArguments().getInt(SHOW_GAIA_SERVICE_TYPE_EXTRA, mGaiaServiceType);
+         }
+-        String domain = IdentityServicesProvider.get()
+-                                .getSigninManager(Profile.getLastUsedRegularProfile())
+-                                .getManagementDomain();
+-        if (domain != null) {
+-            return createDialogForManagedAccount(domain);
+-        }
+ 
+         return createDialog();
+     }
+@@ -106,12 +99,6 @@ public class SignOutDialogFragment
+         if (which == AlertDialog.BUTTON_POSITIVE) {
+             SigninMetricsUtils.logProfileAccountManagementMenu(
+                     ProfileAccountManagementMetrics.SIGNOUT_SIGNOUT, mGaiaServiceType);
+-            SigninManager signinManager = IdentityServicesProvider.get().getSigninManager(
+-                    Profile.getLastUsedRegularProfile());
+-            if (signinManager.getManagementDomain() == null) {
+-                RecordHistogram.recordBooleanHistogram(
+-                        "Signin.UserRequestedWipeDataOnSignout", mWipeUserData.isChecked());
+-            }
+             SignOutDialogListener targetFragment = (SignOutDialogListener) getTargetFragment();
+             targetFragment.onSignOutClicked(mWipeUserData != null && mWipeUserData.isChecked());
+         }
 diff --git a/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/SigninPromoController.java b/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/SigninPromoController.java
 --- a/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/SigninPromoController.java
 +++ b/chrome/browser/signin/ui/android/java/src/org/chromium/chrome/browser/signin/ui/SigninPromoController.java
