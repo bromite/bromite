@@ -1,7 +1,17 @@
+# 89.0.4389.78
+* make all favicon requests on-demand
+* restored older icon for view source menu item
+* prevent adblock filters update check on app start (fixes https://github.com/bromite/bromite/issues/967)
+* removed UI for adblock filters (fixes https://github.com/bromite/bromite/issues/941)
+* dropped patch for swapped favicons bug
+* dropped patch to enable reduced-referrer-granularity by default (already present upstream)
+* dropped password reuse detection patch
+* dropped UA customization patch
+* enabled PartitionExpectCTStateByNetworkIsolationKey and PartitionDomainReliabilityByNetworkIsolationKey (fixes https://github.com/bromite/bromite/issues/985)
+
 # 88.0.4324.207
 * add flag for save-data-header
 * add option to force tablet UI
-* fix bug with wrong last checked time (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/941)
 * fix bug with adblock filters not being downloaded correctly (fixes https://github.com/bromite/bromite/issues/960)
 * move up bookmark all tabs menu item (fixes https://github.com/bromite/bromite/issues/943)
 * fix icons for exit and view source menu items

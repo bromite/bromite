@@ -57,6 +57,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 
 ## Features not related to privacy
 * import/export bookmarks
+* bookmark all tabs from tabs regroup menu
 * flag to allow screenshots of incognito tabs
 * allow playing videos in background tabs and disable pause on switching tabs
 * all codecs included (proprietary, open H.264 etc.)
