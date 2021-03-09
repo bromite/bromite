@@ -198,6 +198,7 @@
 * drop patch for DoH minimum timeout (upstream also implemented it)
 * dropped patch for removal of support of CCT dynamic modules (upstream also removed it)
 * removed upstream patch for SD card not found issue (upstream merged it)
+* enable reporting because of COEP
 
 # 81.0.4044.127
 * fix always-incognito crashes (https://github.com/bromite/bromite/issues/135 and https://github.com/bromite/bromite/pull/529)
