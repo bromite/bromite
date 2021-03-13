@@ -1,3 +1,12 @@
+# 89.0.4389.92
+* updated zh_CN translations (thanks to @zhmars, https://github.com/bromite/bromite/pull/1000)
+* introduce Alt+D hotkey to focus address bar (fixes https://github.com/bromite/bromite/issues/979)
+* use 64-bit ABI for webview processes (fixes https://github.com/bromite/bromite/issues/997)
+* use dedicated folder for bookmark all tabs
+* fix Javascript and cookies permissions missing (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/990)
+* fix missing enable save data header flag (fixes https://github.com/bromite/bromite/issues/989)
+* fix menu items not properly displayed with tab overflow menu regroup (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/963)
+
 # 89.0.4389.78
 * make all favicon requests on-demand
 * restored older icon for view source menu item
