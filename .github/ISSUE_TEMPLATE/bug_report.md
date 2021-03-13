@@ -57,6 +57,8 @@ Steps to reproduce the bug:
 3. Scroll down to '...'
 4. See error
 
+Do not write "any website", specify which URLs can be used to reproduce the issue.
+
 ### Expected behavior
 
 <!-- A clear and concise description of what you expected to happen. -->
