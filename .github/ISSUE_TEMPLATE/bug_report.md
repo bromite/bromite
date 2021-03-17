@@ -20,6 +20,12 @@ Arch: `arm` or `arm64` or `x86`
 Android version: (example: `9.0`)
 Device model: (example: `SM-G960UZKABST`)
 
+### Flags
+
+These are the flags changed under `chrome://flags`:
+
+<!-- Report all the blue-highlighted flags here, those are the flags with non-default configuration -->
+
 ### Is this bug about the SystemWebView?
 Yes/No
 
