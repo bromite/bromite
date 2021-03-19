@@ -92,6 +92,7 @@ Flags which have been retired from upstream Chromium but are still available in 
 
 New flags:
 
+* `#fingerprinting-canvas-image-data-noise`, `#fingerprinting-client-rects-noise` and `#fingerprinting-canvas-measuretext-noise`
 * `#enable-incognito-snapshots-in-android-recents`
 * `#max-connections-per-host`
 * `#resume-background-video`
