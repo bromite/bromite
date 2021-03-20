@@ -8,7 +8,7 @@ Bromite is a [Chromium](https://www.chromium.org/Home) fork with support for ad 
 
 Bromite is only available for Android Lollipop (v5.0, API level 21) and above.
 
-<img src="https://www.bromite.org/bromite_bromite_gh_downloads.svg" alt="downloads on Github" title="downloads on Github" />
+<img src="https://fdroid.bromite.org/fdroid/bromite_bromite_gh_downloads.svg" alt="Downloads on Github" title="Downloads on Github" />
 
 For the Frequently Asked Questions see [F.A.Q.](./FAQ.md).
 
@@ -57,6 +57,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 
 ## Features not related to privacy
 * import/export bookmarks
+* bookmark all tabs from tabs regroup menu
 * flag to allow screenshots of incognito tabs
 * allow playing videos in background tabs and disable pause on switching tabs
 * all codecs included (proprietary, open H.264 etc.)
@@ -87,6 +88,7 @@ Flags which have been retired from upstream Chromium but are still available in 
 * `#darken-websites-checkbox-in-themes-setting`
 * `#simplified-ntp`
 * `#enable-text-fragment-anchor`
+* `#num-raster-threads`
 
 New flags:
 
@@ -148,6 +150,14 @@ The patches are to be applied second the order specified in the `bromite_patches
 See upstream documentation: https://github.com/chromium/chromium/blob/master/components/subresource_filter/FILTER_LIST_GENERATION.md
 
 Bromite uses an unindexed filter file, which is periodically published at https://github.com/bromite/filters
+
+# Contributing
+
+Please submit issues following the issue template; beware that GitHub does not display the templates from mobile.
+
+Patches are welcome and accepted if they match the project goals.
+
+For any usage or development discussion please use GitHub Discussions: https://github.com/bromite/bromite/discussions
 
 # Credits
 
