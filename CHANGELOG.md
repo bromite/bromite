@@ -1,3 +1,10 @@
+# 89.0.4389.100
+* enable AImageReader by default (fixes https://github.com/bromite/bromite/issues/1005)
+* fix missing flag for AImageReader
+* move incognito snapshots flag to proper section (fixes https://github.com/bromite/bromite/issues/1006)
+* add missing icon for exit menu
+* implement SAF for bookmarks export functionality (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/831)
+
 # 89.0.4389.92
 * updated zh_CN translations (thanks to @zhmars, https://github.com/bromite/bromite/pull/1000)
 * introduce Alt+D hotkey to focus address bar (fixes https://github.com/bromite/bromite/issues/979)
