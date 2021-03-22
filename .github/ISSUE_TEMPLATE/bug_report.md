@@ -27,13 +27,16 @@ These are the flags changed under `chrome://flags`:
 <!-- Report all the blue-highlighted flags here, those are the flags with non-default configuration -->
 
 ### Is this bug about the SystemWebView?
-Yes/No
 
 <!-- No support for SystemWebView installations is provided. -->
+
+Yes/No
 
 ### Is the bug reproducible with latest version?
 
 <!-- Do not report bugs which are not reproducible with latest version. -->
+
+Yes/No
 
 ### Can the bug be reproduced with corresponding Chromium version?
 
@@ -41,6 +44,8 @@ Yes/No
 Please pick the same version of Chromium as Bromite from here: https://github.com/bromite/chromium/releases
 If the bug is reproducible then it might be a configuration issue or an upstream bug. Upstream bugs can be reported on the [Chromium issue tracker](https://bugs.chromium.org/p/chromium/issues/list) and do not forget to read [Chromium project bug reporting guidelines](https://www.chromium.org/for-testers/bug-reporting-guidelines) first.
 -->
+
+Yes/No
 
 ### Allow ads for the site; is the bug caused by the adblocker?
 Yes/No
