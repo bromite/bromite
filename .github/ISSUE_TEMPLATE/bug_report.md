@@ -15,7 +15,7 @@ If instead of a bug report you want to ask a question then please use the GitHub
 
 ### Bromite version
 
-Version: `83.0...`
+Version: `89.0...`
 Arch: `arm` or `arm64` or `x86`
 Android version: (example: `9.0`)
 Device model: (example: `SM-G960UZKABST`)
@@ -53,8 +53,12 @@ Yes/No
 ### Is the bug a crash?
 
 <!--
-If yes then individuate and post the logcat dump (remove privacy sensitive information, if any), otherwise remove this section.
+If yes then individuate and post the 'adb logcat | grep chromium' dump, otherwise remove this section.
 -->
+Yes, this is the crash dump:
+```
+<paste here logcat dump>
+```
 
 ### Describe the bug
 
