@@ -1,3 +1,7 @@
+# 89.0.4389.117
+* disable AImageReader by default on Android 9 and below (fixes https://github.com/bromite/bromite/issues/1005)
+* log checksum of AdBlock filters
+
 # 89.0.4389.100
 * enable AImageReader by default (fixes https://github.com/bromite/bromite/issues/1005)
 * fix missing flag for AImageReader
