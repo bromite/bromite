@@ -1,3 +1,8 @@
+# 90.0.4430.74
+* re-added patch for User agent customization (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1049)
+* fix always-incognito custom tab intents issues (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1047 and https://github.com/bromite/bromite/issues/1051)
+* prevent Omnibox URL elisions by default
+
 # 90.0.4430.59
 * fix menu items not properly displayed with tab overflow menu regroup (fixes https://github.com/bromite/bromite/issues/963)
 * fix text displayed for menu entry to bookmark all tabs
