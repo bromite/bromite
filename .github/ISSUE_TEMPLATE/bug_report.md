@@ -47,6 +47,9 @@ If the bug is reproducible then it might be a configuration issue or an upstream
 
 Yes/No
 
+### Is this bug happening in an incognito tab?
+Yes/No
+
 ### Allow ads for the site; is the bug caused by the adblocker?
 Yes/No
 
