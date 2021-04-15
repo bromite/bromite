@@ -110,7 +110,7 @@ New flags:
 * `#enable-device-motion` and `#enable-device-orientation`
 * `#show-legacy-tls-warnings`
 * `#save-data-header`, disabled by default
-* `#export-bookmarks-use-saf`, enabled by default
+* `#export-bookmarks-use-saf`, disabled by default
 
 # Privacy limitations
 
