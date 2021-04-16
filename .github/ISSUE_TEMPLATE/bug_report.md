@@ -43,6 +43,8 @@ Yes/No
 <!--
 Please pick the same version of Chromium as Bromite from here: https://github.com/bromite/chromium/releases
 If the bug is reproducible then it might be a configuration issue or an upstream bug. Upstream bugs can be reported on the [Chromium issue tracker](https://bugs.chromium.org/p/chromium/issues/list) and do not forget to read [Chromium project bug reporting guidelines](https://www.chromium.org/for-testers/bug-reporting-guidelines) first.
+
+If the bug is related to functionality that does not exist in Chromium then answer "No".
 -->
 
 Yes/No
