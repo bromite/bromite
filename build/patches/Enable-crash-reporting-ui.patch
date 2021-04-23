@@ -1,0 +1,206 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Fri, 23 Apr 2021 18:41:48 +0000
+Subject: enable crash report ui
+
+---
+ chrome/browser/ui/webui/crashes_ui.cc         |  8 +---
+ .../crash/core/browser/resources/crashes.js   |  2 +-
+ components/crash_strings.grdp                 | 16 ++++----
+ .../MinidumpUploadCallable.java               | 23 -----------
+ .../minidump_uploader/MinidumpUploader.java   | 40 ++++++++-----------
+ components/upload_list/upload_list.cc         |  2 +-
+ 6 files changed, 27 insertions(+), 64 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/crashes_ui.cc
+--- a/chrome/browser/ui/webui/crashes_ui.cc
++++ b/chrome/browser/ui/webui/crashes_ui.cc
+@@ -173,8 +173,7 @@ void CrashesDOMHandler::OnUploadListAvailable() {
+ }
+ 
+ void CrashesDOMHandler::UpdateUI() {
+-  bool crash_reporting_enabled =
+-      ChromeMetricsServiceAccessor::IsMetricsAndCrashReportingEnabled();
++  bool crash_reporting_enabled = true;
+ 
+   bool system_crash_reporter = false;
+ #if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
+@@ -244,11 +243,6 @@ void CrashesDOMHandler::HandleRequestSingleCrashUpload(
+   bool success = args->GetString(0, &local_id);
+   DCHECK(success);
+ 
+-  // Only allow manual uploads if crash uploads aren’t disabled by policy.
+-  if (!ChromeMetricsServiceAccessor::IsMetricsAndCrashReportingEnabled() &&
+-      IsMetricsReportingPolicyManaged()) {
+-    return;
+-  }
+   upload_list_->RequestSingleUploadAsync(local_id);
+ }
+ 
+diff --git a/components/crash/core/browser/resources/crashes.js b/components/crash/core/browser/resources/crashes.js
+--- a/components/crash/core/browser/resources/crashes.js
++++ b/components/crash/core/browser/resources/crashes.js
+@@ -99,7 +99,7 @@ function updateCrashList(
+       uploadTime.querySelector('.value').textContent = crash.upload_time;
+ 
+       sendNowButton.remove();
+-      fileBugButton.onclick = () => fileBug(crash.id, os, version);
++      fileBugButton.remove();
+     } else {
+       uploadId.remove();
+       uploadTime.remove();
+diff --git a/components/crash_strings.grdp b/components/crash_strings.grdp
+--- a/components/crash_strings.grdp
++++ b/components/crash_strings.grdp
+@@ -19,22 +19,22 @@
+     Status:
+   </message>
+   <message name="IDS_CRASH_REPORT_STATUS_NOT_UPLOADED" desc="Value on chrome://crashes for the 'not uploaded' status of a crash report.">
+-    Not uploaded
++    Not saved
+   </message>
+   <message name="IDS_CRASH_REPORT_STATUS_PENDING" desc="Value on chrome://crashes for the 'pending' status of a crash report.">
+-    Not yet uploaded, or ignored
++    Not yet saved, or ignored
+   </message>
+   <message name="IDS_CRASH_REPORT_STATUS_PENDING_USER_REQUESTED" desc="Value on chrome://crashes for the 'pending user requested' status of a crash report.">
+-    Upload requested by user
++    Save requested by user
+   </message>
+   <message name="IDS_CRASH_REPORT_STATUS_UPLOADED" desc="Value on chrome://crashes for the 'uploaded' status of a crash report.">
+-    Uploaded
++    Saved
+   </message>
+   <message name="IDS_CRASH_REPORT_UPLOADED_ID" desc="Label on chrome://crashes for the identifier for an uploaded crash report on chrome://crashes">
+-    Uploaded Crash Report ID:
++    Saved Crash Report File:
+   </message>
+   <message name="IDS_CRASH_REPORT_UPLOADED_TIME" desc="Label on chrome://crashes for the time at which the crash report was uploaded.">
+-    Upload Time:
++    Saved Time:
+   </message>
+   <message name="IDS_CRASH_REPORT_LOCAL_ID" desc="Label on chrome://crashes for the identifier of a crash report on the user's machine">
+     Local Crash Context:
+@@ -53,9 +53,9 @@
+     Crash reporting is disabled.
+   </message>
+   <message name="IDS_CRASH_UPLOAD_MESSAGE" desc="Link text for triggering crash uploading on chrome://crashes">
+-    Start uploading crashes
++    Start saving crashes
+   </message>
+   <message name="IDS_CRASH_UPLOAD_NOW_LINK_TEXT" desc="Link text for manual uploads of a crash report">
+-    Send now
++    Save now
+   </message>
+ </grit-part>
+diff --git a/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploadCallable.java b/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploadCallable.java
+--- a/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploadCallable.java
++++ b/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploadCallable.java
+@@ -60,29 +60,6 @@ public class MinidumpUploadCallable implements Callable<Integer> {
+ 
+     @Override
+     public @MinidumpUploadStatus Integer call() {
+-        if (mPermManager.isUploadEnabledForTests()) {
+-            Log.i(TAG, "Minidump upload enabled for tests, skipping other checks.");
+-        } else if (!CrashFileManager.isForcedUpload(mFileToUpload)) {
+-            if (!mPermManager.isUsageAndCrashReportingPermittedByUser()) {
+-                Log.i(TAG, "Minidump upload is not permitted by user. Marking file as skipped for "
+-                                + "cleanup to prevent future uploads.");
+-                CrashFileManager.markUploadSkipped(mFileToUpload);
+-                return MinidumpUploadStatus.USER_DISABLED;
+-            }
+-
+-            if (!mPermManager.isClientInMetricsSample()) {
+-                Log.i(TAG, "Minidump upload skipped due to sampling.  Marking file as skipped for "
+-                                + "cleanup to prevent future uploads.");
+-                CrashFileManager.markUploadSkipped(mFileToUpload);
+-                return MinidumpUploadStatus.DISABLED_BY_SAMPLING;
+-            }
+-
+-            if (!mPermManager.isNetworkAvailableForCrashUploads()) {
+-                Log.i(TAG, "Minidump cannot currently be uploaded due to network constraints.");
+-                return MinidumpUploadStatus.FAILURE;
+-            }
+-        }
+-
+         MinidumpUploader.Result result = mMinidumpUploader.upload(mFileToUpload);
+         if (result.isSuccess()) {
+             String uploadId = result.message();
+diff --git a/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploader.java b/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploader.java
+--- a/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploader.java
++++ b/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploader.java
+@@ -11,6 +11,8 @@ import java.io.BufferedReader;
+ import java.io.ByteArrayOutputStream;
+ import java.io.File;
+ import java.io.FileInputStream;
++import java.io.FileOutputStream;
++import java.io.BufferedOutputStream;
+ import java.io.FileReader;
+ import java.io.IOException;
+ import java.io.InputStream;
+@@ -18,6 +20,8 @@ import java.io.OutputStream;
+ import java.net.HttpURLConnection;
+ import java.util.zip.GZIPOutputStream;
+ 
++import org.chromium.base.PathUtils;
++
+ /**
+  * This class tries to upload a minidump to the crash server.
+  *
+@@ -120,30 +124,18 @@ public class MinidumpUploader {
+             if (fileToUpload == null || !fileToUpload.exists()) {
+                 return Result.failure("Crash report does not exist");
+             }
+-            HttpURLConnection connection =
+-                    mHttpURLConnectionFactory.createHttpURLConnection(CRASH_URL_STRING);
+-            if (connection == null) {
+-                return Result.failure("Failed to create connection");
+-            }
+-            configureConnectionForHttpPost(connection, readBoundary(fileToUpload));
+-
+-            try (InputStream minidumpInputStream = new FileInputStream(fileToUpload);
+-                    OutputStream requestBodyStream =
+-                            new GZIPOutputStream(connection.getOutputStream())) {
+-                streamCopy(minidumpInputStream, requestBodyStream);
+-                int responseCode = connection.getResponseCode();
+-                if (isSuccessful(responseCode)) {
+-                    // The crash server returns the crash ID in the response body.
+-                    String responseContent = getResponseContentAsString(connection);
+-                    String uploadId = responseContent != null ? responseContent : "unknown";
+-                    return Result.success(uploadId);
+-                } else {
+-                    // Return the remote error code and message.
+-                    return Result.uploadError(responseCode, connection.getResponseMessage());
+-                }
+-            } finally {
+-                connection.disconnect();
+-            }
++
++            File outputDir = new File(PathUtils.getDownloadsDirectory());
++            File destination = new File(outputDir, fileToUpload.getName());
++
++            InputStream minidumpInputStream = new FileInputStream(fileToUpload);
++            OutputStream out = new BufferedOutputStream(
++                    new FileOutputStream(destination));
++            OutputStream requestBodyStream =
++                    new GZIPOutputStream(out);
++
++            streamCopy(minidumpInputStream, requestBodyStream);
++            return Result.success(destination.getPath());
+         } catch (IOException | RuntimeException e) {
+             return Result.failure(e.toString());
+         }
+diff --git a/components/upload_list/upload_list.cc b/components/upload_list/upload_list.cc
+--- a/components/upload_list/upload_list.cc
++++ b/components/upload_list/upload_list.cc
+@@ -20,7 +20,7 @@ namespace {
+ // chrome://webrtc-logs and the feedback UI. See https://crbug.com/972526.
+ constexpr base::TaskTraits kLoadingTaskTraits = {
+     base::MayBlock(), base::TaskPriority::USER_BLOCKING,
+-    base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN};
++    base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN};
+ 
+ }  // namespace
+ 
+-- 
+2.17.1
+
