@@ -3,16 +3,42 @@ Date: Sun, 3 Nov 2019 08:22:29 +0100
 Subject: Remove SMS integration
 
 ---
- .../content/browser/sms/SmsProviderGms.java   |  9 +---
+ .../content/browser/sms/SmsProviderGms.java   | 21 +--------
  .../browser/sms/SmsUserConsentReceiver.java   | 46 ++-----------------
- .../browser/sms/SmsVerificationReceiver.java  | 43 +++--------------
+ .../browser/sms/SmsVerificationReceiver.java  | 37 ++++-----------
  .../content/browser/sms/Wrappers.java         | 28 +----------
- 4 files changed, 12 insertions(+), 114 deletions(-)
+ 4 files changed, 16 insertions(+), 116 deletions(-)
 
 diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/SmsProviderGms.java b/content/public/android/java/src/org/chromium/content/browser/sms/SmsProviderGms.java
 --- a/content/public/android/java/src/org/chromium/content/browser/sms/SmsProviderGms.java
 +++ b/content/public/android/java/src/org/chromium/content/browser/sms/SmsProviderGms.java
-@@ -126,13 +126,6 @@ public class SmsProviderGms {
+@@ -4,9 +4,6 @@
+ 
+ package org.chromium.content.browser.sms;
+ 
+-import com.google.android.gms.common.ConnectionResult;
+-import com.google.android.gms.common.GoogleApiAvailability;
+-
+ import org.chromium.base.ContextUtils;
+ import org.chromium.base.Log;
+ import org.chromium.base.annotations.CalledByNative;
+@@ -47,15 +44,6 @@ public class SmsProviderGms {
+ 
+         mContext = new Wrappers.WebOTPServiceContext(ContextUtils.getApplicationContext(), this);
+ 
+-        boolean isVerificationBackendAvailable =
+-                GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(
+-                        mContext, MIN_GMS_VERSION_NUMBER_WITH_CODE_BROWSER_BACKEND)
+-                == ConnectionResult.SUCCESS;
+-        if (isVerificationBackendAvailable
+-                && (mBackend == GmsBackend.AUTO || mBackend == GmsBackend.VERIFICATION)) {
+-            mVerificationReceiver = new SmsVerificationReceiver(this, mContext);
+-        }
+-
+         if (mBackend == GmsBackend.AUTO || mBackend == GmsBackend.USER_CONSENT) {
+             mUserConsentReceiver = new SmsUserConsentReceiver(this, mContext);
+         }
+@@ -133,13 +121,6 @@ public class SmsProviderGms {
      }
  
      public Wrappers.SmsRetrieverClientWrapper getClient() {
@@ -26,9 +52,9 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Sm
          return mClient;
      }
  
-@@ -153,4 +146,4 @@ public class SmsProviderGms {
-         void onTimeout(long nativeSmsProviderGms);
+@@ -161,4 +142,4 @@ public class SmsProviderGms {
          void onCancel(long nativeSmsProviderGms);
+         void onNotAvailable(long nativeSmsProviderGms);
      }
 -}
 \ No newline at end of file
@@ -50,7 +76,7 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Sm
  import org.chromium.base.Log;
  import org.chromium.ui.base.WindowAndroid;
  
-@@ -34,28 +27,11 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
+@@ -34,29 +27,12 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
          mDestroyed = false;
          mProvider = provider;
          mContext = context;
@@ -73,13 +99,14 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Sm
      }
  
      public void destroy() {
+         if (mDestroyed) return;
          if (DEBUG) Log.d(TAG, "Destroying SmsUserConsentReceiver.");
          mDestroyed = true;
 -        mContext.unregisterReceiver(this);
      }
  
      @Override
-@@ -66,7 +42,7 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
+@@ -67,7 +43,7 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
              return;
          }
  
@@ -88,7 +115,7 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Sm
              return;
          }
  
-@@ -100,28 +76,14 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
+@@ -101,28 +77,14 @@ public class SmsUserConsentReceiver extends BroadcastReceiver {
                  if (DEBUG) Log.d(TAG, "Timeout");
                  mProvider.onTimeout();
                  break;
@@ -99,7 +126,7 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Sm
      void onConsentResult(int resultCode, Intent data) {
 -        if (resultCode == Activity.RESULT_OK) {
 -            String message = data.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE);
--            mProvider.onReceive(message);
+-            mProvider.onReceive(message, GmsBackend.USER_CONSENT);
 -        } else if (resultCode == Activity.RESULT_CANCELED) {
 -            if (DEBUG) Log.d(TAG, "Activity result cancelled.");
 -            mProvider.onCancel();
@@ -138,19 +165,12 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Sm
 -import com.google.android.gms.tasks.Task;
 -
  import org.chromium.base.Log;
+ import org.chromium.base.metrics.RecordHistogram;
  import org.chromium.ui.base.WindowAndroid;
- 
-@@ -46,35 +36,18 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
-         mDestroyed = false;
-         mProvider = provider;
-         mContext = context;
--
--        // A broadcast receiver is registered upon the creation of this class which happens when the
--        // SMS Retriever API or SMS Browser Code API is used for the first time since chrome last
--        // restarted (which, on android, happens frequently). The broadcast receiver is fairly
--        // lightweight (e.g. it responds quickly without much computation). If this broadcast
--        // receiver becomes more heavyweight, we should make this registration expire after the SMS
--        // message is received.
+@@ -61,27 +51,18 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
+         // lightweight (e.g. it responds quickly without much computation). If this broadcast
+         // receiver becomes more heavyweight, we should make this registration expire after the SMS
+         // message is received.
 -        if (DEBUG) Log.i(TAG, "Registering intent filters.");
 -        IntentFilter filter = new IntentFilter();
 -        filter.addAction(SmsCodeRetriever.SMS_CODE_RETRIEVED_ACTION);
@@ -163,21 +183,22 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Sm
      }
  
      public void destroy() {
+-        if (mDestroyed) return;
++        /*if (mDestroyed) return;
          if (DEBUG) Log.d(TAG, "Destroying SmsVerificationReceiver.");
          mDestroyed = true;
 -        mContext.unregisterReceiver(this);
++        mContext.unregisterReceiver(this); */
      }
  
      @Override
      public void onReceive(Context context, Intent intent) {
-         if (DEBUG) Log.d(TAG, "Received something!");
+-        if (DEBUG) Log.d(TAG, "Received something!");
++        /*if (DEBUG) Log.d(TAG, "Received something!");
  
--        if (mDestroyed) {
-+        /*if (mDestroyed) {
+         if (mDestroyed) {
              return;
-         }
- 
-@@ -105,7 +78,7 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
+@@ -114,7 +95,7 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
                  if (DEBUG) Log.d(TAG, "Timeout");
                  mProvider.onTimeout();
                  break;
@@ -186,34 +207,40 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Sm
      }
  
      public void onPermissionDone(WindowAndroid window, int resultCode) {
-@@ -125,7 +98,7 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
+@@ -134,7 +115,7 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
       * task.
       */
      public void onRetrieverTaskFailure(WindowAndroid window, Exception e) {
 -        if (DEBUG) Log.d(TAG, "Task failed. Attempting recovery.", e);
-+/*        if (DEBUG) Log.d(TAG, "Task failed. Attempting recovery.", e);
++        /*if (DEBUG) Log.d(TAG, "Task failed. Attempting recovery.", e);
+         BackendAvailability availability = BackendAvailability.AVAILABLE;
          ApiException exception = (ApiException) e;
          if (exception.getStatusCode() == SmsRetrieverStatusCodes.API_NOT_CONNECTED) {
-             mProvider.onMethodNotAvailable();
-@@ -162,15 +135,11 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
-             }
+@@ -176,11 +157,12 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
          } else {
              Log.w(TAG, "Unexpected exception", e);
--        }
-+        }*/
+         }
+-        reportBackendAvailability(availability);
++        reportBackendAvailability(availability); */
 +        Log.w(TAG, "Unexpected exception", e);
      }
  
      public void listen(WindowAndroid window) {
 -        Wrappers.SmsRetrieverClientWrapper client = mProvider.getClient();
--        Task<Void> task = client.startSmsCodeBrowserRetriever();
--
--        task.addOnFailureListener((Exception e) -> { this.onRetrieverTaskFailure(window, e); });
--
++        /* Wrappers.SmsRetrieverClientWrapper client = mProvider.getClient();
+         Task<Void> task = client.startSmsCodeBrowserRetriever();
+ 
+         task.addOnSuccessListener(unused -> {
+@@ -192,7 +174,8 @@ public class SmsVerificationReceiver extends BroadcastReceiver {
+             mProvider.destoryVerificationReceiver();
+         });
+ 
 -        if (DEBUG) Log.d(TAG, "Installed task");
++        if (DEBUG) Log.d(TAG, "Installed task"); */
 +        if (DEBUG) Log.d(TAG, "Ignored task");
      }
- }
+ 
+     public void reportBackendAvailability(BackendAvailability availability) {
 diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Wrappers.java b/content/public/android/java/src/org/chromium/content/browser/sms/Wrappers.java
 --- a/content/public/android/java/src/org/chromium/content/browser/sms/Wrappers.java
 +++ b/content/public/android/java/src/org/chromium/content/browser/sms/Wrappers.java
@@ -262,7 +289,7 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/sms/Wr
      }
  
      /**
-@@ -77,12 +57,6 @@ class Wrappers {
+@@ -83,12 +63,6 @@ class Wrappers {
  
          @Override
          public Intent registerReceiver(BroadcastReceiver receiver, IntentFilter filter) {

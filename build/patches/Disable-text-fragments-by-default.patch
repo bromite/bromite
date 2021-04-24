@@ -17,33 +17,33 @@ Revert "[Text Fragment] Unflag fragment directive removal."
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
-@@ -5164,6 +5164,7 @@ const FeatureEntry kFeatureEntries[] = {
-      flag_descriptions::kEnableImplicitRootScrollerDescription, kOsAll,
-      FEATURE_VALUE_TYPE(blink::features::kImplicitRootScroller)},
- 
+@@ -5282,6 +5282,7 @@ const FeatureEntry kFeatureEntries[] = {
+          kHappinessTrackingSurveysForDesktopDevToolsIssuesCookiesSameSiteDescription,
+      kOsDesktop,
+      FEATURE_VALUE_TYPE(
 +     // will override runtime text fragment identifiers setting too
-     {"enable-text-fragment-anchor",
-      flag_descriptions::kEnableTextFragmentAnchorName,
-      flag_descriptions::kEnableTextFragmentAnchorDescription, kOsAll,
+          features::
+              kHappinessTrackingSurveysForDesktopDevToolsIssuesCookiesSameSite)},
+ 
 diff --git a/chrome/browser/flag-metadata.json b/chrome/browser/flag-metadata.json
 --- a/chrome/browser/flag-metadata.json
 +++ b/chrome/browser/flag-metadata.json
-@@ -2267,7 +2267,7 @@
+@@ -2755,7 +2755,7 @@
    {
-     "name": "enable-text-fragment-anchor",
-     "owners": [ "bokan", "input-dev" ],
+     "name": "ev-details-in-page-info",
+     "owners": [ "cthomp" ],
 -    "expiry_milestone": 83
 +    "expiry_milestone": -1
    },
    {
-     "name": "enable-tls13-early-data",
+     "name": "exo-gamepad-vibration",
 diff --git a/chrome/browser/ui/prefs/prefs_tab_helper.cc b/chrome/browser/ui/prefs/prefs_tab_helper.cc
 --- a/chrome/browser/ui/prefs/prefs_tab_helper.cc
 +++ b/chrome/browser/ui/prefs/prefs_tab_helper.cc
-@@ -357,7 +357,7 @@ void PrefsTabHelper::RegisterProfilePrefs(
-       prefs::kEnableReferrers,
+@@ -360,7 +360,7 @@ void PrefsTabHelper::RegisterProfilePrefs(
        !base::FeatureList::IsEnabled(features::kNoReferrers));
    registry->RegisterBooleanPref(prefs::kEnableEncryptedMedia, true);
+   registry->RegisterBooleanPref(prefs::kEnableDRM, true);
 -  registry->RegisterBooleanPref(prefs::kScrollToTextFragmentEnabled, true);
 +  registry->RegisterBooleanPref(prefs::kScrollToTextFragmentEnabled, false);
  #if defined(OS_ANDROID)
@@ -52,18 +52,18 @@ diff --git a/chrome/browser/ui/prefs/prefs_tab_helper.cc b/chrome/browser/ui/pre
 diff --git a/content/child/runtime_features.cc b/content/child/runtime_features.cc
 --- a/content/child/runtime_features.cc
 +++ b/content/child/runtime_features.cc
-@@ -269,6 +269,7 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
-     {wf::EnableBackgroundFetch, features::kBackgroundFetch},
-     {wf::EnableForcedColors, features::kForcedColors},
-     {wf::EnableFractionalScrollOffsets, features::kFractionalScrollOffsets},
+@@ -273,6 +273,7 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
+     {wf::EnableMouseSubframeNoImplicitCapture,
+      features::kMouseSubframeNoImplicitCapture},
+     {wf::EnableNeverSlowMode, features::kNeverSlowMode},
 +    // will set the TextFragmentIdentifiers runtime feature
- #if defined(OS_ANDROID)
-     {wf::EnableGetDisplayMedia, features::kUserMediaScreenCapturing},
- #endif
+     {wf::EnableNotificationContentImage, features::kNotificationContentImage,
+      kSetOnlyIfOverridden},
+     {wf::EnableParseUrlProtocolHandler,
 diff --git a/third_party/blink/common/features.cc b/third_party/blink/common/features.cc
 --- a/third_party/blink/common/features.cc
 +++ b/third_party/blink/common/features.cc
-@@ -289,7 +289,7 @@ const base::Feature kStorageAccessAPI{"StorageAccessAPI",
+@@ -309,7 +309,7 @@ const base::Feature kStorageAccessAPI{"StorageAccessAPI",
  
  // Enable text snippets in URL fragments. https://crbug.com/919204.
  const base::Feature kTextFragmentAnchor{"TextFragmentAnchor",
@@ -75,7 +75,7 @@ diff --git a/third_party/blink/common/features.cc b/third_party/blink/common/fea
 diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
 --- a/third_party/blink/renderer/core/dom/document.cc
 +++ b/third_party/blink/renderer/core/dom/document.cc
-@@ -4462,6 +4462,10 @@ void Document::SetURL(const KURL& url) {
+@@ -4324,6 +4324,10 @@ void Document::SetURL(const KURL& url) {
      }
    }
  
@@ -86,7 +86,7 @@ diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink
    // Strip the fragment directive from the URL fragment. E.g. "#id:~:text=a"
    // --> "#id". See https://github.com/WICG/scroll-to-text-fragment.
    String fragment = new_url.FragmentIdentifier();
-@@ -4475,6 +4479,7 @@ void Document::SetURL(const KURL& url) {
+@@ -4337,6 +4341,7 @@ void Document::SetURL(const KURL& url) {
      else
        new_url.SetFragmentIdentifier(fragment.Substring(0, start_pos));
    }
@@ -97,7 +97,7 @@ diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink
 diff --git a/third_party/blink/renderer/core/page/scrolling/text_fragment_anchor_metrics_test.cc b/third_party/blink/renderer/core/page/scrolling/text_fragment_anchor_metrics_test.cc
 --- a/third_party/blink/renderer/core/page/scrolling/text_fragment_anchor_metrics_test.cc
 +++ b/third_party/blink/renderer/core/page/scrolling/text_fragment_anchor_metrics_test.cc
-@@ -1164,34 +1164,25 @@ TEST_P(TextFragmentRelatedMetricTest, ElementIdSuccessFailureCounts) {
+@@ -1254,34 +1254,25 @@ TEST_P(TextFragmentRelatedMetricTest, ElementIdSuccessFailureCounts) {
    // result of the element-id fragment if a text directive is successfully
    // parsed. If the feature is off we treat the text directive as an element-id
    // and should count the result.
@@ -145,7 +145,7 @@ diff --git a/third_party/blink/renderer/core/page/scrolling/text_fragment_anchor
 diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
 --- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
 +++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -1926,8 +1926,7 @@
+@@ -2020,8 +2020,7 @@
      },
      {
        name: "TextFragmentIdentifiers",

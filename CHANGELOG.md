@@ -1,3 +1,54 @@
+# 90.0.4430.74
+* re-added patch for User agent customization (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1049)
+* fix always-incognito custom tab intents issues (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1047 and https://github.com/bromite/bromite/issues/1051)
+* prevent Omnibox URL elisions by default
+
+# 90.0.4430.59
+* fix menu items not properly displayed with tab overflow menu regroup (fixes https://github.com/bromite/bromite/issues/963)
+* fix text displayed for menu entry to bookmark all tabs
+* bookmarks import/export: disable SAF by default (fixes https://github.com/bromite/bromite/issues/1039)
+* disable offline measurement background task
+* dropped patch to show warnings for TSLv1.0/v1.1 connections (upstream now disallows them)
+* disable AImageReader by default on Android 9 and below for Qualcomm (fixes https://github.com/bromite/bromite/issues/1005)
+
+# 89.0.4389.117
+* disable AImageReader by default on Android 9 and below for ARM (fixes https://github.com/bromite/bromite/issues/1005)
+* log checksum of AdBlock filters
+
+# 89.0.4389.100
+* enable AImageReader by default (fixes https://github.com/bromite/bromite/issues/1005)
+* fix missing flag for AImageReader
+* move incognito snapshots flag to proper section (fixes https://github.com/bromite/bromite/issues/1006)
+* add missing icon for exit menu
+* implement SAF for bookmarks export functionality (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/831)
+
+# 89.0.4389.92
+* updated zh_CN translations (thanks to @zhmars, https://github.com/bromite/bromite/pull/1000)
+* introduce Alt+D hotkey to focus address bar (fixes https://github.com/bromite/bromite/issues/979)
+* use 64-bit ABI for webview processes (fixes https://github.com/bromite/bromite/issues/997)
+* use dedicated folder for bookmark all tabs
+* fix Javascript and cookies permissions missing (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/990)
+* fix missing enable save data header flag (fixes https://github.com/bromite/bromite/issues/989)
+* fix menu items not properly displayed with tab overflow menu regroup (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/963)
+
+# 89.0.4389.78
+* make all favicon requests on-demand
+* restored older icon for view source menu item
+* prevent adblock filters update check on app start (fixes https://github.com/bromite/bromite/issues/967)
+* removed UI for adblock filters (fixes https://github.com/bromite/bromite/issues/941)
+* dropped patch for swapped favicons bug
+* dropped patch to enable reduced-referrer-granularity by default (already present upstream)
+* dropped password reuse detection patch
+* dropped UA customization patch
+* enabled PartitionExpectCTStateByNetworkIsolationKey and PartitionDomainReliabilityByNetworkIsolationKey (fixes https://github.com/bromite/bromite/issues/985)
+
+# 88.0.4324.207
+* add flag for save-data-header
+* add option to force tablet UI
+* fix bug with adblock filters not being downloaded correctly (fixes https://github.com/bromite/bromite/issues/960)
+* move up bookmark all tabs menu item (fixes https://github.com/bromite/bromite/issues/943)
+* fix icons for exit and view source menu items
+
 # 88.0.4324.187
 * fix exit menu item not working in tablet mode
 * add menu item to bookmark all tabs (fixes https://github.com/bromite/bromite/issues/570)
@@ -180,6 +231,7 @@
 * drop patch for DoH minimum timeout (upstream also implemented it)
 * dropped patch for removal of support of CCT dynamic modules (upstream also removed it)
 * removed upstream patch for SD card not found issue (upstream merged it)
+* enable reporting because of COEP
 
 # 81.0.4044.127
 * fix always-incognito crashes (https://github.com/bromite/bromite/issues/135 and https://github.com/bromite/bromite/pull/529)

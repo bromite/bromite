@@ -8,7 +8,7 @@ Bromite is a [Chromium](https://www.chromium.org/Home) fork with support for ad 
 
 Bromite is only available for Android Lollipop (v5.0, API level 21) and above.
 
-<img src="https://www.bromite.org/bromite_bromite_gh_downloads.svg" alt="downloads on Github" title="downloads on Github" />
+<img src="https://fdroid.bromite.org/fdroid/bromite_bromite_gh_downloads.svg" alt="Downloads on Github" title="Downloads on Github" />
 
 For the Frequently Asked Questions see [F.A.Q.](./FAQ.md).
 
@@ -54,9 +54,16 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * disable scroll-to-text-fragment
 * reduced referer granularity
 * block gateway attacks via websockets
+* use 64-bit ABI for webview processes
+* make all favicon requests on-demand ([supercookie](https://supercookie.me/) mitigation)
+* enable all network isolation features (`PartitionConnectionsByNetworkIsolationKey`, `PartitionHttpServerPropertiesByNetworkIsolationKey`, `SplitHostCacheByNetworkIsolationKey`, `AppendFrameOriginToNetworkIsolationKey`, `SplitCacheByNetworkIsolationKey`, `UseRegistrableDomainInNetworkIsolationKey`, `PartitionSSLSessionsByNetworkIsolationKey`, `PartitionExpectCTStateByNetworkIsolationKey`, `PartitionDomainReliabilityByNetworkIsolationKey`)
+* ignore enterprise policies that disallow secure DNS
+* ask permission to play protected media
+* disable the DIAL repeating discovery
 
 ## Features not related to privacy
 * import/export bookmarks
+* bookmark all tabs from tabs regroup menu
 * flag to allow screenshots of incognito tabs
 * allow playing videos in background tabs and disable pause on switching tabs
 * all codecs included (proprietary, open H.264 etc.)
@@ -72,8 +79,10 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * view source of pages
 * timezone customization
 * sticky desktop mode setting
-* disable video autoplay by default
+* disable video autoplay by default, reintroduce site settings
 * mobile/desktop user agent customization
+* accessibility preference to force tablet UI
+* use Alt+D to focus address bar
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 
@@ -85,19 +94,23 @@ Flags which have been retired from upstream Chromium but are still available in 
 * `#pull-to-refresh`
 * `#enable-search-ready-omnibox`
 * `#darken-websites-checkbox-in-themes-setting`
-* `#simplified-ntp`
-* `#enable-text-fragment-anchor`
+* `#simplified-ntp`, enabled by default
+* `#enable-text-fragment-anchor`, disabled by default
 * `#num-raster-threads`
+* `#enable-image-reader`, enabled by default
 
 New flags:
 
-* `#enable-incognito-snapshots-in-android-recents`
+* `#fingerprinting-canvas-image-data-noise`, `#fingerprinting-client-rects-noise` and `#fingerprinting-canvas-measuretext-noise`, enabled by default
+* `#enable-incognito-snapshots-in-android-recents`, disabled by default
 * `#max-connections-per-host`
 * `#resume-background-video`
 * `#ipv6-probing`
 * `#disable-webgl`
 * `#enable-device-motion` and `#enable-device-orientation`
 * `#show-legacy-tls-warnings`
+* `#save-data-header`, disabled by default
+* `#export-bookmarks-use-saf`, disabled by default
 
 # Privacy limitations
 
