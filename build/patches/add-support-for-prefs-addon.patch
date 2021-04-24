@@ -1,0 +1,101 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Wed, 21 Apr 2021 15:24:04 +0000
+Subject: Add support for prefs addon
+
+---
+ .../chrome/browser/settings/MainSettings.java |  7 ++++
+ chrome/android/proguard/main.flags            |  7 ++++
+ .../browser_ui/settings/SettingsUtils.java    | 37 +++++++++++++++++++
+ 3 files changed, 51 insertions(+)
+
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
+@@ -120,6 +120,8 @@ public class MainSettings extends PreferenceFragmentCompat
+             findPreference(PREF_PRIVACY).setTitle(R.string.prefs_privacy_security);
+         }
+ 
++        createBromitePreferences();
++
+         cachePreferences();
+ 
+         updatePasswordsPreference();
+@@ -274,4 +276,9 @@ public class MainSettings extends PreferenceFragmentCompat
+             }
+         };
+     }
++
++    private void createBromitePreferences() {
++        SettingsUtils.inflatePrefsAddon(this, "main_preferences_addon_",
++            R.xml.class.getFields());
++    }
+ }
+diff --git a/chrome/android/proguard/main.flags b/chrome/android/proguard/main.flags
+--- a/chrome/android/proguard/main.flags
++++ b/chrome/android/proguard/main.flags
+@@ -63,3 +63,10 @@
+ -keep,allowobfuscation public class ** extends org.chromium.chrome.browser.base.SplitCompat*$Impl {
+   public <init>();
+ }
++
++# Keep fields name for all R.xml
++# used in SettingsUtils.java
++# components/browser_ui/settings/android/java/src/org/chromium/components/browser_ui/settings
++-keepclassmembers class **.R$xml* {
++    public static <fields>;
++}
+diff --git a/components/browser_ui/settings/android/java/src/org/chromium/components/browser_ui/settings/SettingsUtils.java b/components/browser_ui/settings/android/java/src/org/chromium/components/browser_ui/settings/SettingsUtils.java
+--- a/components/browser_ui/settings/android/java/src/org/chromium/components/browser_ui/settings/SettingsUtils.java
++++ b/components/browser_ui/settings/android/java/src/org/chromium/components/browser_ui/settings/SettingsUtils.java
+@@ -24,6 +24,12 @@ import androidx.preference.PreferenceFragmentCompat;
+ 
+ import org.chromium.base.ApiCompatibilityUtils;
+ 
++import org.chromium.base.Log;
++import androidx.preference.PreferenceScreen;
++import androidx.preference.PreferenceManager;
++import android.content.res.Resources;
++import java.lang.reflect.Field;
++
+ /**
+  * A helper class for Settings.
+  */
+@@ -126,4 +132,35 @@ public class SettingsUtils {
+         ImageView imageButton = (ImageView) button;
+         return imageButton.getDrawable() == parentMenu.getOverflowIcon();
+     }
++
++    public static PreferenceScreen inflatePrefsAddon(PreferenceFragmentCompat preferenceFragment,
++                                                     String name,
++                                                     Field[] fields) {
++        Resources resources = preferenceFragment.getResources();
++
++        for(int count=0; count < fields.length; count++) {
++            String assetName = fields[count].getName();
++            if (assetName.startsWith(name)) {
++                try {
++                    int resId = fields[count].getInt(null);
++                    return SettingsUtils.inflatePreferencesFromResource(preferenceFragment, resId);
++                } catch (IllegalAccessException e) {}
++            }
++        }
++        return null;
++    }
++
++    public static PreferenceScreen inflatePreferencesFromResource(
++            PreferenceFragmentCompat preferenceFragment, @XmlRes int preferencesResId) {
++        StrictMode.ThreadPolicy oldPolicy = StrictMode.allowThreadDiskReads();
++        try {
++            PreferenceManager preferenceManager = preferenceFragment.getPreferenceManager();
++            final PreferenceScreen xmlRoot = preferenceManager.inflateFromResource(
++                preferenceFragment.getContext(),
++                preferencesResId, preferenceFragment.getPreferenceScreen());
++            return xmlRoot;
++        } finally {
++            StrictMode.setThreadPolicy(oldPolicy);
++        }
++    }
+ }
+-- 
+2.17.1
+
