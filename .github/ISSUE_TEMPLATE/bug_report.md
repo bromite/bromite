@@ -15,26 +15,42 @@ If instead of a bug report you want to ask a question then please use the GitHub
 
 ### Bromite version
 
-Version: `83.0...`
+Version: `89.0...`
 Arch: `arm` or `arm64` or `x86`
 Android version: (example: `9.0`)
 Device model: (example: `SM-G960UZKABST`)
 
+### Flags
+
+These are the flags changed under `chrome://flags`:
+
+<!-- Report all the blue-highlighted flags here, those are the flags with non-default configuration -->
+
 ### Is this bug about the SystemWebView?
-Yes/No
 
 <!-- No support for SystemWebView installations is provided. -->
+
+Yes/No
 
 ### Is the bug reproducible with latest version?
 
 <!-- Do not report bugs which are not reproducible with latest version. -->
+
+Yes/No
 
 ### Can the bug be reproduced with corresponding Chromium version?
 
 <!--
 Please pick the same version of Chromium as Bromite from here: https://github.com/bromite/chromium/releases
 If the bug is reproducible then it might be a configuration issue or an upstream bug. Upstream bugs can be reported on the [Chromium issue tracker](https://bugs.chromium.org/p/chromium/issues/list) and do not forget to read [Chromium project bug reporting guidelines](https://www.chromium.org/for-testers/bug-reporting-guidelines) first.
+
+If the bug is related to functionality that does not exist in Chromium then answer "No".
 -->
+
+Yes/No
+
+### Is this bug happening in an incognito tab?
+Yes/No
 
 ### Allow ads for the site; is the bug caused by the adblocker?
 Yes/No
@@ -42,8 +58,12 @@ Yes/No
 ### Is the bug a crash?
 
 <!--
-If yes then individuate and post the logcat dump (remove privacy sensitive information, if any), otherwise remove this section.
+If yes then individuate and post the 'adb logcat | grep chromium' dump, otherwise remove this section.
 -->
+Yes, this is the crash dump:
+```
+<paste here logcat dump>
+```
 
 ### Describe the bug
 

@@ -1,3 +1,27 @@
+# 90.0.4430.74
+* re-added patch for User agent customization (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1049)
+* fix always-incognito custom tab intents issues (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1047 and https://github.com/bromite/bromite/issues/1051)
+* prevent Omnibox URL elisions by default
+
+# 90.0.4430.59
+* fix menu items not properly displayed with tab overflow menu regroup (fixes https://github.com/bromite/bromite/issues/963)
+* fix text displayed for menu entry to bookmark all tabs
+* bookmarks import/export: disable SAF by default (fixes https://github.com/bromite/bromite/issues/1039)
+* disable offline measurement background task
+* dropped patch to show warnings for TSLv1.0/v1.1 connections (upstream now disallows them)
+* disable AImageReader by default on Android 9 and below for Qualcomm (fixes https://github.com/bromite/bromite/issues/1005)
+
+# 89.0.4389.117
+* disable AImageReader by default on Android 9 and below for ARM (fixes https://github.com/bromite/bromite/issues/1005)
+* log checksum of AdBlock filters
+
+# 89.0.4389.100
+* enable AImageReader by default (fixes https://github.com/bromite/bromite/issues/1005)
+* fix missing flag for AImageReader
+* move incognito snapshots flag to proper section (fixes https://github.com/bromite/bromite/issues/1006)
+* add missing icon for exit menu
+* implement SAF for bookmarks export functionality (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/831)
+
 # 89.0.4389.92
 * updated zh_CN translations (thanks to @zhmars, https://github.com/bromite/bromite/pull/1000)
 * introduce Alt+D hotkey to focus address bar (fixes https://github.com/bromite/bromite/issues/979)
