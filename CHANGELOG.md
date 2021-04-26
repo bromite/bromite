@@ -1,3 +1,7 @@
+# 90.0.4430.92
+* restore horizontal tab switcher feature (fixes https://github.com/bromite/bromite/issues/1077)
+* fix a couple of bugs in proxy saving UI (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1072)
+
 # 90.0.4430.74
 * re-added patch for User agent customization (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1049)
 * fix always-incognito custom tab intents issues (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1047 and https://github.com/bromite/bromite/issues/1051)
