@@ -1,0 +1,1217 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sat, 4 Jan 2020 14:49:43 +0100
+Subject: Revert "Remove horizontal tab switcher experiment logic"
+
+This reverts commit 35156bbe110b1049894e7125e0ba2026340ada0a.
+---
+ chrome/android/chrome_java_sources.gni        |   1 +
+ .../browser/app/flags/ChromeCachedFlags.java  |   1 +
+ .../browser/compositor/LayerTitleCache.java   |   6 +-
+ .../compositor/layouts/phone/StackLayout.java |  43 +-
+ .../layouts/phone/StackLayoutBase.java        |  47 +-
+ .../phone/stack/NonOverlappingStack.java      | 504 ++++++++++++++++++
+ .../compositor/layouts/phone/stack/Stack.java |  12 +-
+ .../layouts/phone/stack/StackAnimation.java   |  56 +-
+ .../scene_layer/TabListSceneLayer.java        |   9 +-
+ .../survey/ChromeSurveyController.java        |  20 +-
+ .../chrome/browser/toolbar/ToolbarColors.java |   6 +-
+ .../toolbar/top/TabSwitcherModeTTPhone.java   |  20 +-
+ .../survey/ChromeSurveyControllerTest.java    |   2 +
+ chrome/browser/about_flags.cc                 |   5 +
+ chrome/browser/flag-metadata.json             |   5 +
+ chrome/browser/flag_descriptions.cc           |   6 +
+ chrome/browser/flag_descriptions.h            |   3 +
+ .../flags/android/chrome_feature_list.cc      |   4 +
+ .../flags/android/chrome_feature_list.h       |   1 +
+ .../browser/flags/CachedFeatureFlags.java     |   1 +
+ .../browser/flags/ChromeFeatureList.java      |   1 +
+ 21 files changed, 733 insertions(+), 20 deletions(-)
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/NonOverlappingStack.java
+
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -324,6 +324,7 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/compositor/layouts/phone/SimpleAnimationLayout.java",
+   "java/src/org/chromium/chrome/browser/compositor/layouts/phone/StackLayout.java",
+   "java/src/org/chromium/chrome/browser/compositor/layouts/phone/StackLayoutBase.java",
++  "java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/NonOverlappingStack.java",
+   "java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/OverlappingStack.java",
+   "java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/Stack.java",
+   "java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/StackAnimation.java",
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/flags/ChromeCachedFlags.java b/chrome/android/java/src/org/chromium/chrome/browser/app/flags/ChromeCachedFlags.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/app/flags/ChromeCachedFlags.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/app/flags/ChromeCachedFlags.java
+@@ -78,6 +78,7 @@ public class ChromeCachedFlags {
+                 ChromeFeatureList.CONDITIONAL_TAB_STRIP_ANDROID,
+                 ChromeFeatureList.DOWNLOADS_AUTO_RESUMPTION_NATIVE,
+                 ChromeFeatureList.EARLY_LIBRARY_LOAD,
++                ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID,
+                 ChromeFeatureList.IMMERSIVE_UI_MODE,
+                 ChromeFeatureList.INSTANT_START,
+                 ChromeFeatureList.INTEREST_FEED_V2,
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/LayerTitleCache.java b/chrome/android/java/src/org/chromium/chrome/browser/compositor/LayerTitleCache.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/compositor/LayerTitleCache.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/compositor/LayerTitleCache.java
+@@ -15,6 +15,7 @@ import org.chromium.base.annotations.JNINamespace;
+ import org.chromium.base.annotations.NativeMethods;
+ import org.chromium.chrome.R;
+ import org.chromium.chrome.browser.compositor.layouts.content.TitleBitmapFactory;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.tab.Tab;
+ import org.chromium.chrome.browser.tab.TabFavicon;
+@@ -22,6 +23,7 @@ import org.chromium.chrome.browser.tabmodel.TabModelSelector;
+ import org.chromium.chrome.browser.ui.favicon.FaviconHelper;
+ import org.chromium.chrome.browser.ui.favicon.FaviconHelper.DefaultFaviconHelper;
+ import org.chromium.chrome.browser.ui.favicon.FaviconHelper.FaviconImageCallback;
++import org.chromium.ui.base.DeviceFormFactor;
+ import org.chromium.ui.base.LocalizationUtils;
+ import org.chromium.ui.resources.ResourceManager;
+ import org.chromium.ui.resources.dynamics.BitmapDynamicResource;
+@@ -117,7 +119,9 @@ public class LayerTitleCache implements TitleCache {
+     private String getUpdatedTitleInternal(Tab tab, String titleString,
+             boolean fetchFaviconFromHistory) {
+         final int tabId = tab.getId();
+-        boolean isDarkTheme = tab.isIncognito();
++        boolean isHTSEnabled = !DeviceFormFactor.isNonMultiDisplayContextOnTablet(tab.getContext())
++                && ChromeFeatureList.isEnabled(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID);
++        boolean isDarkTheme = tab.isIncognito() && !isHTSEnabled;
+         Bitmap originalFavicon = TabFavicon.getBitmap(tab);
+         if (originalFavicon == null) {
+             originalFavicon = mDefaultFaviconHelper.getDefaultFaviconBitmap(
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/StackLayout.java b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/StackLayout.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/StackLayout.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/StackLayout.java
+@@ -12,6 +12,7 @@ import org.chromium.chrome.browser.browser_controls.BrowserControlsStateProvider
+ import org.chromium.chrome.browser.compositor.layouts.LayoutRenderHost;
+ import org.chromium.chrome.browser.compositor.layouts.LayoutUpdateHost;
+ import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
++import org.chromium.chrome.browser.compositor.layouts.phone.stack.NonOverlappingStack;
+ import org.chromium.chrome.browser.tab.Tab;
+ import org.chromium.chrome.browser.tabmodel.TabList;
+ import org.chromium.chrome.browser.tabmodel.TabModel;
+@@ -131,8 +132,38 @@ public class StackLayout extends StackLayoutBase {
+ 
+     @Override
+     public void onTabModelSwitched(boolean toIncognitoTabModel) {
+-        flingStacks(toIncognitoTabModel ? INCOGNITO_STACK_INDEX : NORMAL_STACK_INDEX);
+-        mFlingFromModelChange = true;
++        if (isHorizontalTabSwitcherFlagEnabled()) {
++            // Don't allow switching between normal and incognito again until the animations finish.
++            mAnimatingStackSwitch = true;
++
++            // Make sure we update the tab switcher's background color even if no tabs are open and
++            // therefore neither the switch away nor switch to animations run.
++            requestUpdate();
++
++            NonOverlappingStack oldStack = (NonOverlappingStack) mStacks.get(
++                    toIncognitoTabModel ? NORMAL_STACK_INDEX : INCOGNITO_STACK_INDEX);
++            oldStack.runSwitchAwayAnimation(toIncognitoTabModel
++                            ? NonOverlappingStack.SwitchDirection.LEFT
++                            : NonOverlappingStack.SwitchDirection.RIGHT);
++        } else {
++            flingStacks(toIncognitoTabModel ? INCOGNITO_STACK_INDEX : NORMAL_STACK_INDEX);
++            mFlingFromModelChange = true;
++        }
++    }
++
++    @Override
++    public void onSwitchAwayFinished() {
++        int newStackIndex = getTabStackIndex(Tab.INVALID_TAB_ID);
++        mRenderedScrollOffset = -newStackIndex;
++        NonOverlappingStack newStack = (NonOverlappingStack) mStacks.get(newStackIndex);
++        newStack.runSwitchToAnimation(newStackIndex == INCOGNITO_STACK_INDEX
++                        ? NonOverlappingStack.SwitchDirection.LEFT
++                        : NonOverlappingStack.SwitchDirection.RIGHT);
++    }
++
++    @Override
++    public void onSwitchToFinished() {
++        mAnimatingStackSwitch = false;
+     }
+ 
+     @Override
+@@ -147,6 +178,10 @@ public class StackLayout extends StackLayoutBase {
+ 
+     @Override
+     protected int getMinRenderedScrollOffset() {
++        // If the horizontal tab switcher flag is enabled, we let the user tap the incognito button
++        // to switch to incognito mode, even if no incognito tabs are open.
++        if (isHorizontalTabSwitcherFlagEnabled()) return -1;
++
+         // If there's at least one incognito tab open, or we're in the process of switching back
+         // from incognito to normal mode, return -1 so we don't cause any clamping. Otherwise,
+         // return 0 to prevent scrolling.
+@@ -170,6 +205,10 @@ public class StackLayout extends StackLayoutBase {
+ 
+     @Override
+     protected @SwipeMode int computeInputMode(long time, float x, float y, float dx, float dy) {
++        // If this experiment flag is enabled, we add an incognito toggle button to the toolbar, and
++        // disable swiping between the stacks.
++        if (isHorizontalTabSwitcherFlagEnabled()) return SwipeMode.SEND_TO_STACK;
++
+         if (mStacks.size() == 2 && !mStacks.get(1).isDisplayable()) return SwipeMode.SEND_TO_STACK;
+         return super.computeInputMode(time, x, y, dx, dy);
+     }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/StackLayoutBase.java b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/StackLayoutBase.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/StackLayoutBase.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/StackLayoutBase.java
+@@ -34,10 +34,13 @@ import org.chromium.chrome.browser.compositor.layouts.components.LayoutTab;
+ import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
+ import org.chromium.chrome.browser.compositor.layouts.eventfilter.GestureEventFilter;
+ import org.chromium.chrome.browser.compositor.layouts.eventfilter.GestureHandler;
++import org.chromium.chrome.browser.compositor.layouts.phone.stack.NonOverlappingStack;
+ import org.chromium.chrome.browser.compositor.layouts.phone.stack.OverlappingStack;
+ import org.chromium.chrome.browser.compositor.layouts.phone.stack.Stack;
+ import org.chromium.chrome.browser.compositor.layouts.phone.stack.StackTab;
+ import org.chromium.chrome.browser.compositor.scene_layer.TabListSceneLayer;
++import org.chromium.chrome.browser.flags.CachedFeatureFlags;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.homepage.HomepageManager;
+ import org.chromium.chrome.browser.layouts.EventFilter;
+ import org.chromium.chrome.browser.layouts.LayoutType;
+@@ -446,12 +449,20 @@ public abstract class StackLayoutBase extends Layout {
+         mScrollIndexOffset = v;
+     }
+ 
++    /**
++     * Whether or not the HorizontalTabSwitcherAndroid flag (which enables the new horizontal tab
++     * switcher in both portrait and landscape mode) is enabled.
++     */
++    protected boolean isHorizontalTabSwitcherFlagEnabled() {
++        return CachedFeatureFlags.isEnabled(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID);
++    }
++
+     /**
+      * Whether or not we're currently having the tabs scroll horizontally (as opposed to
+      * vertically).
+      */
+     private boolean isUsingHorizontalLayout() {
+-        return getOrientation() == Orientation.LANDSCAPE;
++        return getOrientation() == Orientation.LANDSCAPE || isHorizontalTabSwitcherFlagEnabled();
+     }
+ 
+     /**
+@@ -464,7 +475,12 @@ public abstract class StackLayoutBase extends Layout {
+             mStacks.subList(lists.size(), mStacks.size()).clear();
+         }
+         while (mStacks.size() < lists.size()) {
+-            Stack stack = new OverlappingStack(getContext(), this);
++            Stack stack;
++            if (isHorizontalTabSwitcherFlagEnabled()) {
++                stack = new NonOverlappingStack(getContext(), this);
++            } else {
++                stack = new OverlappingStack(getContext(), this);
++            }
+             stack.notifySizeChanged(mWidth, mHeight, mOrientation);
+             mStacks.add(stack);
+         }
+@@ -751,6 +767,18 @@ public abstract class StackLayoutBase extends Layout {
+         }
+     }
+ 
++    /**
++     * Called by a NonOverlappingStack that's had switchAwayEffect() called on it, once the
++     * animation has finished.
++     */
++    public void onSwitchAwayFinished() {}
++
++    /**
++     * Called by a NonOverlappingStack that's had switchToEffect() called on it, once the
++     * animation has finished.
++     */
++    public void onSwitchToFinished() {}
++
+     /**
+      * Called when layout-specific actions are needed after the animation finishes.
+      */
+@@ -840,7 +868,7 @@ public abstract class StackLayoutBase extends Layout {
+         // Tabs don't overlap in the horizontal tab switcher experiment, so the order comparator
+         // already does what we want (the visibility comparator's logic actually doesn't compute
+         // visibility properly in this case).
+-        mSortingComparator = mVisibilityComparator;
++        if (!isHorizontalTabSwitcherFlagEnabled()) mSortingComparator = mVisibilityComparator;
+         doneShowing();
+     }
+ 
+@@ -1140,6 +1168,10 @@ public abstract class StackLayoutBase extends Layout {
+ 
+         @Override
+         float getInnerMargin() {
++            // If we're using the new horizontal tab switcher, don't show the edge of the other
++            // stack (normal if in incognito mode and incognito if in normal mode) on-screen.
++            if (isHorizontalTabSwitcherFlagEnabled()) return 0;
++
+             float margin = mInnerMarginPercent
+                     * Math.max(mMinMaxInnerMargin, mWidth * INNER_MARGIN_PERCENT_PERCENT);
+             return margin;
+@@ -1197,6 +1229,7 @@ public abstract class StackLayoutBase extends Layout {
+             // Need getHeight() for this case instead of getHeightMinusBrowserControls() so the
+             // normal stack goes up high enough to clear the status bar when the incognito stack is
+             // active.
++            if (isHorizontalTabSwitcherFlagEnabled()) return StackLayoutBase.this.getHeight();
+             return Math.round(mWidth - getInnerMargin());
+         }
+     }
+@@ -1350,7 +1383,8 @@ public abstract class StackLayoutBase extends Layout {
+             // If the non-overlapping horizontal tab switcher experiment is enabled, we pass -1 so
+             // NonOverlappingStack can use the scroll position to keep the index used for visibility
+             // prioritization up-to-date.
+-            final boolean useFixedIndex = mSortingComparator == mOrderComparator;
++            final boolean useFixedIndex =
++                    mSortingComparator == mOrderComparator && !isHorizontalTabSwitcherFlagEnabled();
+             mStacks.get(i).setStackFocusInfo(
+                     stackFocus, useFixedIndex ? mStacks.get(i).getTabList().index() : -1);
+         }
+@@ -1423,6 +1457,11 @@ public abstract class StackLayoutBase extends Layout {
+      * @return The distance between two neighboring tab stacks.
+      */
+     private float getFullScrollDistance() {
++        // For the horizontal tab switcher experiment, we use getHeight() instead of
++        // getHeightMinusBrowserControls() to make sure the normal stack goes up enough to clear the
++        // status bar when switching to incognito mode.
++        if (isHorizontalTabSwitcherFlagEnabled()) return getHeight();
++
+         float distance = isUsingHorizontalLayout() ? getHeightMinusContentOffsetsDp() : getWidth();
+         if (mStacks.size() > 2) {
+             return distance - getViewportParameters().getInnerMargin();
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/NonOverlappingStack.java b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/NonOverlappingStack.java
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/NonOverlappingStack.java
+@@ -0,0 +1,504 @@
++// Copyright 2018 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.compositor.layouts.phone.stack;
++
++import android.animation.Animator;
++import android.animation.AnimatorListenerAdapter;
++import android.animation.AnimatorSet;
++import android.content.Context;
++
++import androidx.annotation.IntDef;
++
++import org.chromium.chrome.browser.compositor.layouts.components.LayoutTab;
++import org.chromium.chrome.browser.compositor.layouts.phone.StackLayoutBase;
++import org.chromium.chrome.browser.layouts.animation.CompositorAnimationHandler;
++import org.chromium.chrome.browser.layouts.animation.CompositorAnimator;
++
++import java.lang.annotation.Retention;
++import java.lang.annotation.RetentionPolicy;
++import java.util.ArrayList;
++import java.util.Collection;
++
++/**
++ * The non-overlapping tab stack we use when the HorizontalTabSwitcherAndroid flag is enabled.
++ */
++public class NonOverlappingStack extends Stack {
++    @IntDef({SwitchDirection.LEFT, SwitchDirection.RIGHT})
++    @Retention(RetentionPolicy.SOURCE)
++    public @interface SwitchDirection {
++        int LEFT = 0;
++        int RIGHT = 1;
++    }
++
++    /**
++     * The scale the tabs should be shown at when there's exactly one tab open.
++     */
++    private static final float SCALE_FRACTION_SINGLE_TAB = 0.80f;
++
++    /**
++     * The scale the tabs should be shown at when there are two or more tabs open.
++     */
++    private static final float SCALE_FRACTION_MULTIPLE_TABS = 0.54f;
++
++    /**
++     * The percentage of the screen that defines the spacing between tabs by default (no pinch).
++     */
++    private static final float SPACING_SCREEN = 1.0f;
++
++    /**
++     * Controls how far we slide over the (up to) three visible tabs for the switch away and switch
++     * to animations (multiple of mSpacing).
++     */
++    private static final float SWITCH_ANIMATION_SPACING_MULTIPLE = 2.5f;
++
++    /**
++     * Duration of the switch away animation (in milliseconds).
++     */
++    private static final int SWITCH_AWAY_ANIMATION_DURATION = 250;
++
++    /**
++     * Duration of the switch to animation (in milliseconds).
++     */
++    private static final int SWITCH_TO_ANIMATION_DURATION = 250;
++
++    /**
++     * Adjustment to add a fixed amount of space between the tabs that's not based on a percentage
++     * of the screen (if were 0, the tab borders would actually overlap in the current
++     * implementation).
++     */
++    private static final float EXTRA_SPACE_BETWEEN_TABS_DP = 25.0f;
++
++    /**
++     * How much the stack should adjust the y position of each LayoutTab in portrait mode (as a
++     * fraction of the amount space that would be above and below the tab if it were centered).
++     */
++    private static final float STACK_PORTRAIT_Y_OFFSET_PROPORTION = 0.f;
++
++    /**
++     * How much the stack should adjust the x position of each LayoutTab in landscape mode (as a
++     * fraction of the amount space that would be to the left and right of the tab if it were
++     * centered).
++     */
++    private static final float STACK_LANDSCAPE_START_OFFSET_PROPORTION = 0.f;
++
++    /**
++     * How much the stack should adjust the x position of each LayoutTab in portrait mode (as a
++     * fraction of the amount space that would be above and below the tab if it were centered).
++     */
++    private static final float STACK_LANDSCAPE_Y_OFFSET_PROPORTION = 0.f;
++
++    /**
++     * Multiplier for adjusting the scrolling friction from the amount provided by
++     * ViewConfiguration.
++     */
++    private static final float FRICTION_MULTIPLIER = 0.6f;
++
++    /**
++     * For short scrolls of duration less than this (in milliseconds), we assume the user wants to
++     * scroll over to the next tab. If the scroll is longer in duration, we assume they're
++     * reconsidering their scroll, so we leave them on the current tab (unless they drag over far
++     * enough to center a new tab).
++     */
++    private static final int SCROLL_BOOST_TIMEOUT_MS = 250;
++
++    /**
++     * The minimum fraction of a tab the user has to scroll over by before we apply the boost to
++     * scroll them to the next tab.
++     */
++    private static final float SCROLL_BOOST_THRESHOLD = 0.05f;
++
++    /**
++     * Used to prevent mScrollOffset from being changed as a result of clamping during the switch
++     * away/switch to animations.
++     */
++    private boolean mSuppressScrollClamping;
++
++    /**
++     * Whether or not the current stack has been "switched away" by having runSwitchAwayAnimation()
++     * called. Calling runSwitchToAnimation() resets this back to false. Checking this variable lets
++     * us avoid re-playing animations if they're triggered multiple times.
++     */
++    private boolean mSwitchedAway;
++
++    /** Time at which the last touch down event occurred. */
++    private long mLastTouchDownTime;
++    /** Index of the tab that was centered when the last touch down event occurred. */
++    private int mCenteredTabAtTouchDown;
++
++    /**
++     * @param layout The parent layout.
++     */
++    public NonOverlappingStack(Context context, StackLayoutBase layout) {
++        super(context, layout);
++    }
++
++    private int getNonDyingTabCount() {
++        if (mStackTabs == null) return 0;
++
++        int dyingCount = 0;
++        for (int i = 0; i < mStackTabs.length; i++) {
++            if (mStackTabs[i].isDying()) dyingCount++;
++        }
++        return mStackTabs.length - dyingCount;
++    }
++
++    @Override
++    public float getScaleAmount() {
++        if (getNonDyingTabCount() > 1) return SCALE_FRACTION_MULTIPLE_TABS;
++        return SCALE_FRACTION_SINGLE_TAB;
++    }
++
++    @Override
++    protected void finishAnimation(long time) {
++        super.finishAnimation(time);
++        mSuppressScrollClamping = false;
++    }
++
++    @Override
++    protected boolean evenOutTabs(float amount, boolean allowReverseDirection) {
++        // Nothing to do here; tabs are always a fixed distance apart in NonOverlappingStack (except
++        // during tab close/un-close animations)
++        return false;
++    }
++
++    private void updateScrollSnap() {
++        mScroller.setFrictionMultiplier(FRICTION_MULTIPLIER);
++        // This is what computeSpacing() returns when there are >= 2 tabs
++        final int snapDistance =
++                (int) Math.round(getScrollDimensionSize() * SCALE_FRACTION_MULTIPLE_TABS
++                        + EXTRA_SPACE_BETWEEN_TABS_DP);
++        // Really we're scrolling in the x direction, but the scroller is always wired up to the y
++        // direction for both portrait and landscape mode.
++        mScroller.setYSnapDistance(snapDistance);
++    }
++
++    @Override
++    public void contextChanged(Context context) {
++        super.contextChanged(context);
++        updateScrollSnap();
++    }
++
++    /**
++     * @return The index of the currently centered tab. If we're not currently snapped to a tab
++     *         (e.g. we're in the process of animating a scroll or the user is currently dragging),
++     *         returns the index of the tab closest to the center.
++     */
++    public int getCenteredTabIndex() {
++        return Math.round(-mScrollOffset / mSpacing);
++    }
++
++    @Override
++    public void notifySizeChanged(float width, float height, int orientation) {
++        super.notifySizeChanged(width, height, orientation);
++
++        int centeredTab = getCenteredTabIndex();
++        mSpacing = computeSpacing(0);
++        updateScrollOffsets(centeredTab);
++
++        updateScrollSnap();
++    }
++
++    @Override
++    public void onDown(long time) {
++        super.onDown(time);
++        mLastTouchDownTime = time;
++        mCenteredTabAtTouchDown = getCenteredTabIndex();
++        mScroller.setCenteredYSnapIndexAtTouchDown(mCenteredTabAtTouchDown);
++    }
++
++    @Override
++    public void onLongPress(long time, float x, float y) {
++        // Ignore long presses
++    }
++
++    @Override
++    public void onPinch(long time, float x0, float y0, float x1, float y1, boolean firstEvent) {
++        return;
++    }
++
++    @Override
++    protected void springBack(long time) {
++        if (!mScroller.isFinished()) return;
++
++        int offsetAtTouchDown = -mCenteredTabAtTouchDown * mSpacing;
++        float scrollFractionToNextTab = (offsetAtTouchDown - mScrollOffset) / mSpacing;
++
++        int newCenteredTab;
++        // Make quick, short scrolls go over to the next tab (if a scroll is short but not quick, we
++        // assume the user might have decided to stay on the current tab).
++        if (time < mLastTouchDownTime + SCROLL_BOOST_TIMEOUT_MS
++                && Math.abs(scrollFractionToNextTab) > SCROLL_BOOST_THRESHOLD) {
++            newCenteredTab = mCenteredTabAtTouchDown + (int) Math.signum(scrollFractionToNextTab);
++        } else {
++            newCenteredTab = getCenteredTabIndex();
++        }
++
++        int newTarget = -newCenteredTab * mSpacing;
++        mScroller.flingYTo((int) mScrollTarget, newTarget, time);
++        setScrollTarget(newTarget, false);
++        mLayout.requestUpdate();
++    }
++
++    @Override
++    protected float getSpacingScreen() {
++        return SPACING_SCREEN;
++    }
++
++    @Override
++    protected boolean shouldStackTabsAtTop() {
++        return false;
++    }
++
++    @Override
++    protected boolean shouldStackTabsAtBottom() {
++        return false;
++    }
++
++    @Override
++    protected float getStackPortraitYOffsetProportion() {
++        return STACK_PORTRAIT_Y_OFFSET_PROPORTION;
++    }
++
++    @Override
++    protected float getStackLandscapeStartOffsetProportion() {
++        return STACK_LANDSCAPE_START_OFFSET_PROPORTION;
++    }
++
++    @Override
++    protected float getStackLandscapeYOffsetProportion() {
++        return STACK_LANDSCAPE_Y_OFFSET_PROPORTION;
++    }
++
++    @Override
++    protected void computeTabClippingVisibilityHelper() {
++        // Performance optimization: we don't need to draw any tab other than the centered one, the
++        // one immediately to the left, and the two immediately to the right (we need the second
++        // one for discard animations) since the others can't possibly be on screen.
++        int centeredTab = getCenteredTabIndex();
++        for (int i = 0; i < mStackTabs.length; i++) {
++            LayoutTab layoutTab = mStackTabs[i].getLayoutTab();
++            if (i < centeredTab - 1 || i > centeredTab + 2) {
++                layoutTab.setVisible(false);
++            } else {
++                layoutTab.setVisible(true);
++            }
++        }
++    }
++
++    @Override
++    protected int computeReferenceIndex() {
++        return getCenteredTabIndex();
++    }
++
++    @Override
++    protected boolean shouldCloseGapsBetweenTabs() {
++        return false;
++    }
++
++    @Override
++    protected float getMinScroll(boolean allowUnderScroll) {
++        if (mSuppressScrollClamping) return -Float.MAX_VALUE;
++
++        if (mStackTabs == null) return 0;
++        for (int i = mStackTabs.length - 1; i >= 0; i--) {
++            // The getScrollOffset() != 0 check avoids a bug when undiscarding the last tab, in
++            // which case the tab's scroll offset is initially set to 0, which would cause us to
++            // immediately center the first tab. If 0 is the correct offset to return, it's the
++            // default value anyway after going through all the tabs.
++            if (!mStackTabs[i].isDying() && mStackTabs[i].getScrollOffset() != 0) {
++                return -mStackTabs[i].getScrollOffset();
++            }
++        }
++
++        return 0;
++    }
++
++    @Override
++    protected boolean allowOverscroll() {
++        return false;
++    }
++
++    @Override
++    protected int computeSpacing(int layoutTabCount) {
++        return (int) Math.round(
++                getScrollDimensionSize() * getScaleAmount() + EXTRA_SPACE_BETWEEN_TABS_DP);
++    }
++
++    /**
++     * Updates the overall scroll offset and the scroll offsets for each tab based on the current
++     * value of mSpacing so that the tabs are in the proper locations and the specified tab is
++     * centered.
++     *
++     * @param centeredTab The index of the tab that should be centered.
++     */
++    private void updateScrollOffsets(int centeredTab) {
++        // Reset the tabs' scroll offsets.
++        if (mStackTabs != null) {
++            for (int i = 0; i < mStackTabs.length; i++) {
++                mStackTabs[i].setScrollOffset(i * mSpacing);
++            }
++        }
++
++        // Reset the overall scroll offset.
++        mScrollOffset = -centeredTab * mSpacing;
++        setScrollTarget(mScrollOffset, false);
++    }
++
++    @Override
++    protected void resetAllScrollOffset() {
++        if (mTabList == null) return;
++        updateScrollOffsets(mTabList.index());
++    }
++
++    // NonOverlappingStack uses linear scrolling, so screenToScroll() and scrollToScreen() are both
++    // just the identity function.
++    @Override
++    public float screenToScroll(float screenSpace) {
++        return screenSpace;
++    }
++
++    @Override
++    public float scrollToScreen(float scrollSpace) {
++        return scrollSpace;
++    }
++
++    @Override
++    public float getMaxTabHeight() {
++        // We want to maintain a constant tab height (via cropping) even as the width is changed as
++        // a result of changing the scale.
++        if (getNonDyingTabCount() > 1) return mLayout.getHeight();
++        return (SCALE_FRACTION_MULTIPLE_TABS / SCALE_FRACTION_SINGLE_TAB) * mLayout.getHeight();
++    }
++
++    /**
++     * This method sets mSuppressScrollClamping to true to allow an animation to animate the
++     * mScrollOffset outside the normal bounds. It will be reset to false when finishAnimation() is
++     * called.
++     */
++    public void suppressScrollClampingForAnimation() {
++        mSuppressScrollClamping = true;
++    }
++
++    /**
++     * Animates the (up to 3) visible tabs sliding off screen.
++     * @param direction Whether the tabs should slide off the left or right side of the screen.
++     */
++    public void runSwitchAwayAnimation(@SwitchDirection int direction) {
++        if (mStackTabs == null || mSwitchedAway) {
++            mSwitchedAway = true;
++            mLayout.onSwitchAwayFinished();
++            return;
++        }
++
++        mSwitchedAway = true;
++        mSuppressScrollClamping = true;
++
++        // Make sure we don't leave any tabs stuck in a partially-discarded state.
++        for (int i = 0; i < mStackTabs.length; i++) {
++            mStackTabs[i].setDiscardAmount(0);
++        }
++
++        // Make sure the tabs are not scrolling so the centered tab does not change between the
++        // "switch away" and "switch to" animations.
++        forceScrollStop();
++
++        CompositorAnimationHandler handler = mLayout.getAnimationHandler();
++        Collection<Animator> animationList = new ArrayList<>();
++
++        int centeredTab = getCenteredTabIndex();
++        for (int i = centeredTab - 1; i <= centeredTab + 1; i++) {
++            if (i < 0 || i >= mStackTabs.length) continue;
++            StackTab tab = mStackTabs[i];
++
++            float endOffset;
++            if (direction == SwitchDirection.LEFT) {
++                endOffset = -SWITCH_ANIMATION_SPACING_MULTIPLE * mSpacing + tab.getScrollOffset();
++            } else {
++                endOffset = SWITCH_ANIMATION_SPACING_MULTIPLE * mSpacing + tab.getScrollOffset();
++            }
++
++            CompositorAnimator animation =
++                    CompositorAnimator.ofFloatProperty(handler, tab, StackTab.SCROLL_OFFSET,
++                            tab.getScrollOffset(), endOffset, SWITCH_AWAY_ANIMATION_DURATION);
++            animationList.add(animation);
++        }
++
++        AnimatorSet set = new AnimatorSet();
++        set.playTogether(animationList);
++        set.addListener(new AnimatorListenerAdapter() {
++            @Override
++            public void onAnimationEnd(Animator a) {
++                // If the user pressed the incognito button with one finger while dragging the stack
++                // with another, we might not be centered on a tab. We therefore need to enforce
++                // this after the animation finishes to avoid odd behavior if/when the user returns
++                // to this stack.
++
++                mScrollOffset = Math.round(mScrollOffset / mSpacing) * mSpacing;
++                forceScrollStop();
++                mLayout.onSwitchAwayFinished();
++            }
++        });
++        set.start();
++    }
++
++    /**
++     * Animates the (up to 3) tabs were slid off the screen by runSwitchAwayAnimation() back onto
++     * the screen.
++     * @param direction Whether the tabs should slide in from the left or right side of the screen.
++     */
++    public void runSwitchToAnimation(@SwitchDirection int direction) {
++        if (mStackTabs == null || !mSwitchedAway) {
++            mSwitchedAway = false;
++            mLayout.onSwitchToFinished();
++            return;
++        }
++
++        mSwitchedAway = false;
++        mSuppressScrollClamping = true;
++
++        CompositorAnimationHandler handler = mLayout.getAnimationHandler();
++        Collection<Animator> animationList = new ArrayList<>();
++
++        int centeredTab = getCenteredTabIndex();
++        for (int i = centeredTab - 1; i <= centeredTab + 1; i++) {
++            if (i < 0 || i >= mStackTabs.length) continue;
++            StackTab tab = mStackTabs[i];
++
++            float startOffset;
++            if (direction == SwitchDirection.LEFT) {
++                startOffset = SWITCH_ANIMATION_SPACING_MULTIPLE * mSpacing + tab.getScrollOffset();
++            } else {
++                startOffset = -SWITCH_ANIMATION_SPACING_MULTIPLE * mSpacing + tab.getScrollOffset();
++            }
++
++            CompositorAnimator animation =
++                    CompositorAnimator.ofFloatProperty(handler, tab, StackTab.SCROLL_OFFSET,
++                            startOffset, i * mSpacing, SWITCH_TO_ANIMATION_DURATION);
++            animationList.add(animation);
++        }
++
++        AnimatorSet set = new AnimatorSet();
++        set.playTogether(animationList);
++        set.addListener(new AnimatorListenerAdapter() {
++            @Override
++            public void onAnimationEnd(Animator a) {
++                // There are some oddball cases, e.g. a tab was immediately closed before triggering
++                // the toggle animation, where the tab offsets might get left in an undesired state.
++                // Resetting all the scroll offsets here limits the effect of these bugs to just
++                // making the animation look funny vs. leaving the tabs e.g. stuck with gaps between
++                // them or overlapping each other.
++                if (mStackTabs != null) {
++                    for (int i = 0; i < mStackTabs.length; i++) {
++                        mStackTabs[i].setScrollOffset(i * mSpacing);
++                    }
++                }
++
++                mSuppressScrollClamping = false;
++                mLayout.onSwitchToFinished();
++            }
++        });
++        set.start();
++    }
++}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/Stack.java b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/Stack.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/Stack.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/Stack.java
+@@ -21,6 +21,8 @@ import org.chromium.chrome.browser.compositor.layouts.Layout.Orientation;
+ import org.chromium.chrome.browser.compositor.layouts.components.LayoutTab;
+ import org.chromium.chrome.browser.compositor.layouts.phone.StackLayoutBase;
+ import org.chromium.chrome.browser.compositor.layouts.phone.stack.StackAnimation.OverviewAnimationType;
++import org.chromium.chrome.browser.flags.CachedFeatureFlags;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.layouts.animation.CompositorAnimationHandler;
+ import org.chromium.chrome.browser.layouts.animation.FloatProperty;
+ import org.chromium.chrome.browser.tab.Tab;
+@@ -357,6 +359,10 @@ public abstract class Stack {
+      *              we should put it on the left. This method already accounts for RTL flipping.
+      */
+     private boolean isCloseButtonOnRight() {
++        if (ChromeFeatureList.isEnabled(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID)) {
++            return !LocalizationUtils.isLayoutRtl();
++        }
++
+         return mCurrentMode == Orientation.PORTRAIT ^ LocalizationUtils.isLayoutRtl();
+     }
+ 
+@@ -2025,7 +2031,11 @@ public abstract class Stack {
+     }
+ 
+     protected void updateCurrentMode(@Orientation int orientation) {
+-        mCurrentMode = orientation;
++        if (CachedFeatureFlags.isEnabled(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID)) {
++            mCurrentMode = Orientation.LANDSCAPE;
++        } else {
++            mCurrentMode = orientation;
++        }
+ 
+         mDiscardDirection = getDefaultDiscardDirection();
+         final float opaqueTopPadding = mBorderTopPadding - mBorderTransparentTop;
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/StackAnimation.java b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/StackAnimation.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/StackAnimation.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/phone/stack/StackAnimation.java
+@@ -13,6 +13,7 @@ import androidx.annotation.IntDef;
+ import org.chromium.base.MathUtils;
+ import org.chromium.chrome.browser.compositor.layouts.Layout.Orientation;
+ import org.chromium.chrome.browser.compositor.layouts.components.LayoutTab;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.layouts.animation.CompositorAnimationHandler;
+ import org.chromium.chrome.browser.layouts.animation.CompositorAnimator;
+ import org.chromium.chrome.browser.layouts.animation.FloatProperty;
+@@ -353,6 +354,11 @@ public class StackAnimation {
+         }
+     }
+ 
++    // If this flag is enabled, we're using the non-overlapping tab switcher.
++    private boolean isHorizontalTabSwitcherFlagEnabled() {
++        return ChromeFeatureList.isEnabled(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID);
++    }
++
+     private void createPortraitEnterStackAnimatorSet(
+             StackAnimatorSet stackAnimatorSet, StackTab[] tabs, int focusIndex, int spacing) {
+         final float initialScrollOffset = mStack.screenToScroll(0);
+@@ -531,8 +537,11 @@ public class StackAnimation {
+             if (mOrientation == Orientation.LANDSCAPE) {
+                 stackAnimatorSet.addToAnimation(tab, StackTab.X_IN_STACK_INFLUENCE,
+                         tab.getXInStackInfluence(), 0.0f, TAB_FOCUSED_ANIMATION_DURATION_MS, null);
+-                stackAnimatorSet.addToAnimation(tab, StackTab.SCROLL_OFFSET, tab.getScrollOffset(),
+-                        mStack.screenToScroll(0), TAB_FOCUSED_ANIMATION_DURATION_MS, null);
++                if (!isHorizontalTabSwitcherFlagEnabled()) {
++                    stackAnimatorSet.addToAnimation(tab, StackTab.SCROLL_OFFSET,
++                            tab.getScrollOffset(), mStack.screenToScroll(0),
++                            TAB_FOCUSED_ANIMATION_DURATION_MS, null);
++                }
+             } else { // mOrientation == Orientation.PORTRAIT
+                 stackAnimatorSet.addToAnimation(tab, StackTab.SCROLL_OFFSET, tab.getScrollOffset(),
+                         Math.max(0.0f, tab.getScrollOffset() - mWidth - spacing),
+@@ -610,10 +619,12 @@ public class StackAnimation {
+             // If the non-overlapping horizontal tab switcher is enabled, we shift all the
+             // tabs over simultaneously. Otherwise we stagger the animation start times to
+             // create a ripple effect.
+-            long startTime = (long) Math.max(0,
+-                    TAB_REORDER_START_SPAN / screenSizeInScrollDirection
+-                            * (getLandscapePortraitScreenPositionInScrollDirection(tab)
+-                                    - firstDyingTabOffset));
++            long startTime = isHorizontalTabSwitcherFlagEnabled()
++                    ? 0
++                    : (long) Math.max(0,
++                            TAB_REORDER_START_SPAN / screenSizeInScrollDirection
++                                    * (getLandscapePortraitScreenPositionInScrollDirection(tab)
++                                            - firstDyingTabOffset));
+             if (tab.isDying()) {
+                 float discard = tab.getDiscardAmount();
+                 if (discard == 0.0f) discard = defaultDiscardDirectionPositive ? 0.0f : -0.0f;
+@@ -653,6 +664,39 @@ public class StackAnimation {
+                 newIndex++;
+             }
+         }
++
++        // Scroll offset animation for non-overlapping horizontal tab switcher (if enabled)
++        if (isHorizontalTabSwitcherFlagEnabled()) {
++            NonOverlappingStack nonOverlappingStack = (NonOverlappingStack) stack;
++            int centeredTabIndex = nonOverlappingStack.getCenteredTabIndex();
++
++            // For all tab closures (except for the last one), we slide the remaining tabs
++            // in to fill the gap.
++            //
++            // There are two cases where we also need to animate the NonOverlappingStack's
++            // overall scroll position over by one tab:
++            //
++            // - Closing the last tab while centered on it (since we don't have a tab we can
++            //   slide over to replace it)
++            //
++            // - Closing any tab prior to the currently centered one (so we can keep the
++            //   same tab centered). Together with animating the individual scroll offsets for
++            //   each tab, this has the visual appearance of sliding in the prior tabs from the
++            //   left (in LTR mode) to fill the gap.
++            boolean closingLastTabWhileCentered =
++                    firstDyingTabIndex == tabs.length - 1 && firstDyingTabIndex == centeredTabIndex;
++            boolean closingPriorTab =
++                    firstDyingTabIndex != -1 && firstDyingTabIndex < centeredTabIndex;
++
++            boolean shouldAnimateStackScrollOffset = closingLastTabWhileCentered || closingPriorTab;
++
++            if (shouldAnimateStackScrollOffset) {
++                nonOverlappingStack.suppressScrollClampingForAnimation();
++                stackAnimatorSet.addToAnimation(nonOverlappingStack, Stack.SCROLL_OFFSET,
++                        stack.getScrollOffset(), -(centeredTabIndex - 1) * stack.getSpacing(),
++                        TAB_REORDER_DURATION_MS, null);
++            }
++        }
+     }
+ 
+     /**
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/scene_layer/TabListSceneLayer.java b/chrome/android/java/src/org/chromium/chrome/browser/compositor/scene_layer/TabListSceneLayer.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/compositor/scene_layer/TabListSceneLayer.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/compositor/scene_layer/TabListSceneLayer.java
+@@ -18,6 +18,7 @@ import org.chromium.chrome.browser.compositor.LayerTitleCache;
+ import org.chromium.chrome.browser.compositor.layouts.Layout;
+ import org.chromium.chrome.browser.compositor.layouts.components.LayoutTab;
+ import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.layouts.scene_layer.SceneLayer;
+ import org.chromium.chrome.browser.tabmodel.TabModelSelector;
+ import org.chromium.chrome.browser.tasks.tab_management.TabUiFeatureUtilities;
+@@ -97,6 +98,9 @@ public class TabListSceneLayer extends SceneLayer {
+                     backgroundResourceId, backgroundAlpha, backgroundTopOffset);
+         }
+ 
++        boolean isHTSEnabled =
++                ChromeFeatureList.isEnabled(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID);
++
+         final float shadowAlpha = ColorUtils.shouldUseLightForegroundOnBackground(tabListBgColor)
+                 ? LayoutTab.SHADOW_ALPHA_ON_DARK_BG
+                 : LayoutTab.SHADOW_ALPHA_ON_LIGHT_BG;
+@@ -107,7 +111,7 @@ public class TabListSceneLayer extends SceneLayer {
+             final float decoration = t.getDecorationAlpha();
+ 
+             int urlBarBackgroundId = R.drawable.modern_location_bar;
+-            boolean useIncognitoColors = t.isIncognito();
++            boolean useIncognitoColors = t.isIncognito() && !isHTSEnabled;
+ 
+             int defaultThemeColor = ChromeColors.getDefaultThemeColor(res, useIncognitoColors);
+ 
+@@ -161,7 +165,8 @@ public class TabListSceneLayer extends SceneLayer {
+     protected int getTabListBackgroundColor(Context context) {
+         int colorId = R.color.default_bg_color;
+ 
+-        if (TabUiFeatureUtilities.isGridTabSwitcherEnabled()) {
++        if (ChromeFeatureList.isEnabled(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID)
++                || TabUiFeatureUtilities.isGridTabSwitcherEnabled()) {
+             if (mTabModelSelector != null && mTabModelSelector.isIncognitoSelected()) {
+                 colorId = R.color.default_bg_color_dark;
+             } else {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/survey/ChromeSurveyController.java b/chrome/android/java/src/org/chromium/chrome/browser/survey/ChromeSurveyController.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/survey/ChromeSurveyController.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/survey/ChromeSurveyController.java
+@@ -18,6 +18,7 @@ import org.chromium.base.metrics.RecordHistogram;
+ import org.chromium.base.metrics.RecordUserAction;
+ import org.chromium.base.task.AsyncTask;
+ import org.chromium.chrome.R;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.flags.ChromeSwitches;
+ import org.chromium.chrome.browser.infobar.InfoBarContainer;
+ import org.chromium.chrome.browser.infobar.InfoBarIdentifier;
+@@ -138,7 +139,10 @@ public class ChromeSurveyController implements InfoBarAnimationListener {
+             }
+         };
+ 
+-        String siteContext = ChromeVersionInfo.getProductVersion() + ",NotHorizontalTabSwitcher";
++        String siteContext = ChromeVersionInfo.getProductVersion() + ","
++                + (ChromeFeatureList.isEnabled(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID)
++                                  ? "HorizontalTabSwitcher"
++                                  : "NotHorizontalTabSwitcher");
+         surveyController.downloadSurvey(context, siteId, onSuccessRunnable, siteContext);
+     }
+ 
+@@ -317,6 +321,20 @@ public class ChromeSurveyController implements InfoBarAnimationListener {
+         }
+ 
+         int maxNumber = getMaxNumber();
++
++        int maxForHorizontalTabSwitcher = -1;
++        if (ChromeFeatureList.isEnabled(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID)) {
++            maxForHorizontalTabSwitcher = ChromeFeatureList.getFieldTrialParamByFeatureAsInt(
++                    ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID, MAX_NUMBER, -1);
++        }
++        if (maxForHorizontalTabSwitcher != -1) {
++            if (maxNumber == -1) {
++                maxNumber = maxForHorizontalTabSwitcher;
++            } else {
++                maxNumber = Math.min(maxNumber, maxForHorizontalTabSwitcher);
++            }
++        }
++
+         if (maxNumber == -1) {
+             recordSurveyFilteringResult(FilteringResult.MAX_NUMBER_MISSING);
+             return false;
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarColors.java b/chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarColors.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarColors.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarColors.java
+@@ -5,6 +5,7 @@
+ package org.chromium.chrome.browser.toolbar;
+ 
+ import org.chromium.chrome.browser.device.DeviceClassManager;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.tasks.tab_management.TabUiFeatureUtilities;
+ import org.chromium.chrome.features.start_surface.StartSurfaceConfiguration;
+ 
+@@ -17,8 +18,11 @@ public class ToolbarColors {
+      */
+     public static boolean canUseIncognitoToolbarThemeColorInOverview() {
+         final boolean isAccessibilityEnabled = DeviceClassManager.enableAccessibilityLayout();
++        final boolean isHorizontalTabSwitcherEnabled = ChromeFeatureList.isInitialized()
++                && ChromeFeatureList.isEnabled(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID);
+         final boolean isTabGridEnabled = TabUiFeatureUtilities.isGridTabSwitcherEnabled();
+         final boolean isStartSurfaceEnabled = StartSurfaceConfiguration.isStartSurfaceEnabled();
+-        return (isAccessibilityEnabled || isTabGridEnabled || isStartSurfaceEnabled);
++        return (isAccessibilityEnabled || isHorizontalTabSwitcherEnabled || isTabGridEnabled
++                || isStartSurfaceEnabled);
+     }
+ }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/top/TabSwitcherModeTTPhone.java b/chrome/android/java/src/org/chromium/chrome/browser/toolbar/top/TabSwitcherModeTTPhone.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/top/TabSwitcherModeTTPhone.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/toolbar/top/TabSwitcherModeTTPhone.java
+@@ -18,6 +18,7 @@ import androidx.appcompat.content.res.AppCompatResources;
+ 
+ import org.chromium.chrome.R;
+ import org.chromium.chrome.browser.device.DeviceClassManager;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.incognito.IncognitoUtils;
+ import org.chromium.chrome.browser.tabmodel.IncognitoStateProvider;
+ import org.chromium.chrome.browser.tabmodel.TabModelSelector;
+@@ -241,6 +242,11 @@ public class TabSwitcherModeTTPhone extends OptimizedFrameLayout
+     void onAccessibilityStatusChanged(boolean enabled) {
+         if (mNewTabImageButton != null) mNewTabImageButton.onAccessibilityStatusChanged();
+ 
++        if (ChromeFeatureList.isEnabled(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID)
++                && IncognitoUtils.isIncognitoModeEnabled()) {
++            updateTabSwitchingElements(!enabled);
++        }
++
+         updatePrimaryColorAndTint();
+     }
+ 
+@@ -291,7 +297,8 @@ public class TabSwitcherModeTTPhone extends OptimizedFrameLayout
+             // the tab switcher, which is the standard mode background. Note that horizontal tab
+             // switcher is an exception, which uses the correspond background color for standard
+             // and incognito mode.
+-            int backgroundColor = ChromeColors.getPrimaryBackgroundColor(getResources(), false);
++            int backgroundColor = ChromeColors.getPrimaryBackgroundColor(
++                    getResources(), usingHorizontalTabSwitcher() && mIsIncognito);
+             useLightIcons = ColorUtils.shouldUseLightForegroundOnBackground(backgroundColor);
+         } else {
+             useLightIcons = ColorUtils.shouldUseLightForegroundOnBackground(primaryColor);
+@@ -322,6 +329,14 @@ public class TabSwitcherModeTTPhone extends OptimizedFrameLayout
+         return Color.TRANSPARENT;
+     }
+ 
++    private boolean usingHorizontalTabSwitcher() {
++        // The horizontal tab switcher flag does not affect the accessibility switcher. We do the
++        // enableAccessibilityLayout() check first here to avoid logging an experiment exposure for
++        // these users.
++        return !DeviceClassManager.enableAccessibilityLayout()
++                && ChromeFeatureList.isEnabled(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID);
++    }
++
+     private void inflateIncognitoToggle() {
+         ViewStub incognitoToggleTabsStub = findViewById(R.id.incognito_tabs_stub);
+         mIncognitoToggleTabLayout = (IncognitoToggleTabLayout) incognitoToggleTabsStub.inflate();
+@@ -358,6 +373,7 @@ public class TabSwitcherModeTTPhone extends OptimizedFrameLayout
+      *         and incognito status.
+      */
+     private boolean shouldShowIncognitoToggle() {
+-        return mIsGridTabSwitcherEnabled && IncognitoUtils.isIncognitoModeEnabled();
++        return (usingHorizontalTabSwitcher() || mIsGridTabSwitcherEnabled)
++                && IncognitoUtils.isIncognitoModeEnabled();
+     }
+ }
+diff --git a/chrome/android/junit/src/org/chromium/chrome/browser/survey/ChromeSurveyControllerTest.java b/chrome/android/junit/src/org/chromium/chrome/browser/survey/ChromeSurveyControllerTest.java
+--- a/chrome/android/junit/src/org/chromium/chrome/browser/survey/ChromeSurveyControllerTest.java
++++ b/chrome/android/junit/src/org/chromium/chrome/browser/survey/ChromeSurveyControllerTest.java
+@@ -21,6 +21,7 @@ import org.mockito.MockitoAnnotations;
+ import org.robolectric.annotation.Config;
+ 
+ import org.chromium.base.test.BaseRobolectricTestRunner;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
+ import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
+ import org.chromium.chrome.browser.tab.Tab;
+@@ -33,6 +34,7 @@ import org.chromium.content_public.browser.WebContents;
+  */
+ @RunWith(BaseRobolectricTestRunner.class)
+ @Config(manifest = Config.NONE)
++@Features.EnableFeatures(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID)
+ public class ChromeSurveyControllerTest {
+     private static final String STUDY_NAME = "HorizontalTabSwitcherStudyName";
+     private static final String GROUP_NAME = "HorizontalTabSwitcherGroupName";
+diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
+--- a/chrome/browser/about_flags.cc
++++ b/chrome/browser/about_flags.cc
+@@ -5024,6 +5024,11 @@ const FeatureEntry kFeatureEntries[] = {
+      flag_descriptions::kCriticalPersistedTabDataDescription, kOsAndroid,
+      FEATURE_VALUE_TYPE(chrome::android::kCriticalPersistedTabData)},
+ 
++    {"enable-horizontal-tab-switcher",
++     flag_descriptions::kHorizontalTabSwitcherAndroidName,
++     flag_descriptions::kHorizontalTabSwitcherAndroidDescription, kOsAndroid,
++     FEATURE_VALUE_TYPE(chrome::android::kHorizontalTabSwitcherAndroid)},
++
+     {"enable-tab-grid-layout", flag_descriptions::kTabGridLayoutAndroidName,
+      flag_descriptions::kTabGridLayoutAndroidDescription, kOsAndroid,
+      FEATURE_WITH_PARAMS_VALUE_TYPE(chrome::android::kTabGridLayoutAndroid,
+diff --git a/chrome/browser/flag-metadata.json b/chrome/browser/flag-metadata.json
+--- a/chrome/browser/flag-metadata.json
++++ b/chrome/browser/flag-metadata.json
+@@ -78,6 +78,11 @@
+     "owners": [ "zentaro" ],
+     "expiry_milestone": 82
+   },
++  {
++    "name": "enable-horizontal-tab-switcher",
++    "owners": [ "memex-team@google.com" ],
++    "expiry_milestone": -1
++  },
+   {
+     "name": "allow-insecure-localhost",
+     "owners": [ "security-dev" ],
+diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
+--- a/chrome/browser/flag_descriptions.cc
++++ b/chrome/browser/flag_descriptions.cc
+@@ -1334,6 +1334,12 @@ const char kHideShelfControlsInTabletModeDescription[] =
+     "Hides home, back, and overview button from the shelf while the device is "
+     "in tablet mode. Predicated on shelf-hotseat feature being enabled.";
+ 
++const char kHorizontalTabSwitcherAndroidName[] =
++    "Enable horizontal tab switcher";
++const char kHorizontalTabSwitcherAndroidDescription[] =
++    "Changes the layout of the Android tab switcher so tabs scroll "
++    "horizontally instead of vertically.";
++
+ const char kTabSwitcherOnReturnName[] = "Tab switcher on return";
+ const char kTabSwitcherOnReturnDescription[] =
+     "Enable tab switcher on return after specified time has elapsed";
+diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptions.h
+--- a/chrome/browser/flag_descriptions.h
++++ b/chrome/browser/flag_descriptions.h
+@@ -789,6 +789,9 @@ extern const char kHeavyAdPrivacyMitigationsDescription[];
+ extern const char kHeavyAdInterventionName[];
+ extern const char kHeavyAdInterventionDescription[];
+ 
++extern const char kHorizontalTabSwitcherAndroidName[];
++extern const char kHorizontalTabSwitcherAndroidDescription[];
++
+ extern const char kTabSwitcherOnReturnName[];
+ extern const char kTabSwitcherOnReturnDescription[];
+ 
+diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browser/flags/android/chrome_feature_list.cc
+--- a/chrome/browser/flags/android/chrome_feature_list.cc
++++ b/chrome/browser/flags/android/chrome_feature_list.cc
+@@ -197,6 +197,7 @@ const base::Feature* kFeaturesExposedToJava[] = {
+     &kFocusOmniboxInIncognitoTabIntents,
+     &kHandleMediaIntents,
+     &kHomepagePromoCard,
++    &kHorizontalTabSwitcherAndroid,
+     &kImmersiveUiMode,
+     &kIncognitoScreenshot,
+     &kInlineUpdateFlow,
+@@ -551,6 +552,9 @@ const base::Feature kHandleMediaIntents{"HandleMediaIntents",
+ const base::Feature kHomepagePromoCard{"HomepagePromoCard",
+                                        base::FEATURE_DISABLED_BY_DEFAULT};
+ 
++const base::Feature kHorizontalTabSwitcherAndroid{
++    "HorizontalTabSwitcherAndroid", base::FEATURE_DISABLED_BY_DEFAULT};
++
+ const base::Feature kImmersiveUiMode{"ImmersiveUiMode",
+                                      base::FEATURE_DISABLED_BY_DEFAULT};
+ 
+diff --git a/chrome/browser/flags/android/chrome_feature_list.h b/chrome/browser/flags/android/chrome_feature_list.h
+--- a/chrome/browser/flags/android/chrome_feature_list.h
++++ b/chrome/browser/flags/android/chrome_feature_list.h
+@@ -86,6 +86,7 @@ extern const base::Feature kExploreSites;
+ extern const base::Feature kFocusOmniboxInIncognitoTabIntents;
+ extern const base::Feature kHandleMediaIntents;
+ extern const base::Feature kHomepagePromoCard;
++extern const base::Feature kHorizontalTabSwitcherAndroid;
+ extern const base::Feature kImmersiveUiMode;
+ extern const base::Feature kIncognitoScreenshot;
+ extern const base::Feature kImprovedA2HS;
+diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
+--- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
++++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
+@@ -54,6 +54,7 @@ public class CachedFeatureFlags {
+             put(ChromeFeatureList.CHROME_STARTUP_DELEGATE, false);
+             put(ChromeFeatureList.CONDITIONAL_TAB_STRIP_ANDROID, false);
+             put(ChromeFeatureList.LENS_CAMERA_ASSISTED_SEARCH, false);
++            put(ChromeFeatureList.HORIZONTAL_TAB_SWITCHER_ANDROID, false);
+             put(ChromeFeatureList.SERVICE_MANAGER_FOR_DOWNLOAD, true);
+             put(ChromeFeatureList.SERVICE_MANAGER_FOR_BACKGROUND_PREFETCH, true);
+             put(ChromeFeatureList.COMMAND_LINE_ON_NON_ROOTED, false);
+diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
+--- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
++++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
+@@ -335,6 +335,7 @@ public abstract class ChromeFeatureList {
+     public static final String HANDLE_MEDIA_INTENTS = "HandleMediaIntents";
+     public static final String HIDE_FROM_API_3_TRANSITIONS_FROM_HISTORY =
+             "HideFromApi3TransitionsFromHistory";
++    public static final String HORIZONTAL_TAB_SWITCHER_ANDROID = "HorizontalTabSwitcherAndroid";
+     public static final String IMMERSIVE_UI_MODE = "ImmersiveUiMode";
+     public static final String INCOGNITO_SCREENSHOT = "IncognitoScreenshot";
+     public static final String INLINE_UPDATE_FLOW = "InlineUpdateFlow";
+-- 
+2.17.1
+
