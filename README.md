@@ -111,6 +111,8 @@ New flags:
 * `#show-legacy-tls-warnings`
 * `#save-data-header`, disabled by default
 * `#export-bookmarks-use-saf`, disabled by default
+* `#allow-user-certificates`, disabled by default
+* `#cleartext-permitted`, enabled by default
 
 # Privacy limitations
 
