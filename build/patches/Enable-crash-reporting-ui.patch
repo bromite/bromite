@@ -1,16 +1,35 @@
-From: uazo <uazo@users.noreply.github.com>
+From: Your Name <you@example.com>
 Date: Fri, 23 Apr 2021 18:41:48 +0000
 Subject: enable crash report ui
 
 ---
+ .../crash_upload_list_android.cc              |  8 +++-
  chrome/browser/ui/webui/crashes_ui.cc         |  8 +---
  .../crash/core/browser/resources/crashes.js   |  2 +-
- components/crash_strings.grdp                 | 16 ++++----
- .../MinidumpUploadCallable.java               | 20 +---------
- .../minidump_uploader/MinidumpUploader.java   | 40 ++++++++-----------
- components/upload_list/upload_list.cc         |  2 +-
- 6 files changed, 28 insertions(+), 60 deletions(-)
+ components/crash_strings.grdp                 | 16 +++----
+ .../MinidumpUploadCallable.java               | 20 +--------
+ .../minidump_uploader/MinidumpUploader.java   | 43 ++++++++-----------
+ 6 files changed, 36 insertions(+), 61 deletions(-)
 
+diff --git a/chrome/browser/crash_upload_list/crash_upload_list_android.cc b/chrome/browser/crash_upload_list/crash_upload_list_android.cc
+--- a/chrome/browser/crash_upload_list/crash_upload_list_android.cc
++++ b/chrome/browser/crash_upload_list/crash_upload_list_android.cc
+@@ -136,8 +136,14 @@ void CrashUploadListAndroid::LoadUnsuccessfulUploadList(
+     RecordUnsuccessfulUploadListState(
+         UnsuccessfulUploadListState::ADDING_AN_UPLOAD_ENTRY);
+     id = id.substr(pos + 1);
++    // Since current thread is an IO thread
++    // to avoid failed DCHECK ThreadRestrictions::AssertSingletonAllowed()
++    // remove ui::FormatBytes(): dcheck fail because it use base::FormatDouble()
++    // and LazyInstance<NumberFormatWrapper>::DestructorAtExit().
++    // also "upload.file_size" is unused.
++    std::u16string file_size_string;
+     UploadList::UploadInfo upload(id, info.creation_time, upload_state,
+-                                  ui::FormatBytes(file_size));
++                                  file_size_string /*ui::FormatBytes(file_size)*/);
+     uploads->push_back(upload);
+   }
+ }
 diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/crashes_ui.cc
 --- a/chrome/browser/ui/webui/crashes_ui.cc
 +++ b/chrome/browser/ui/webui/crashes_ui.cc
@@ -126,7 +145,7 @@ diff --git a/components/minidump_uploader/android/java/src/org/chromium/componen
 diff --git a/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploader.java b/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploader.java
 --- a/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploader.java
 +++ b/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploader.java
-@@ -11,6 +11,8 @@ import java.io.BufferedReader;
+@@ -11,12 +11,17 @@ import java.io.BufferedReader;
  import java.io.ByteArrayOutputStream;
  import java.io.File;
  import java.io.FileInputStream;
@@ -135,16 +154,17 @@ diff --git a/components/minidump_uploader/android/java/src/org/chromium/componen
  import java.io.FileReader;
  import java.io.IOException;
  import java.io.InputStream;
-@@ -18,6 +20,8 @@ import java.io.OutputStream;
+ import java.io.OutputStream;
  import java.net.HttpURLConnection;
- import java.util.zip.GZIPOutputStream;
- 
-+import org.chromium.base.PathUtils;
+-import java.util.zip.GZIPOutputStream;
++import java.util.zip.ZipOutputStream;
++import java.util.zip.ZipEntry;
 +
++import org.chromium.base.PathUtils;
+ 
  /**
   * This class tries to upload a minidump to the crash server.
-  *
-@@ -120,30 +124,18 @@ public class MinidumpUploader {
+@@ -120,30 +125,18 @@ public class MinidumpUploader {
              if (fileToUpload == null || !fileToUpload.exists()) {
                  return Result.failure("Crash report does not exist");
              }
@@ -174,31 +194,19 @@ diff --git a/components/minidump_uploader/android/java/src/org/chromium/componen
 -            }
 +
 +            File outputDir = new File(PathUtils.getDownloadsDirectory());
-+            File destination = new File(outputDir, fileToUpload.getName());
++            File destination = new File(outputDir, fileToUpload.getName() + ".zip");
 +
 +            InputStream minidumpInputStream = new FileInputStream(fileToUpload);
 +            OutputStream out = new BufferedOutputStream(
 +                    new FileOutputStream(destination));
-+            OutputStream requestBodyStream =
-+                    new GZIPOutputStream(out);
-+
++            ZipOutputStream requestBodyStream =
++                    new ZipOutputStream(out);
++            requestBodyStream.putNextEntry(new ZipEntry(fileToUpload.getName()));
 +            streamCopy(minidumpInputStream, requestBodyStream);
 +            return Result.success(destination.getPath());
          } catch (IOException | RuntimeException e) {
              return Result.failure(e.toString());
          }
-diff --git a/components/upload_list/upload_list.cc b/components/upload_list/upload_list.cc
---- a/components/upload_list/upload_list.cc
-+++ b/components/upload_list/upload_list.cc
-@@ -20,7 +20,7 @@ namespace {
- // chrome://webrtc-logs and the feedback UI. See https://crbug.com/972526.
- constexpr base::TaskTraits kLoadingTaskTraits = {
-     base::MayBlock(), base::TaskPriority::USER_BLOCKING,
--    base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN};
-+    base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN};
- 
- }  // namespace
- 
 -- 
 2.17.1
 
