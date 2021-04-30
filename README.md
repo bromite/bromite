@@ -60,6 +60,8 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * ignore enterprise policies that disallow secure DNS
 * ask permission to play protected media
 * disable the DIAL repeating discovery
+* disable RTCGetCurrentBrowsingContextMedia by default
+* disable FLoC by default
 
 ## Features not related to privacy
 * import/export bookmarks
