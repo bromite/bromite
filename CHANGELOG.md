@@ -1,3 +1,7 @@
+# 90.0.4430.101
+* disable RTCGetCurrentBrowsingContextMedia by default
+* disable FLoC by default
+
 # 90.0.4430.92
 * restore horizontal tab switcher feature (fixes https://github.com/bromite/bromite/issues/1077)
 * fix a couple of bugs in proxy saving UI (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1072)
