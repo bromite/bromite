@@ -1,3 +1,6 @@
+# 90.0.4430.204
+* fix for custom tab intent tab crashes when in always incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1116)
+
 # 90.0.4430.101
 * disable RTCGetCurrentBrowsingContextMedia by default
 * disable FLoC by default
