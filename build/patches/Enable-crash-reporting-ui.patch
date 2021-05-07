@@ -3,18 +3,49 @@ Date: Fri, 23 Apr 2021 18:41:48 +0000
 Subject: Enable crash report ui
 
 ---
- .../crash_upload_list_android.cc              |  8 +++-
- chrome/browser/ui/webui/crashes_ui.cc         |  8 +---
- .../crash/core/browser/resources/crashes.js   |  2 +-
- components/crash_strings.grdp                 | 16 +++----
- .../MinidumpUploadCallable.java               | 20 +--------
- .../minidump_uploader/MinidumpUploader.java   | 43 ++++++++-----------
- 6 files changed, 36 insertions(+), 61 deletions(-)
+ .../crash_upload_list_android.cc              |  15 ++-
+ chrome/browser/net/chrome_network_delegate.cc |   7 ++
+ chrome/browser/ui/BUILD.gn                    |   1 +
+ chrome/browser/ui/webui/crashes_ui.cc         | 106 ++++++++++++++++--
+ .../crash/core/browser/resources/crashes.js   |  16 +--
+ components/crash_strings.grdp                 |  16 +--
+ .../minidump_uploader/CrashFileManager.java   |   9 +-
+ .../MinidumpUploadCallable.java               |  20 +---
+ .../minidump_uploader/MinidumpUploader.java   |  29 +----
+ .../upload_list/text_log_upload_list.cc       |   3 +-
+ components/upload_list/upload_list.cc         |  12 +-
+ components/upload_list/upload_list.h          |   6 +
+ 12 files changed, 158 insertions(+), 82 deletions(-)
 
 diff --git a/chrome/browser/crash_upload_list/crash_upload_list_android.cc b/chrome/browser/crash_upload_list/crash_upload_list_android.cc
 --- a/chrome/browser/crash_upload_list/crash_upload_list_android.cc
 +++ b/chrome/browser/crash_upload_list/crash_upload_list_android.cc
-@@ -136,8 +136,14 @@ void CrashUploadListAndroid::LoadUnsuccessfulUploadList(
+@@ -81,11 +81,15 @@ void CrashUploadListAndroid::LoadUnsuccessfulUploadList(
+   const char pending_uploads[] = ".dmp";
+   const char skipped_uploads[] = ".skipped";
+   const char manually_forced_uploads[] = ".forced";
++  const char zipped_uploads[] = ".zip";
+ 
+   base::FileEnumerator files(upload_log_path().DirName(), false,
+                              base::FileEnumerator::FILES);
+   for (base::FilePath file = files.Next(); !file.empty(); file = files.Next()) {
+     UploadList::UploadInfo::State upload_state;
++    if (file.value().find(zipped_uploads) != std::string::npos) {
++      continue;
++    }
+     if (file.value().find(manually_forced_uploads) != std::string::npos) {
+       RecordUnsuccessfulUploadListState(UnsuccessfulUploadListState::FORCED);
+       upload_state = UploadList::UploadInfo::State::Pending_UserRequested;
+@@ -117,6 +121,8 @@ void CrashUploadListAndroid::LoadUnsuccessfulUploadList(
+       continue;
+     }
+ 
++    std::string file_path = file.value();
++
+     // Crash reports can have multiple extensions (e.g. foo.dmp, foo.dmp.try1,
+     // foo.skipped.try0).
+     file = file.BaseName();
+@@ -136,8 +142,15 @@ void CrashUploadListAndroid::LoadUnsuccessfulUploadList(
      RecordUnsuccessfulUploadListState(
          UnsuccessfulUploadListState::ADDING_AN_UPLOAD_ENTRY);
      id = id.substr(pos + 1);
@@ -27,13 +58,101 @@ diff --git a/chrome/browser/crash_upload_list/crash_upload_list_android.cc b/chr
      UploadList::UploadInfo upload(id, info.creation_time, upload_state,
 -                                  ui::FormatBytes(file_size));
 +                                  file_size_string /*ui::FormatBytes(file_size)*/);
++    upload.file_path = file_path;
      uploads->push_back(upload);
    }
  }
+diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/chrome_network_delegate.cc
+--- a/chrome/browser/net/chrome_network_delegate.cc
++++ b/chrome/browser/net/chrome_network_delegate.cc
+@@ -129,6 +129,13 @@ bool IsAccessAllowedAndroid(const base::FilePath& path) {
+   if (external_storage_path.IsParent(path))
+     return true;
+ 
++  // access to the crash folder is allowed for the download by the user
++  base::FilePath cache_dir;
++  base::android::GetCacheDirectory(&cache_dir);
++  base::FilePath upload_log_path = cache_dir.Append("Crash Reports");
++  if (upload_log_path.IsParent(path))
++    return true;
++
+   std::vector<base::FilePath> allowlist;
+   std::vector<base::FilePath> all_download_dirs =
+       base::android::GetAllPrivateDownloadsDirectories();
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -571,6 +571,7 @@ static_library("ui") {
+     "//third_party/re2",
+     "//third_party/webrtc_overrides:webrtc_component",
+     "//third_party/zlib",
++    "//third_party/zlib/google:zip",
+     "//ui/accessibility",
+     "//ui/base",
+     "//ui/base:data_exchange",
 diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/crashes_ui.cc
 --- a/chrome/browser/ui/webui/crashes_ui.cc
 +++ b/chrome/browser/ui/webui/crashes_ui.cc
-@@ -173,8 +173,7 @@ void CrashesDOMHandler::OnUploadListAvailable() {
+@@ -38,6 +38,15 @@
+ #include "google_apis/gaia/gaia_auth_util.h"
+ #include "ui/base/resource/resource_bundle.h"
+ 
++#include "base/logging.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/task/task_traits.h"
++#include "base/task/thread_pool.h"
++#include "base/android/path_utils.h"
++#include "net/base/filename_util.h"
++#include "third_party/zlib/google/zip.h"
++
+ #if BUILDFLAG(IS_CHROMEOS_ASH)
+ #include "chromeos/dbus/dbus_thread_manager.h"
+ #include "chromeos/dbus/debug_daemon/debug_daemon_client.h"
+@@ -71,6 +80,10 @@ content::WebUIDataSource* CreateCrashesUIHTMLSource() {
+   return source;
+ }
+ 
++constexpr base::TaskTraits kLoadingTaskTraits = {
++    base::MayBlock(), base::TaskPriority::USER_BLOCKING,
++    base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN};
++
+ ////////////////////////////////////////////////////////////////////////////////
+ //
+ // CrashesDOMHandler
+@@ -80,7 +93,7 @@ content::WebUIDataSource* CreateCrashesUIHTMLSource() {
+ // The handler for Javascript messages for the chrome://crashes/ page.
+ class CrashesDOMHandler : public WebUIMessageHandler {
+  public:
+-  CrashesDOMHandler();
++  CrashesDOMHandler(content::WebContents* web_contents);
+   ~CrashesDOMHandler() override;
+ 
+   // WebUIMessageHandler implementation.
+@@ -103,15 +116,20 @@ class CrashesDOMHandler : public WebUIMessageHandler {
+   // Asynchronously requests a user triggered upload. Called from JS.
+   void HandleRequestSingleCrashUpload(const base::ListValue* args);
+ 
++  std::string RequestSingleUpload(const std::string& local_id) const;
++  void RequestSingleUploadCallback(const std::string& local_id, const std::string& filename);
++
+   scoped_refptr<UploadList> upload_list_;
+   bool list_available_;
+   bool first_load_;
++  content::WebContents* web_contents_;
+ 
+   DISALLOW_COPY_AND_ASSIGN(CrashesDOMHandler);
+ };
+ 
+-CrashesDOMHandler::CrashesDOMHandler()
+-    : list_available_(false), first_load_(true) {
++CrashesDOMHandler::CrashesDOMHandler(content::WebContents* web_contents)
++    : list_available_(false), first_load_(true),
++      web_contents_(web_contents) {
+   upload_list_ = CreateCrashUploadList();
+ }
+ 
+@@ -173,8 +191,7 @@ void CrashesDOMHandler::OnUploadListAvailable() {
  }
  
  void CrashesDOMHandler::UpdateUI() {
@@ -43,7 +162,7 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
  
    bool system_crash_reporter = false;
  #if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
-@@ -244,11 +243,6 @@ void CrashesDOMHandler::HandleRequestSingleCrashUpload(
+@@ -244,12 +261,78 @@ void CrashesDOMHandler::HandleRequestSingleCrashUpload(
    bool success = args->GetString(0, &local_id);
    DCHECK(success);
  
@@ -51,22 +170,123 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
 -  if (!ChromeMetricsServiceAccessor::IsMetricsAndCrashReportingEnabled() &&
 -      IsMetricsReportingPolicyManaged()) {
 -    return;
--  }
-   upload_list_->RequestSingleUploadAsync(local_id);
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, kLoadingTaskTraits,
++      base::BindOnce(&CrashesDOMHandler::RequestSingleUpload, base::Unretained(this), local_id),
++      base::BindOnce(&CrashesDOMHandler::RequestSingleUploadCallback, base::Unretained(this), local_id));
++}
++
++std::string CrashesDOMHandler::RequestSingleUpload(const std::string& local_id) const {
++  // get crash file path
++  std::string info_file_path = upload_list_->GetFilePathByLocalId(local_id);
++  if (info_file_path.empty()) {
++    LOG(ERROR) << "Crash report: file path is not set for " << local_id;
++    return std::string();
++  }
++  base::FilePath crash_file_path(info_file_path);
++
++  // get android crash report dir
++  base::FilePath cache_dir;
++  base::android::GetCacheDirectory(&cache_dir);
++  base::FilePath upload_log_path = cache_dir.Append("Crash Reports");
++
++  // crash reports can have multiple extensions (e.g. foo.dmp, foo.dmp.try1,
++  // foo.skipped.try0), remove it
++  base::FilePath zip_file = crash_file_path;
++  while (zip_file != zip_file.RemoveExtension())
++    zip_file = zip_file.RemoveExtension();
++
++  // make zip file name, like "ec708a7b-cb17-44e7-8dae-e32f6c45cb8c.zip"
++  zip_file = upload_log_path.Append(zip_file.BaseName())
++                            .AddExtensionASCII(".zip");
++  // if exists return it
++  if (base::PathExists(zip_file))
++    return zip_file.value();
++
++  // original code remove the file immediately after upload.
++  // we changed this behavior but it is still possible that the file no longer exists
++  // because in uploads.log it could be indicated but the file was deleted by self-cleaning
++  if (!base::PathExists(crash_file_path)) {
++    LOG(ERROR) << "Crash report: file " << crash_file_path
++               << " no more avaiable";
++    return std::string();
++  }
++
++  // temporary folder for zip, auto-removed when out of scope
++  base::ScopedTempDir temp_dir;
++  if (!temp_dir.CreateUniqueTempDir()) {
++    LOG(ERROR) << "Crash report: cannot create temp directory";
++    return std::string();
++  }
++
++  // temporary file for zip content
++  base::FilePath dest_file = temp_dir.GetPath().Append(crash_file_path.BaseName());
++
++  // make zip file
++  if (base::CopyFile(crash_file_path, dest_file)) {
++    if (zip::Zip(temp_dir.GetPath(), zip_file, false)) {
++      return zip_file.value();
++    }
++  }
++
++  LOG(ERROR) << "Crash report: cannot create zip content";
++  return std::string();
++}
++
++void CrashesDOMHandler::RequestSingleUploadCallback(const std::string& local_id,
++                                                    const std::string& file_name) {
++  if (!file_name.empty()) {
++    upload_list_->RequestSingleUploadAsync(local_id);
++
++    base::FilePath file_path(file_name);
++    web_contents_->GetController().LoadURL(
++        net::FilePathToFileURL(file_path), {}, {}, {});
+   }
+-  upload_list_->RequestSingleUploadAsync(local_id);
  }
  
+ }  // namespace
+@@ -261,7 +344,8 @@ void CrashesDOMHandler::HandleRequestSingleCrashUpload(
+ ///////////////////////////////////////////////////////////////////////////////
+ 
+ CrashesUI::CrashesUI(content::WebUI* web_ui) : WebUIController(web_ui) {
+-  web_ui->AddMessageHandler(std::make_unique<CrashesDOMHandler>());
++  web_ui->AddMessageHandler(std::make_unique<CrashesDOMHandler>(
++      web_ui->GetWebContents()));
+ 
+   // Set up the chrome://crashes/ source.
+   Profile* profile = Profile::FromWebUI(web_ui);
 diff --git a/components/crash/core/browser/resources/crashes.js b/components/crash/core/browser/resources/crashes.js
 --- a/components/crash/core/browser/resources/crashes.js
 +++ b/components/crash/core/browser/resources/crashes.js
-@@ -99,7 +99,7 @@ function updateCrashList(
+@@ -98,22 +98,16 @@ function updateCrashList(
+ 
        uploadTime.querySelector('.value').textContent = crash.upload_time;
  
-       sendNowButton.remove();
+-      sendNowButton.remove();
 -      fileBugButton.onclick = () => fileBug(crash.id, os, version);
 +      fileBugButton.remove();
      } else {
        uploadId.remove();
        uploadTime.remove();
+       fileBugButton.remove();
+-      // Do not allow crash submission if the Chromium build does not support
+-      // it, or if the user already requested it.
+-      if (!manualUploads || crash.state === 'pending_user_requested') {
+-        sendNowButton.remove();
+-      }
+-      sendNowButton.onclick = (e) => {
+-        e.target.disabled = true;
+-        chrome.send('requestSingleCrashUpload', [crash.local_id]);
+-      };
+     }
++    sendNowButton.onclick = (e) => {
++      e.target.disabled = true;
++      chrome.send('requestSingleCrashUpload', [crash.local_id]);
++    };
+ 
+     const fileSize = crashRow.querySelector('.fileSize');
+     if (crash.file_size === '') {
 diff --git a/components/crash_strings.grdp b/components/crash_strings.grdp
 --- a/components/crash_strings.grdp
 +++ b/components/crash_strings.grdp
@@ -111,6 +331,46 @@ diff --git a/components/crash_strings.grdp b/components/crash_strings.grdp
 +    Save now
    </message>
  </grit-part>
+diff --git a/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/CrashFileManager.java b/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/CrashFileManager.java
+--- a/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/CrashFileManager.java
++++ b/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/CrashFileManager.java
+@@ -107,6 +107,8 @@ public class CrashFileManager {
+ 
+     private static final Pattern TMP_PATTERN = Pattern.compile("\\.tmp\\z");
+ 
++    private static final String UPLOADED_MINIDUMP_ZIP_SUFFIX = ".zip";
++
+     // The maximum number of non-uploaded crashes that may be kept in the crash reports directory.
+     // Chosen to attempt to balance between keeping a generous number of crashes, and not using up
+     // too much filesystem storage space for obsolete crash reports.
+@@ -116,7 +118,7 @@ public class CrashFileManager {
+     // The maximum age, in days, considered acceptable for a crash report. Reports older than this
+     // age will be removed. The constant is chosen to be quite conservative, while still allowing
+     // users to eventually reclaim filesystem storage space from obsolete crash reports.
+-    private static final int MAX_CRASH_REPORT_AGE_IN_DAYS = 30;
++    private static final int MAX_CRASH_REPORT_AGE_IN_DAYS = 5;
+ 
+     // The maximum number of non-uploaded crashes to copy to the crash reports directory. The
+     // difference between this value and MAX_CRASH_REPORTS_TO_KEEP is that TO_KEEP is only checked
+@@ -460,9 +462,6 @@ public class CrashFileManager {
+     }
+ 
+     public void cleanOutAllNonFreshMinidumpFiles() {
+-        for (File f : getAllUploadedFiles()) {
+-            deleteFile(f);
+-        }
+         for (File f : getAllTempFiles()) {
+             deleteFile(f);
+         }
+@@ -586,6 +585,8 @@ public class CrashFileManager {
+                     && !f.getName().contains(UPLOAD_FORCED_MINIDUMP_SUFFIX)) {
+                 continue;
+             }
++            if (f.getName().contains(UPLOADED_MINIDUMP_ZIP_SUFFIX))
++                continue;
+ 
+             String filenameSansExtension = f.getName().split("\\.")[0];
+             if (filenameSansExtension.endsWith(localId)) {
 diff --git a/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploadCallable.java b/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploadCallable.java
 --- a/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploadCallable.java
 +++ b/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploadCallable.java
@@ -145,26 +405,15 @@ diff --git a/components/minidump_uploader/android/java/src/org/chromium/componen
 diff --git a/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploader.java b/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploader.java
 --- a/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploader.java
 +++ b/components/minidump_uploader/android/java/src/org/chromium/components/minidump_uploader/MinidumpUploader.java
-@@ -11,12 +11,17 @@ import java.io.BufferedReader;
- import java.io.ByteArrayOutputStream;
- import java.io.File;
- import java.io.FileInputStream;
-+import java.io.FileOutputStream;
-+import java.io.BufferedOutputStream;
- import java.io.FileReader;
- import java.io.IOException;
+@@ -16,7 +16,6 @@ import java.io.IOException;
  import java.io.InputStream;
  import java.io.OutputStream;
  import java.net.HttpURLConnection;
 -import java.util.zip.GZIPOutputStream;
-+import java.util.zip.ZipOutputStream;
-+import java.util.zip.ZipEntry;
-+
-+import org.chromium.base.PathUtils;
  
  /**
   * This class tries to upload a minidump to the crash server.
-@@ -120,30 +125,18 @@ public class MinidumpUploader {
+@@ -120,31 +119,9 @@ public class MinidumpUploader {
              if (fileToUpload == null || !fileToUpload.exists()) {
                  return Result.failure("Crash report does not exist");
              }
@@ -192,21 +441,82 @@ diff --git a/components/minidump_uploader/android/java/src/org/chromium/componen
 -            } finally {
 -                connection.disconnect();
 -            }
+-        } catch (IOException | RuntimeException e) {
 +
-+            File outputDir = new File(PathUtils.getDownloadsDirectory());
-+            File destination = new File(outputDir, fileToUpload.getName() + ".zip");
-+
-+            InputStream minidumpInputStream = new FileInputStream(fileToUpload);
-+            OutputStream out = new BufferedOutputStream(
-+                    new FileOutputStream(destination));
-+            ZipOutputStream requestBodyStream =
-+                    new ZipOutputStream(out);
-+            requestBodyStream.putNextEntry(new ZipEntry(fileToUpload.getName()));
-+            streamCopy(minidumpInputStream, requestBodyStream);
-+            return Result.success(destination.getPath());
-         } catch (IOException | RuntimeException e) {
++            return Result.success(fileToUpload.getPath());
++        } catch (RuntimeException e) {
              return Result.failure(e.toString());
          }
+     }
+diff --git a/components/upload_list/text_log_upload_list.cc b/components/upload_list/text_log_upload_list.cc
+--- a/components/upload_list/text_log_upload_list.cc
++++ b/components/upload_list/text_log_upload_list.cc
+@@ -27,7 +27,7 @@ constexpr char kJsonLogKeyState[] = "state";
+ constexpr char kJsonLogKeySource[] = "source";
+ 
+ std::vector<std::string> SplitIntoLines(const std::string& file_contents) {
+-  return base::SplitString(file_contents, base::kWhitespaceASCII,
++  return base::SplitString(file_contents, "\n",
+                            base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+ }
+ 
+@@ -108,6 +108,7 @@ std::unique_ptr<TextLogUploadList::UploadInfo> TryParseCsvLogEntry(
+   }
+   auto info = std::make_unique<TextLogUploadList::UploadInfo>(components[1],
+                                                               upload_time);
++  info->file_path = components[1];
+ 
+   // Add local ID if present.
+   if (components.size() > 2)
+diff --git a/components/upload_list/upload_list.cc b/components/upload_list/upload_list.cc
+--- a/components/upload_list/upload_list.cc
++++ b/components/upload_list/upload_list.cc
+@@ -55,7 +55,8 @@ UploadList::UploadInfo::UploadInfo(const UploadInfo& upload_info)
+       capture_time(upload_info.capture_time),
+       state(upload_info.state),
+       source(upload_info.source),
+-      file_size(upload_info.file_size) {}
++      file_size(upload_info.file_size),
++      file_path(upload_info.file_path) {}
+ 
+ UploadList::UploadInfo::~UploadInfo() = default;
+ 
+@@ -118,3 +119,12 @@ void UploadList::OnClearComplete() {
+   if (!clear_callback_.is_null())
+     std::move(clear_callback_).Run();
+ }
++
++std::string UploadList::GetFilePathByLocalId(const std::string& local_id) {
++  for (auto info : uploads_) {
++    if (info.local_id == local_id) {
++      return info.file_path;
++    }
++  }
++  return std::string();
++}
+diff --git a/components/upload_list/upload_list.h b/components/upload_list/upload_list.h
+--- a/components/upload_list/upload_list.h
++++ b/components/upload_list/upload_list.h
+@@ -64,6 +64,9 @@ class UploadList : public base::RefCountedThreadSafe<UploadList> {
+ 
+     // Formatted file size for locally stored data.
+     base::string16 file_size;
++
++    // path of crash file
++    std::string file_path;
+   };
+ 
+   UploadList();
+@@ -90,6 +93,9 @@ class UploadList : public base::RefCountedThreadSafe<UploadList> {
+   // Must be called only after a Load() callback has been received.
+   void GetUploads(size_t max_count, std::vector<UploadInfo>* uploads);
+ 
++  // Get full path of crash file for local_id
++  std::string GetFilePathByLocalId(const std::string& local_id);
++
+  protected:
+   virtual ~UploadList();
+ 
 -- 
 2.17.1
 
