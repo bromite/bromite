@@ -62,6 +62,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * disable the DIAL repeating discovery
 * disable RTCGetCurrentBrowsingContextMedia by default
 * disable FLoC by default
+* disable feeds
 
 ## Features not related to privacy
 * import/export bookmarks
