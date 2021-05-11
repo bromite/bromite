@@ -4,7 +4,7 @@ Subject: Enable crash report ui
 
 ---
  .../crash/MinidumpUploadServiceImpl.java      |  22 +++
- .../crash_upload_list_android.cc              |  20 ++-
+ .../crash_upload_list_android.cc              |  22 ++-
  .../crash_upload_list_android.h               |   1 +
  chrome/browser/net/chrome_network_delegate.cc |   7 +
  chrome/browser/ui/BUILD.gn                    |   1 +
@@ -15,13 +15,13 @@ Subject: Enable crash report ui
  .../crash/core/browser/resources/crashes.html |  16 ++
  .../crash/core/browser/resources/crashes.js   |  40 +++--
  components/crash_strings.grdp                 |  22 ++-
- .../minidump_uploader/CrashFileManager.java   |   9 +-
+ .../minidump_uploader/CrashFileManager.java   |   7 +-
  .../MinidumpUploadCallable.java               |  20 +--
  .../minidump_uploader/MinidumpUploader.java   |  29 +--
  .../upload_list/text_log_upload_list.cc       |   1 +
  components/upload_list/upload_list.cc         |  17 +-
  components/upload_list/upload_list.h          |   9 +
- 18 files changed, 375 insertions(+), 83 deletions(-)
+ 18 files changed, 378 insertions(+), 80 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/crash/MinidumpUploadServiceImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/crash/MinidumpUploadServiceImpl.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/crash/MinidumpUploadServiceImpl.java
@@ -63,7 +63,15 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/crash/MinidumpU
 diff --git a/chrome/browser/crash_upload_list/crash_upload_list_android.cc b/chrome/browser/crash_upload_list/crash_upload_list_android.cc
 --- a/chrome/browser/crash_upload_list/crash_upload_list_android.cc
 +++ b/chrome/browser/crash_upload_list/crash_upload_list_android.cc
-@@ -76,16 +76,25 @@ void CrashUploadListAndroid::RequestSingleUpload(const std::string& local_id) {
+@@ -14,6 +14,7 @@
+ #include "base/metrics/histogram_macros_local.h"
+ #include "chrome/android/chrome_jni_headers/MinidumpUploadServiceImpl_jni.h"
+ #include "ui/base/text/bytes_formatting.h"
++#include "base/strings/string_util.h"
+ 
+ namespace {
+ 
+@@ -76,16 +77,26 @@ void CrashUploadListAndroid::RequestSingleUpload(const std::string& local_id) {
    Java_MinidumpUploadServiceImpl_tryUploadCrashDumpWithLocalId(env, j_local_id);
  }
  
@@ -83,13 +91,14 @@ diff --git a/chrome/browser/crash_upload_list/crash_upload_list_android.cc b/chr
                               base::FileEnumerator::FILES);
    for (base::FilePath file = files.Next(); !file.empty(); file = files.Next()) {
      UploadList::UploadInfo::State upload_state;
-+    if (file.value().find(zipped_uploads) != std::string::npos) {
++    if (base::EndsWith(file.value(), zipped_uploads, base::CompareCase::INSENSITIVE_ASCII)) {
++      // skip zip files
 +      continue;
 +    }
      if (file.value().find(manually_forced_uploads) != std::string::npos) {
        RecordUnsuccessfulUploadListState(UnsuccessfulUploadListState::FORCED);
        upload_state = UploadList::UploadInfo::State::Pending_UserRequested;
-@@ -117,6 +126,8 @@ void CrashUploadListAndroid::LoadUnsuccessfulUploadList(
+@@ -117,6 +128,8 @@ void CrashUploadListAndroid::LoadUnsuccessfulUploadList(
        continue;
      }
  
@@ -98,7 +107,7 @@ diff --git a/chrome/browser/crash_upload_list/crash_upload_list_android.cc b/chr
      // Crash reports can have multiple extensions (e.g. foo.dmp, foo.dmp.try1,
      // foo.skipped.try0).
      file = file.BaseName();
-@@ -136,8 +147,15 @@ void CrashUploadListAndroid::LoadUnsuccessfulUploadList(
+@@ -136,8 +149,15 @@ void CrashUploadListAndroid::LoadUnsuccessfulUploadList(
      RecordUnsuccessfulUploadListState(
          UnsuccessfulUploadListState::ADDING_AN_UPLOAD_ENTRY);
      id = id.substr(pos + 1);
@@ -110,7 +119,7 @@ diff --git a/chrome/browser/crash_upload_list/crash_upload_list_android.cc b/chr
 +    std::u16string file_size_string;
      UploadList::UploadInfo upload(id, info.creation_time, upload_state,
 -                                  ui::FormatBytes(file_size));
-+                                  file_size_string /*ui::FormatBytes(file_size)*/);
++                                  file_size_string);
 +    upload.file_path = file_path;
      uploads->push_back(upload);
    }
@@ -703,20 +712,11 @@ diff --git a/components/minidump_uploader/android/java/src/org/chromium/componen
  
      // The maximum number of non-uploaded crashes to copy to the crash reports directory. The
      // difference between this value and MAX_CRASH_REPORTS_TO_KEEP is that TO_KEEP is only checked
-@@ -460,9 +462,6 @@ public class CrashFileManager {
-     }
- 
-     public void cleanOutAllNonFreshMinidumpFiles() {
--        for (File f : getAllUploadedFiles()) {
--            deleteFile(f);
--        }
-         for (File f : getAllTempFiles()) {
-             deleteFile(f);
-         }
-@@ -586,6 +585,8 @@ public class CrashFileManager {
+@@ -586,6 +588,9 @@ public class CrashFileManager {
                      && !f.getName().contains(UPLOAD_FORCED_MINIDUMP_SUFFIX)) {
                  continue;
              }
++            // as above, zip files must also be excluded
 +            if (f.getName().endsWith(SAVED_MINIDUMP_ZIP_SUFFIX))
 +                continue;
  
@@ -821,7 +821,7 @@ diff --git a/components/upload_list/upload_list.cc b/components/upload_list/uplo
  }
  
 +void UploadList::RequestNewExtraction() {
-+  // only available for Android.
++  // only available for Android. overrided in crash_upload_list_android.cc
 +  NOTREACHED();
 +}
 +
