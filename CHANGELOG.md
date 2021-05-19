@@ -1,3 +1,9 @@
+# 91.0.4472.50
+* unexpire tab group flags `#enable-tab-groups` and `#enable-tab-groups-ui-improvements`
+* replace known good hostname used for DoH test (fixes https://github.com/bromite/bromite/issues/1148)
+* drop patch to disable preview fetching
+* drop patch to restore horizontal tab switcher
+
 # 90.0.4430.204
 * fix for custom tab intent tab crashes when in always incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1116)
 

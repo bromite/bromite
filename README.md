@@ -93,7 +93,6 @@ You can inspect all functionality/privacy changes by reading the [patches](https
 
 Flags which have been retired from upstream Chromium but are still available in Bromite.
 
-* `#enable-horizontal-tab-switcher`
 * `#pull-to-refresh`
 * `#enable-search-ready-omnibox`
 * `#darken-websites-checkbox-in-themes-setting`
@@ -101,6 +100,7 @@ Flags which have been retired from upstream Chromium but are still available in 
 * `#enable-text-fragment-anchor`, disabled by default
 * `#num-raster-threads`
 * `#enable-image-reader`, enabled by default
+* `#enable-tab-groups` and `#enable-tab-groups-ui-improvements`
 
 New flags:
 
