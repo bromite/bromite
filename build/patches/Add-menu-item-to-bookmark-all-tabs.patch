@@ -12,13 +12,16 @@ Subject: Add menu item to bookmark all tabs
  .../bookmarks/chrome_bookmark_client.cc       |  2 +
  .../strings/android_chrome_strings.grd        |  3 +
  components/bookmark_bar_strings.grdp          |  6 ++
+ .../bookmarks/browser/bookmark_codec.cc       | 24 ++++++--
+ components/bookmarks/browser/bookmark_codec.h |  7 ++-
  .../browser/bookmark_load_details.cc          |  4 ++
  .../bookmarks/browser/bookmark_load_details.h |  2 +
  .../bookmarks/browser/bookmark_model.cc       |  3 +-
  components/bookmarks/browser/bookmark_model.h |  7 +++
  components/bookmarks/browser/bookmark_node.cc | 13 ++++
  components/bookmarks/browser/bookmark_node.h  |  5 ++
- 15 files changed, 163 insertions(+), 1 deletion(-)
+ components/bookmarks/browser/model_loader.cc  |  3 +-
+ 18 files changed, 191 insertions(+), 7 deletions(-)
 
 diff --git a/chrome/android/java/res/menu/main_menu.xml b/chrome/android/java/res/menu/main_menu.xml
 --- a/chrome/android/java/res/menu/main_menu.xml
@@ -79,7 +82,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedAct
 +
 +        final BookmarkBridge bridge = mBookmarkBridgeSupplier.get();
 +        final BookmarkModel bookmarkModel = new BookmarkModel();
-+                bookmarkModel.finishLoadingBookmarkModel(() -> {
++        bookmarkModel.finishLoadingBookmarkModel(() -> {
 +            for (int i = 0; i < tabModel.getCount(); i++) {
 +                Tab tab = tabModel.getTabAt(i);
 +                if (tab.isNativePage()) {
@@ -331,6 +334,157 @@ diff --git a/components/bookmark_bar_strings.grdp b/components/bookmark_bar_stri
      <message name="IDS_BOOKMARK_BAR_OTHER_FOLDER_NAME" desc="In Title Case: Name shown in the tree for the other bookmarks folder">
        Other Bookmarks
      </message>
+diff --git a/components/bookmarks/browser/bookmark_codec.cc b/components/bookmarks/browser/bookmark_codec.cc
+--- a/components/bookmarks/browser/bookmark_codec.cc
++++ b/components/bookmarks/browser/bookmark_codec.cc
+@@ -32,6 +32,7 @@ const char BookmarkCodec::kRootFolderNameKey[] = "bookmark_bar";
+ const char BookmarkCodec::kOtherBookmarkFolderNameKey[] = "other";
+ // The value is left as 'synced' for historical reasons.
+ const char BookmarkCodec::kMobileBookmarkFolderNameKey[] = "synced";
++const char BookmarkCodec::kTabsBookmarkFolderNameKey[] = "tabs";
+ const char BookmarkCodec::kVersionKey[] = "version";
+ const char BookmarkCodec::kChecksumKey[] = "checksum";
+ const char BookmarkCodec::kIdKey[] = "id";
+@@ -62,7 +63,8 @@ std::unique_ptr<base::Value> BookmarkCodec::Encode(
+     BookmarkModel* model,
+     const std::string& sync_metadata_str) {
+   return Encode(model->bookmark_bar_node(), model->other_node(),
+-                model->mobile_node(), model->root_node()->GetMetaInfoMap(),
++                model->mobile_node(), model->tabs_collection_node(),
++                model->root_node()->GetMetaInfoMap(),
+                 sync_metadata_str);
+ }
+ 
+@@ -70,6 +72,7 @@ std::unique_ptr<base::Value> BookmarkCodec::Encode(
+     const BookmarkNode* bookmark_bar_node,
+     const BookmarkNode* other_folder_node,
+     const BookmarkNode* mobile_folder_node,
++    const BookmarkNode* tabs_folder_node,
+     const BookmarkNode::MetaInfoMap* model_meta_info_map,
+     const std::string& sync_metadata_str) {
+   ids_reassigned_ = false;
+@@ -79,6 +82,7 @@ std::unique_ptr<base::Value> BookmarkCodec::Encode(
+   roots->Set(kRootFolderNameKey, EncodeNode(bookmark_bar_node));
+   roots->Set(kOtherBookmarkFolderNameKey, EncodeNode(other_folder_node));
+   roots->Set(kMobileBookmarkFolderNameKey, EncodeNode(mobile_folder_node));
++  roots->Set(kTabsBookmarkFolderNameKey, EncodeNode(tabs_folder_node));
+   if (model_meta_info_map)
+     roots->Set(kMetaInfo, EncodeMetaInfo(*model_meta_info_map));
+   auto main = std::make_unique<base::DictionaryValue>();
+@@ -102,6 +106,7 @@ bool BookmarkCodec::Decode(const base::Value& value,
+                            BookmarkNode* bb_node,
+                            BookmarkNode* other_folder_node,
+                            BookmarkNode* mobile_folder_node,
++                           BookmarkNode* tabs_folder_node,
+                            int64_t* max_id,
+                            std::string* sync_metadata_str) {
+   ids_.clear();
+@@ -109,7 +114,8 @@ bool BookmarkCodec::Decode(const base::Value& value,
+             base::GUID::ParseLowercase(BookmarkNode::kBookmarkBarNodeGuid),
+             base::GUID::ParseLowercase(BookmarkNode::kOtherBookmarksNodeGuid),
+             base::GUID::ParseLowercase(BookmarkNode::kMobileBookmarksNodeGuid),
+-            base::GUID::ParseLowercase(BookmarkNode::kManagedNodeGuid)};
++            base::GUID::ParseLowercase(BookmarkNode::kManagedNodeGuid),
++            base::GUID::ParseLowercase(BookmarkNode::kTabsCollectionBookmarksNodeGuid)};
+   ids_reassigned_ = false;
+   guids_reassigned_ = false;
+   ids_valid_ = true;
+@@ -117,12 +123,13 @@ bool BookmarkCodec::Decode(const base::Value& value,
+   stored_checksum_.clear();
+   InitializeChecksum();
+   bool success = DecodeHelper(bb_node, other_folder_node, mobile_folder_node,
++                              tabs_folder_node,
+                               value, sync_metadata_str);
+   FinalizeChecksum();
+   // If either the checksums differ or some IDs were missing/not unique,
+   // reassign IDs.
+   if (!ids_valid_ || computed_checksum() != stored_checksum())
+-    ReassignIDs(bb_node, other_folder_node, mobile_folder_node);
++    ReassignIDs(bb_node, other_folder_node, mobile_folder_node, tabs_folder_node);
+   *max_id = maximum_id_ + 1;
+   return success;
+ }
+@@ -173,6 +180,7 @@ std::unique_ptr<base::Value> BookmarkCodec::EncodeMetaInfo(
+ bool BookmarkCodec::DecodeHelper(BookmarkNode* bb_node,
+                                  BookmarkNode* other_folder_node,
+                                  BookmarkNode* mobile_folder_node,
++                                 BookmarkNode* tabs_folder_node,
+                                  const base::Value& value,
+                                  std::string* sync_metadata_str) {
+   const base::DictionaryValue* d_value = nullptr;
+@@ -212,6 +220,12 @@ bool BookmarkCodec::DecodeHelper(BookmarkNode* bb_node,
+   DecodeNode(*root_folder_d_value, nullptr, bb_node);
+   DecodeNode(*other_folder_d_value, nullptr, other_folder_node);
+ 
++  const base::Value* tabs_folder_value;
++  const base::DictionaryValue* tabs_folder_d_value = nullptr;
++  if (roots_d_value->Get(kTabsBookmarkFolderNameKey, &tabs_folder_value) &&
++      tabs_folder_value->GetAsDictionary(&tabs_folder_d_value))
++    DecodeNode(*tabs_folder_d_value, nullptr, tabs_folder_node);
++
+   // Fail silently if we can't deserialize mobile bookmarks. We can't require
+   // them to exist in order to be backwards-compatible with older versions of
+   // chrome.
+@@ -457,11 +471,13 @@ void BookmarkCodec::DecodeMetaInfoHelper(
+ 
+ void BookmarkCodec::ReassignIDs(BookmarkNode* bb_node,
+                                 BookmarkNode* other_node,
+-                                BookmarkNode* mobile_node) {
++                                BookmarkNode* mobile_node,
++                                BookmarkNode* tabs_folder_node) {
+   maximum_id_ = 0;
+   ReassignIDsHelper(bb_node);
+   ReassignIDsHelper(other_node);
+   ReassignIDsHelper(mobile_node);
++  ReassignIDsHelper(tabs_folder_node);
+   ids_reassigned_ = true;
+ }
+ 
+diff --git a/components/bookmarks/browser/bookmark_codec.h b/components/bookmarks/browser/bookmark_codec.h
+--- a/components/bookmarks/browser/bookmark_codec.h
++++ b/components/bookmarks/browser/bookmark_codec.h
+@@ -50,6 +50,7 @@ class BookmarkCodec {
+       const BookmarkNode* bookmark_bar_node,
+       const BookmarkNode* other_folder_node,
+       const BookmarkNode* mobile_folder_node,
++      const BookmarkNode* tabs_folder_node,
+       const BookmarkNode::MetaInfoMap* model_meta_info_map,
+       const std::string& sync_metadata_str);
+ 
+@@ -62,6 +63,7 @@ class BookmarkCodec {
+               BookmarkNode* bb_node,
+               BookmarkNode* other_folder_node,
+               BookmarkNode* mobile_folder_node,
++              BookmarkNode* tabs_folder_node,
+               int64_t* max_node_id,
+               std::string* sync_metadata_str);
+ 
+@@ -107,6 +109,7 @@ class BookmarkCodec {
+   // Allows the BookmarkClient to read and a write a string blob from the JSON
+   // file. That string captures the bookmarks sync metadata.
+   static const char kSyncMetadata[];
++  static const char kTabsBookmarkFolderNameKey[];
+ 
+   // Possible values for kTypeKey.
+   static const char kTypeURL[];
+@@ -124,6 +127,7 @@ class BookmarkCodec {
+   bool DecodeHelper(BookmarkNode* bb_node,
+                     BookmarkNode* other_folder_node,
+                     BookmarkNode* mobile_folder_node,
++                    BookmarkNode* tabs_folder_node,
+                     const base::Value& value,
+                     std::string* sync_metadata_str);
+ 
+@@ -134,7 +138,8 @@ class BookmarkCodec {
+   // Reassigns bookmark IDs for all nodes.
+   void ReassignIDs(BookmarkNode* bb_node,
+                    BookmarkNode* other_node,
+-                   BookmarkNode* mobile_node);
++                   BookmarkNode* mobile_node,
++                   BookmarkNode* tabs_folder_node);
+ 
+   // Helper to recursively reassign IDs.
+   void ReassignIDsHelper(BookmarkNode* node);
 diff --git a/components/bookmarks/browser/bookmark_load_details.cc b/components/bookmarks/browser/bookmark_load_details.cc
 --- a/components/bookmarks/browser/bookmark_load_details.cc
 +++ b/components/bookmarks/browser/bookmark_load_details.cc
@@ -467,6 +621,19 @@ diff --git a/components/bookmarks/browser/bookmark_node.h b/components/bookmarks
  
    // Constructor is private to disallow the construction of permanent nodes
    // other than the well-known ones, see factory methods.
+diff --git a/components/bookmarks/browser/model_loader.cc b/components/bookmarks/browser/model_loader.cc
+--- a/components/bookmarks/browser/model_loader.cc
++++ b/components/bookmarks/browser/model_loader.cc
+@@ -54,7 +54,8 @@ void LoadBookmarks(const base::FilePath& path,
+       std::string sync_metadata_str;
+       BookmarkCodec codec;
+       codec.Decode(*root, details->bb_node(), details->other_folder_node(),
+-                   details->mobile_folder_node(), &max_node_id,
++                   details->mobile_folder_node(),
++                   details->tabs_collection_folder_node(), &max_node_id,
+                    &sync_metadata_str);
+       details->set_sync_metadata_str(std::move(sync_metadata_str));
+       details->set_max_id(std::max(max_node_id, details->max_id()));
 -- 
 2.17.1
 
