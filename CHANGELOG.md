@@ -1,3 +1,10 @@
+# 91.0.4472.97
+* fix opening new tabs from links in always-incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1154)
+* add flag for omnibox autocomplete filtering (fixes https://github.com/bromite/bromite/issues/1152)
+* enable IntentBlockExternalFormRedirectsNoGesture by default
+* add flag to disable external intent requests
+* fix for tab collection temporary/non-exportable (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1138)
+
 # 91.0.4472.50
 * unexpire tab group flags `#enable-tab-groups` and `#enable-tab-groups-ui-improvements`
 * replace known good hostname used for DoH test (fixes https://github.com/bromite/bromite/issues/1148)

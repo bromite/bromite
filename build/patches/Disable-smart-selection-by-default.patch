@@ -5,25 +5,84 @@ Subject: Disable smart selection by default
 Allow web search in incognito mode (reverts
 commit 48d4ae54f7565c429bf29cd63806aee5d7e93e69)
 
+Partial revert of da1d809c003749846cb4ade8c11b6d038e44416b to restore
+the ChromeSmartSelection feature flag.
+
 Notice that re-enabling smart selection would make incognito mode potentially
 leak information through the TextClassifier set by OEM, if any
 ---
- chrome/browser/flags/android/chrome_feature_list.cc             | 2 +-
- .../content/browser/selection/SelectionPopupControllerImpl.java | 2 +-
- 2 files changed, 2 insertions(+), 2 deletions(-)
+ .../contextualsearch/SelectionClientManager.java  |  4 +++-
+ .../browser/flags/android/chrome_feature_list.cc  |  4 ++++
+ .../browser/flags/android/chrome_feature_list.h   |  1 +
+ .../chrome/browser/flags/ChromeFeatureList.java   |  1 +
+ .../selection/SelectionPopupControllerImpl.java   |  2 +-
+ testing/variations/fieldtrial_testing_config.json | 15 +++++++++++++++
+ 6 files changed, 25 insertions(+), 2 deletions(-)
 
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/contextualsearch/SelectionClientManager.java b/chrome/android/java/src/org/chromium/chrome/browser/contextualsearch/SelectionClientManager.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/contextualsearch/SelectionClientManager.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/contextualsearch/SelectionClientManager.java
+@@ -10,6 +10,7 @@ import android.view.textclassifier.TextClassifier;
+ import androidx.annotation.Nullable;
+ import androidx.annotation.VisibleForTesting;
+ 
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.content_public.browser.SelectionClient;
+ import org.chromium.content_public.browser.SelectionMetricsLogger;
+ import org.chromium.content_public.browser.SelectionPopupController;
+@@ -44,7 +45,8 @@ public class SelectionClientManager {
+      * @param webContents The {@link WebContents} that will show popups for this client.
+      */
+     SelectionClientManager(WebContents webContents) {
+-        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.O) {
++        if (ChromeFeatureList.isEnabled(ChromeFeatureList.CHROME_SMART_SELECTION)
++                && Build.VERSION.SDK_INT > Build.VERSION_CODES.O) {
+             assert webContents != null;
+             mOptionalSelectionClient = SelectionClient.createSmartSelectionClient(webContents);
+             SelectionPopupController controller =
 diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browser/flags/android/chrome_feature_list.cc
 --- a/chrome/browser/flags/android/chrome_feature_list.cc
 +++ b/chrome/browser/flags/android/chrome_feature_list.cc
-@@ -532,7 +532,7 @@ const base::Feature kDownloadProgressInfoBar{"DownloadProgressInfoBar",
-                                              base::FEATURE_ENABLED_BY_DEFAULT};
+@@ -164,6 +164,7 @@ const base::Feature* kFeaturesExposedToJava[] = {
+     &kChromeShareScreenshot,
+     &kChromeSharingHub,
+     &kChromeSharingHubV15,
++    &kChromeSmartSelection,
+     &kChromeStartupDelegate,
+     &kChromeSurveyNextAndroid,
+     &kCommandLineOnNonRooted,
+@@ -453,6 +454,9 @@ const base::Feature kChromeStartupDelegate{"ChromeStartupDelegate",
+ const base::Feature kChromeSurveyNextAndroid{"ChromeSurveyNextAndroid",
+                                              base::FEATURE_DISABLED_BY_DEFAULT};
  
- const base::Feature kDownloadFileProvider{"DownloadFileProvider",
--                                          base::FEATURE_ENABLED_BY_DEFAULT};
++const base::Feature kChromeSmartSelection{"ChromeSmartSelection",
 +                                          base::FEATURE_DISABLED_BY_DEFAULT};
++
+ const base::Feature kCommandLineOnNonRooted{"CommandLineOnNonRooted",
+                                             base::FEATURE_DISABLED_BY_DEFAULT};
  
- const base::Feature kDownloadNotificationBadge{
-     "DownloadNotificationBadge", base::FEATURE_ENABLED_BY_DEFAULT};
+diff --git a/chrome/browser/flags/android/chrome_feature_list.h b/chrome/browser/flags/android/chrome_feature_list.h
+--- a/chrome/browser/flags/android/chrome_feature_list.h
++++ b/chrome/browser/flags/android/chrome_feature_list.h
+@@ -50,6 +50,7 @@ extern const base::Feature kChromeShareQRCode;
+ extern const base::Feature kChromeShareScreenshot;
+ extern const base::Feature kChromeSharingHub;
+ extern const base::Feature kChromeSharingHubV15;
++extern const base::Feature kChromeSmartSelection;
+ extern const base::Feature kChromeStartupDelegate;
+ extern const base::Feature kChromeSurveyNextAndroid;
+ extern const base::Feature kCommandLineOnNonRooted;
+diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
+--- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
++++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
+@@ -275,6 +275,7 @@ public abstract class ChromeFeatureList {
+     public static final String CHROME_SHARE_SCREENSHOT = "ChromeShareScreenshot";
+     public static final String CHROME_SHARING_HUB = "ChromeSharingHub";
+     public static final String CHROME_SHARING_HUB_V15 = "ChromeSharingHubV15";
++    public static final String CHROME_SMART_SELECTION = "ChromeSmartSelection";
+     public static final String CHROME_STARTUP_DELEGATE = "ChromeStartupDelegate";
+     public static final String CLEAR_OLD_BROWSING_DATA = "ClearOldBrowsingData";
+     public static final String COMMAND_LINE_ON_NON_ROOTED = "CommandLineOnNonRooted";
 diff --git a/content/public/android/java/src/org/chromium/content/browser/selection/SelectionPopupControllerImpl.java b/content/public/android/java/src/org/chromium/content/browser/selection/SelectionPopupControllerImpl.java
 --- a/content/public/android/java/src/org/chromium/content/browser/selection/SelectionPopupControllerImpl.java
 +++ b/content/public/android/java/src/org/chromium/content/browser/selection/SelectionPopupControllerImpl.java
@@ -36,6 +95,31 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/select
                  || !isSelectActionModeAllowed(MENU_ITEM_WEB_SEARCH)) {
              menu.removeItem(R.id.select_action_menu_web_search);
          }
+diff --git a/testing/variations/fieldtrial_testing_config.json b/testing/variations/fieldtrial_testing_config.json
+--- a/testing/variations/fieldtrial_testing_config.json
++++ b/testing/variations/fieldtrial_testing_config.json
+@@ -1587,6 +1587,21 @@
+             ]
+         }
+     ],
++    "ChromeSmartSelection": [
++        {
++            "platforms": [
++                "android"
++            ],
++            "experiments": [
++                {
++                    "name": "Enabled_Launch",
++                    "enable_features": [
++                        "ChromeSmartSelection"
++                    ]
++                }
++            ]
++        }
++    ],
+     "ChromeStart": [
+         {
+             "platforms": [
 -- 
 2.17.1
 
