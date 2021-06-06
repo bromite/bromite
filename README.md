@@ -116,6 +116,7 @@ New flags:
 * `#export-bookmarks-use-saf`, disabled by default
 * `#allow-user-certificates`, disabled by default
 * `#cleartext-permitted`, enabled by default
+* `#omnibox-autocomplete-filtering`, can be used to restrict omnibox autocomplete results
 
 # Privacy limitations
 
