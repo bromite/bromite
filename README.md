@@ -117,6 +117,7 @@ New flags:
 * `#allow-user-certificates`, disabled by default
 * `#cleartext-permitted`, enabled by default
 * `#omnibox-autocomplete-filtering`, can be used to restrict omnibox autocomplete results
+* `#disable-external-intent-requests`
 
 # Privacy limitations
 
