@@ -10,10 +10,10 @@ Enable incognito custom tabs and fix crashes for incognito/custom tab intents (c
  chrome/android/chrome_java_sources.gni        |  1 +
  .../java/res/xml/privacy_preferences.xml      |  5 ++
  .../AlwaysIncognitoLinkInterceptor.java       | 80 +++++++++++++++++++
- .../chrome/browser/ChromeTabbedActivity.java  |  8 +-
+ .../chrome/browser/ChromeTabbedActivity.java  |  6 +-
  .../chrome/browser/app/ChromeActivity.java    |  4 +
  .../AppMenuPropertiesDelegateImpl.java        |  6 ++
- .../ChromeContextMenuPopulator.java           | 28 +++++--
+ .../ChromeContextMenuPopulator.java           |  9 ++-
  .../CustomTabActivityLifecycleUmaTracker.java | 25 ------
  .../CustomTabIntentDataProvider.java          |  5 +-
  .../browser/init/StartupTabPreloader.java     | 14 +++-
@@ -23,7 +23,7 @@ Enable incognito custom tabs and fix crashes for incognito/custom tab intents (c
  .../webapps/WebappIntentDataProvider.java     | 14 ++++
  .../flags/android/chrome_feature_list.cc      |  2 +-
  .../strings/android_chrome_strings.grd        |  7 ++
- 16 files changed, 187 insertions(+), 39 deletions(-)
+ 16 files changed, 171 insertions(+), 34 deletions(-)
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/AlwaysIncognitoLinkInterceptor.java
 
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
@@ -140,15 +140,15 @@ new file mode 100644
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-@@ -57,6 +57,7 @@ import org.chromium.base.supplier.UnownedUserDataSupplier;
- import org.chromium.base.task.PostTask;
+@@ -58,6 +58,7 @@ import org.chromium.base.task.PostTask;
+ import org.chromium.base.task.TaskTraits;
  import org.chromium.cc.input.BrowserControlsState;
  import org.chromium.chrome.R;
 +import org.chromium.chrome.browser.AlwaysIncognitoLinkInterceptor;
  import org.chromium.chrome.browser.IntentHandler.IntentHandlerDelegate;
  import org.chromium.chrome.browser.IntentHandler.TabOpenType;
  import org.chromium.chrome.browser.accessibility_tab_switcher.OverviewListLayout;
-@@ -1695,8 +1696,9 @@ public class ChromeTabbedActivity extends ChromeActivity<ChromeActivityComponent
+@@ -1696,8 +1697,9 @@ public class ChromeTabbedActivity extends ChromeActivity<ChromeActivityComponent
          Bundle savedInstanceState = getSavedInstanceState();
  
          // We determine the model as soon as possible so every systems get initialized coherently.
@@ -160,15 +160,6 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedAct
          int index = savedInstanceState != null ? savedInstanceState.getInt(WINDOW_INDEX, 0) : 0;
  
          mNextTabPolicySupplier = new ChromeNextTabPolicySupplier(mOverviewModeBehaviorSupplier);
-@@ -1714,7 +1716,7 @@ public class ChromeTabbedActivity extends ChromeActivity<ChromeActivityComponent
-             public void onTabStateInitialized() {
-                 if (!mCreatedTabOnStartup) return;
- 
--                TabModel model = mTabModelSelectorImpl.getModel(false);
-+                TabModel model = mTabModelSelectorImpl.getModel(startIncognito);
-                 TasksUma.recordTasksUma(model);
-             }
-         });
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
@@ -219,49 +210,34 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/contextmenu/Chr
  import org.chromium.chrome.browser.compositor.bottombar.ephemeraltab.EphemeralTabCoordinator;
  import org.chromium.chrome.browser.contextmenu.ChromeContextMenuItem.Item;
  import org.chromium.chrome.browser.contextmenu.ChromeContextMenuPopulator.ContextMenuUma.Action;
-@@ -331,6 +333,18 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
-                 params.getLinkUrl().getSpec());
-     }
- 
-+    /**
-+     * Disallow opening in a new tab when in always-incognito mode.
-+     */
-+    private static boolean canOpenNewTab() {
-+        if (ContextUtils.getAppSharedPreferences().getBoolean(AlwaysIncognitoLinkInterceptor.PREF_ALWAYS_INCOGNITO, false)
-+                /*&& !mItemDelegate.isIncognito()*/) {
-+                return false;
-+        }
-+        return true;
-+    }
-+
-+
-     @Override
-     public List<Pair<Integer, ModelList>> buildContextMenu() {
+@@ -337,6 +339,10 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
          boolean hasSaveImage = false;
-@@ -344,14 +358,18 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
-                     && UrlUtilities.isAcceptedScheme(mParams.getUrl().getSpec())) {
-                 if (mMode == ContextMenuMode.NORMAL) {
-                     if (TabUiFeatureUtilities.ENABLE_TAB_GROUP_AUTO_CREATION.getValue()) {
--                        linkGroup.add(createListItem(Item.OPEN_IN_NEW_TAB));
-+                        if (canOpenNewTab()) linkGroup.add(createListItem(Item.OPEN_IN_NEW_TAB));
-                     } else {
-                         if (TabUiFeatureUtilities.showContextMenuOpenNewTabInGroupItemFirst()) {
--                            linkGroup.add(createListItem(Item.OPEN_IN_NEW_TAB_IN_GROUP));
--                            linkGroup.add(createListItem(Item.OPEN_IN_NEW_TAB));
-+                            if (canOpenNewTab()) {
-+                               linkGroup.add(createListItem(Item.OPEN_IN_NEW_TAB_IN_GROUP));
-+                               linkGroup.add(createListItem(Item.OPEN_IN_NEW_TAB));
-+                            }
-                         } else {
--                            linkGroup.add(createListItem(Item.OPEN_IN_NEW_TAB));
--                            linkGroup.add(createListItem(Item.OPEN_IN_NEW_TAB_IN_GROUP));
-+                            if (canOpenNewTab()) {
-+                               linkGroup.add(createListItem(Item.OPEN_IN_NEW_TAB));
-+                               linkGroup.add(createListItem(Item.OPEN_IN_NEW_TAB_IN_GROUP));
-+                            }
+         mShowEphemeralTabNewLabel = null;
+ 
++        boolean always_incognito =
++            ContextUtils.getAppSharedPreferences().getBoolean(
++                AlwaysIncognitoLinkInterceptor.PREF_ALWAYS_INCOGNITO, false);
++
+         List<Pair<Integer, ModelList>> groupedItems = new ArrayList<>();
+ 
+         if (mParams.isAnchor()) {
+@@ -355,6 +361,7 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
+                             linkGroup.add(createListItem(Item.OPEN_IN_NEW_TAB_IN_GROUP));
                          }
                      }
++
                      if (!mItemDelegate.isIncognito() && mItemDelegate.isIncognitoSupported()) {
+                         linkGroup.add(createListItem(Item.OPEN_IN_INCOGNITO_TAB));
+                     }
+@@ -377,7 +384,7 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
+                 }
+             }
+             if (FirstRunStatus.getFirstRunFlowComplete()) {
+-                if (!mItemDelegate.isIncognito()
++                if ((always_incognito || !mItemDelegate.isIncognito())
+                         && UrlUtilities.isDownloadableScheme(mParams.getLinkUrl())) {
+                     linkGroup.add(createListItem(Item.SAVE_LINK_AS));
+                 }
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabActivityLifecycleUmaTracker.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabActivityLifecycleUmaTracker.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabActivityLifecycleUmaTracker.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabActivityLifecycleUmaTracker.java
