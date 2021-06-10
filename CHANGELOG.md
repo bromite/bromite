@@ -1,5 +1,8 @@
-# 91.0.4472.97
+# 91.0.4472.102
 * fix opening new tabs from links in always-incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1154)
+* allow saving pages in incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1182)
+
+# 91.0.4472.97
 * add flag for omnibox autocomplete filtering (fixes https://github.com/bromite/bromite/issues/1152)
 * enable IntentBlockExternalFormRedirectsNoGesture by default
 * add flag to disable external intent requests
