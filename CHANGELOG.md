@@ -1,3 +1,34 @@
+# 91.0.4472.102
+* fix opening new tabs from links in always-incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1154)
+* allow saving pages in incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1182)
+
+# 91.0.4472.97
+* add flag for omnibox autocomplete filtering (fixes https://github.com/bromite/bromite/issues/1152)
+* enable IntentBlockExternalFormRedirectsNoGesture by default
+* add flag to disable external intent requests
+* fix for tab collection temporary/non-exportable (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1138)
+
+# 91.0.4472.50
+* unexpire tab group flags `#enable-tab-groups` and `#enable-tab-groups-ui-improvements`
+* replace known good hostname used for DoH test (fixes https://github.com/bromite/bromite/issues/1148)
+* drop patch to disable preview fetching
+* drop patch to restore horizontal tab switcher
+
+# 90.0.4430.204
+* fix for custom tab intent tab crashes when in always incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1116)
+
+# 90.0.4430.101
+* disable RTCGetCurrentBrowsingContextMedia by default
+* disable FLoC by default
+
+# 90.0.4430.92
+* restore horizontal tab switcher feature (fixes https://github.com/bromite/bromite/issues/1077)
+* fix a couple of bugs in proxy saving UI (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1072)
+* disable feeds V2 toggle (fixes https://github.com/bromite/bromite/issues/1070)
+* allow fetching field trials from flags (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1021)
+* add AllowUserCertificates flag (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/921)
+* add IsCleartextPermitted flag (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1068)
+
 # 90.0.4430.74
 * re-added patch for User agent customization (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1049)
 * fix always-incognito custom tab intents issues (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1047 and https://github.com/bromite/bromite/issues/1051)
