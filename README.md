@@ -60,6 +60,9 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * ignore enterprise policies that disallow secure DNS
 * ask permission to play protected media
 * disable the DIAL repeating discovery
+* disable RTCGetCurrentBrowsingContextMedia by default
+* disable FLoC by default
+* disable feeds
 
 ## Features not related to privacy
 * import/export bookmarks
@@ -90,7 +93,6 @@ You can inspect all functionality/privacy changes by reading the [patches](https
 
 Flags which have been retired from upstream Chromium but are still available in Bromite.
 
-* `#enable-horizontal-tab-switcher`
 * `#pull-to-refresh`
 * `#enable-search-ready-omnibox`
 * `#darken-websites-checkbox-in-themes-setting`
@@ -98,6 +100,7 @@ Flags which have been retired from upstream Chromium but are still available in 
 * `#enable-text-fragment-anchor`, disabled by default
 * `#num-raster-threads`
 * `#enable-image-reader`, enabled by default
+* `#enable-tab-groups` and `#enable-tab-groups-ui-improvements`
 
 New flags:
 
@@ -111,6 +114,10 @@ New flags:
 * `#show-legacy-tls-warnings`
 * `#save-data-header`, disabled by default
 * `#export-bookmarks-use-saf`, disabled by default
+* `#allow-user-certificates`, disabled by default
+* `#cleartext-permitted`, enabled by default
+* `#omnibox-autocomplete-filtering`, can be used to restrict omnibox autocomplete results
+* `#disable-external-intent-requests`
 
 # Privacy limitations
 
