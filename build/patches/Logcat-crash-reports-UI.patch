@@ -8,7 +8,7 @@ Subject: Logcat crash reports UI
  .../crash_upload_list_android.h               |   1 +
  chrome/browser/net/chrome_network_delegate.cc |   7 +
  chrome/browser/ui/BUILD.gn                    |   1 +
- chrome/browser/ui/webui/crashes_ui.cc         | 170 ++++++++++++++++--
+ chrome/browser/ui/webui/crashes_ui.cc         | 165 ++++++++++++++++--
  .../crash/core/browser/crashes_ui_util.cc     |   4 +
  .../crash/core/browser/crashes_ui_util.h      |   2 +
  .../crash/core/browser/resources/crashes.css  |  67 ++++++-
@@ -21,7 +21,7 @@ Subject: Logcat crash reports UI
  .../upload_list/text_log_upload_list.cc       |   1 +
  components/upload_list/upload_list.cc         |  17 +-
  components/upload_list/upload_list.h          |   9 +
- 18 files changed, 379 insertions(+), 79 deletions(-)
+ 18 files changed, 374 insertions(+), 79 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/crash/MinidumpUploadServiceImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/crash/MinidumpUploadServiceImpl.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/crash/MinidumpUploadServiceImpl.java
@@ -279,7 +279,7 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
  
    bool system_crash_reporter = false;
  #if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
-@@ -241,12 +284,116 @@ void CrashesDOMHandler::HandleRequestSingleCrashUpload(
+@@ -241,12 +284,111 @@ void CrashesDOMHandler::HandleRequestSingleCrashUpload(
    bool success = args->GetString(0, &local_id);
    DCHECK(success);
  
@@ -309,42 +309,37 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
 +
 +  // crash reports can have multiple extensions (e.g. foo.dmp, foo.dmp.try1,
 +  // foo.skipped.try0), remove it
-+  base::FilePath zip_file = crash_file_path;
-+  while (zip_file != zip_file.RemoveExtension())
-+    zip_file = zip_file.RemoveExtension();
++  base::FilePath zip_file_name = crash_file_path;
++  while (zip_file_name != zip_file_name.RemoveExtension())
++    zip_file_name = zip_file_name.RemoveExtension();
 +
 +  // make zip file name, like "ec708a7b-cb17-44e7-8dae-e32f6c45cb8c.zip"
-+  zip_file = upload_log_path.Append(zip_file.BaseName())
++  zip_file_name = upload_log_path.Append(zip_file_name.BaseName())
 +                            .AddExtensionASCII(".zip");
 +  // since the download is always allowed, the generation takes place only
 +  // at the first request, so if exists return it
-+  if (base::PathExists(zip_file))
-+    return zip_file.value();
++  if (base::PathExists(zip_file_name))
++    return zip_file_name.value();
 +
 +  // original code remove the file immediately after upload.
 +  // we changed this behavior but it is still possible that the file no longer exists
 +  // because in uploads.log it could be indicated but the file was deleted by self-cleaning
 +  if (!base::PathExists(crash_file_path)) {
 +    LOG(ERROR) << "Crash report: file " << crash_file_path
-+               << " no more avaiable";
++               << " no more available";
 +    return std::string();
 +  }
 +
-+  // temporary folder for zip, auto-removed when out of scope
-+  base::ScopedTempDir temp_dir;
-+  if (!temp_dir.CreateUniqueTempDir()) {
-+    LOG(ERROR) << "Crash report: cannot create temp directory";
-+    return std::string();
-+  }
++  std::vector<base::FilePath> files_list;
++  files_list.push_back(crash_file_path.BaseName());
 +
-+  // temporary file for zip content
-+  base::FilePath dest_file = temp_dir.GetPath().Append(crash_file_path.BaseName());
-+
-+  // make zip file
-+  if (base::CopyFile(crash_file_path, dest_file)) {
-+    if (zip::Zip(temp_dir.GetPath(), zip_file, false)) {
-+      return zip_file.value();
-+    }
++  // open zip file
++  base::File zip_f(zip_file_name,
++                      base::File::FLAG_CREATE | base::File::FLAG_WRITE);
++  auto result = zip::ZipFiles(crash_file_path.DirName(), files_list, zip_f.GetPlatformFile());
++  zip_f.Close();
++  if (result) {
++    return zip_file_name.value();
 +  }
 +
 +  LOG(ERROR) << "Crash report: cannot create zip content";
@@ -401,7 +396,7 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
  }
  
  }  // namespace
-@@ -258,7 +405,8 @@ void CrashesDOMHandler::HandleRequestSingleCrashUpload(
+@@ -258,7 +400,8 @@ void CrashesDOMHandler::HandleRequestSingleCrashUpload(
  ///////////////////////////////////////////////////////////////////////////////
  
  CrashesUI::CrashesUI(content::WebUI* web_ui) : WebUIController(web_ui) {
@@ -869,3 +864,4 @@ diff --git a/components/upload_list/upload_list.h b/components/upload_list/uploa
  
 -- 
 2.17.1
+

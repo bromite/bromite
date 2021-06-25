@@ -1,3 +1,8 @@
+# 91.0.4472.143
+* add support for ISupportHelpAndFeedback
+* JIT-less toggle (fixes https://github.com/bromite/bromite/issues/1235)
+* enable crash reporting UI (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/944)
+
 # 91.0.4472.102
 * fix opening new tabs from links in always-incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1154)
 * allow saving pages in incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1182)
