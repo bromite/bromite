@@ -1,3 +1,9 @@
+# 91.0.4472.146
+* removed flags for device motion/orientation (fixes https://github.com/bromite/bromite/issues/1204)
+* prevent crash on download on API level 21 (fixes https://github.com/bromite/bromite/issues/1184)
+* fix crash reporting garbled UI for small screens (thanks to @uazo, https://github.com/bromite/bromite/pull/1236)
+* add flag to enable/disable vibration API (fixes https://github.com/bromite/bromite/issues/1045)
+
 # 91.0.4472.143
 * add support for ISupportHelpAndFeedback
 * JIT-less toggle (fixes https://github.com/bromite/bromite/issues/1235)
