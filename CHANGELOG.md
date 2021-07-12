@@ -1,3 +1,6 @@
+# 91.0.4472.158
+* added x64 releases
+
 # 91.0.4472.146
 * removed flags for device motion/orientation (fixes https://github.com/bromite/bromite/issues/1204)
 * prevent crash on download on API level 21 (fixes https://github.com/bromite/bromite/issues/1184)
