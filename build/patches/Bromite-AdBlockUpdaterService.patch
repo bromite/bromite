@@ -22,7 +22,7 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  chrome/app/generated_resources.grd            |  10 +
  chrome/browser/after_startup_task_utils.cc    |   5 +
  chrome/browser/browser_process.h              |   6 +
- chrome/browser/browser_process_impl.cc        |  29 ++
+ chrome/browser/browser_process_impl.cc        |  20 ++
  chrome/browser/browser_process_impl.h         |   2 +
  chrome/browser/chrome_browser_main.cc         |   2 +
  .../browser/chrome_content_browser_client.cc  |  15 --
@@ -47,7 +47,7 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
  .../core/common/common_features.cc            |   2 +-
  .../core/common/indexed_ruleset.cc            |   5 +-
  .../navigation_throttle_runner.cc             |   5 -
- 38 files changed, 1146 insertions(+), 140 deletions(-)
+ 38 files changed, 1137 insertions(+), 140 deletions(-)
  create mode 100644 chrome/android/java/res/layout/adblock_editor.xml
  create mode 100644 chrome/android/java/res/xml/adblock_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
@@ -60,7 +60,7 @@ Fix RestoreForeignSessionTab by recreating the tab (issue #681)
 diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_java_resources.gni
 --- a/chrome/android/chrome_java_resources.gni
 +++ b/chrome/android/chrome_java_resources.gni
-@@ -668,6 +668,7 @@ chrome_java_resources = [
+@@ -666,6 +666,7 @@ chrome_java_resources = [
    "java/res/layout/account_chooser_dialog_title.xml",
    "java/res/layout/account_divider_preference.xml",
    "java/res/layout/account_management_account_row.xml",
@@ -68,7 +68,7 @@ diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_ja
    "java/res/layout/assistant_voice_search_consent_ui.xml",
    "java/res/layout/auto_sign_in_first_run_dialog.xml",
    "java/res/layout/autofill_billing_address_dropdown.xml",
-@@ -897,6 +898,7 @@ chrome_java_resources = [
+@@ -891,6 +892,7 @@ chrome_java_resources = [
    "java/res/xml/about_chrome_preferences.xml",
    "java/res/xml/accessibility_preferences.xml",
    "java/res/xml/account_management_preferences.xml",
@@ -79,7 +79,7 @@ diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_ja
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
-@@ -1127,6 +1127,8 @@ chrome_java_sources = [
+@@ -1108,6 +1108,8 @@ chrome_java_sources = [
    "java/src/org/chromium/chrome/browser/payments/ui/ShoppingCart.java",
    "java/src/org/chromium/chrome/browser/permissions/PermissionSettingsBridge.java",
    "java/src/org/chromium/chrome/browser/photo_picker/DecoderServiceImpl.java",
@@ -242,8 +242,8 @@ diff --git a/chrome/android/java/res/xml/main_preferences.xml b/chrome/android/j
 +        android:order="13"
 +        android:title="@string/prefs_adblock"/>
      <Preference
-         android:fragment="org.chromium.chrome.browser.notifications.settings.NotificationSettings"
          android:key="notifications"
+         android:order="14"
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
 new file mode 100644
 --- /dev/null
@@ -410,7 +410,7 @@ new file mode 100644
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java
-@@ -807,7 +807,7 @@ public class TabModelImpl extends TabModelJniBridge {
+@@ -801,7 +801,7 @@ public class TabModelImpl extends TabModelJniBridge {
              Tab parent, Profile profile, WebContents webContents) {
          return getTabCreator(profile.isOffTheRecord())
                  .createTabWithWebContents(
@@ -422,7 +422,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabMod
 diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
-@@ -10518,6 +10518,16 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -10516,6 +10516,16 @@ Please help our engineers fix this problem. Tell us what happened right before y
        Never show this again.
      </message>
  
@@ -442,16 +442,16 @@ diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources
 diff --git a/chrome/browser/after_startup_task_utils.cc b/chrome/browser/after_startup_task_utils.cc
 --- a/chrome/browser/after_startup_task_utils.cc
 +++ b/chrome/browser/after_startup_task_utils.cc
-@@ -39,6 +39,8 @@
+@@ -26,6 +26,8 @@
  #include "ui/views/linux_ui/linux_ui.h"
  #endif
  
 +#include "chrome/browser/browser_process.h"
 +
  using content::BrowserThread;
- using content::WebContents;
- using content::WebContentsObserver;
-@@ -132,6 +134,9 @@ void SetBrowserStartupIsComplete() {
+ 
+ namespace {
+@@ -121,6 +123,9 @@ void SetBrowserStartupIsComplete() {
    g_after_startup_tasks.Get().clear();
    g_after_startup_tasks.Get().shrink_to_fit();
  
@@ -494,7 +494,7 @@ diff --git a/chrome/browser/browser_process.h b/chrome/browser/browser_process.h
 diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_process_impl.cc
 --- a/chrome/browser/browser_process_impl.cc
 +++ b/chrome/browser/browser_process_impl.cc
-@@ -1028,6 +1028,35 @@ BrowserProcessImpl::component_updater() {
+@@ -1018,6 +1018,26 @@ BrowserProcessImpl::component_updater() {
    return component_updater_.get();
  }
  
@@ -506,17 +506,8 @@ diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_pro
 +  if (!BrowserThread::CurrentlyOn(BrowserThread::UI))
 +    return nullptr;
 +
-+  std::unique_ptr<component_updater::UpdateScheduler> scheduler;
-+#if defined(OS_ANDROID)
-+  if (base::FeatureList::IsEnabled(
-+          chrome::android::kBackgroundTaskComponentUpdate) &&
-+      component_updater::BackgroundTaskUpdateScheduler::IsAvailable()) {
-+    scheduler =
-+        std::make_unique<component_updater::BackgroundTaskUpdateScheduler>();
-+  }
-+#endif
-+  if (!scheduler)
-+    scheduler = std::make_unique<component_updater::TimerUpdateScheduler>();
++  std::unique_ptr<component_updater::UpdateScheduler> scheduler =
++    std::make_unique<component_updater::TimerUpdateScheduler>();
 +
 +  adblock_updater_ = std::make_unique<adblock_updater::AdBlockUpdaterService>(
 +          g_browser_process->system_network_context_manager()->GetSharedURLLoaderFactory(),
@@ -552,7 +543,7 @@ diff --git a/chrome/browser/browser_process_impl.h b/chrome/browser/browser_proc
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
-@@ -1622,6 +1622,8 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+@@ -1648,6 +1648,8 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
      speech::SodaInstaller::GetInstance()->Init(profile_->GetPrefs(),
                                                 browser_process_->local_state());
  #endif  // !defined(OS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
@@ -572,7 +563,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  #include "chrome/browser/media/audio_service_util.h"
  #include "chrome/browser/media/router/media_router_feature.h"
  #include "chrome/browser/media/webrtc/audio_debug_recordings_handler.h"
-@@ -4053,16 +4052,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
+@@ -3989,16 +3988,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
      content::NavigationHandle* handle) {
    std::vector<std::unique_ptr<content::NavigationThrottle>> throttles;
  
@@ -588,8 +579,8 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
 -
  #if BUILDFLAG(IS_CHROMEOS_ASH)
    MaybeAddThrottle(
-       chromeos::WebTimeLimitNavigationThrottle::MaybeCreateThrottleFor(handle),
-@@ -4167,10 +4156,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
+       ash::WebTimeLimitNavigationThrottle::MaybeCreateThrottleFor(handle),
+@@ -4103,10 +4092,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
                     &throttles);
  #endif
  
@@ -628,7 +619,7 @@ diff --git a/chrome/browser/flags/android/cached_feature_flags.cc b/chrome/brows
 diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
 --- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
 +++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
-@@ -263,6 +263,14 @@ public class CachedFeatureFlags {
+@@ -265,6 +265,14 @@ public class CachedFeatureFlags {
                  ChromeFeatureList.isEnabled(ChromeFeatureList.BACKGROUND_THREAD_POOL));
      }
  
@@ -643,7 +634,7 @@ diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/f
      /**
       * Caches flags that must take effect on startup but are set via native code.
       */
-@@ -429,5 +437,7 @@ public class CachedFeatureFlags {
+@@ -431,5 +439,7 @@ public class CachedFeatureFlags {
      @NativeMethods
      interface Natives {
          boolean isNetworkServiceWarmUpEnabled();
@@ -689,7 +680,7 @@ diff --git a/chrome/browser/sessions/session_restore_android.cc b/chrome/browser
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -214,6 +214,20 @@ CHAR-LIMIT guidelines:
+@@ -214,6 +214,20 @@ CHAR_LIMIT guidelines:
          Enter VR
        </message>
  
@@ -708,12 +699,12 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
 +      </message>
 +
        <!-- Notification channels -->
-       <message name="IDS_NOTIFICATION_CATEGORY_GROUP_GENERAL" desc='Subheading for "General" section of a list of notification categories. [CHAR-LIMIT=32]'>
+       <message name="IDS_NOTIFICATION_CATEGORY_GROUP_GENERAL" desc='Subheading for "General" section of a list of notification categories. [CHAR_LIMIT=32]'>
          General
 diff --git a/chrome/common/pref_names.cc b/chrome/common/pref_names.cc
 --- a/chrome/common/pref_names.cc
 +++ b/chrome/common/pref_names.cc
-@@ -2188,6 +2188,9 @@ const char kAudioCaptureAllowed[] = "hardware.audio_capture_enabled";
+@@ -2161,6 +2161,9 @@ const char kAudioCaptureAllowed[] = "hardware.audio_capture_enabled";
  // capture devices without prompt.
  const char kAudioCaptureAllowedUrls[] = "hardware.audio_capture_allowed_urls";
  
@@ -848,7 +839,7 @@ new file mode 100644
 +  scheduler_->Schedule(
 +      base::TimeDelta::FromSeconds(initial_check_delay),
 +      base::TimeDelta::FromSeconds(next_check_delay),
-+      base::Bind(&AdBlockUpdaterService::OnDemandScheduledUpdate,
++      base::BindRepeating(&AdBlockUpdaterService::OnDemandScheduledUpdate,
 +                 base::Unretained(this)), base::DoNothing());
 +}
 +
@@ -1478,7 +1469,7 @@ new file mode 100644
 diff --git a/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc b/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc
 --- a/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc
 +++ b/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc
-@@ -560,6 +560,17 @@ ContentSubresourceFilterThrottleManager::
+@@ -564,6 +564,17 @@ ContentSubresourceFilterThrottleManager::
        throttle->NotifyPageActivationWithRuleset(EnsureRulesetHandle(),
                                                  ad_tagging_state);
      }
@@ -1614,7 +1605,7 @@ diff --git a/components/subresource_filter/content/browser/ruleset_service.cc b/
 diff --git a/components/subresource_filter/content/browser/ruleset_service.h b/components/subresource_filter/content/browser/ruleset_service.h
 --- a/components/subresource_filter/content/browser/ruleset_service.h
 +++ b/components/subresource_filter/content/browser/ruleset_service.h
-@@ -182,7 +182,7 @@ class RulesetService : public base::SupportsWeakPtr<RulesetService> {
+@@ -181,7 +181,7 @@ class RulesetService : public base::SupportsWeakPtr<RulesetService> {
    //
    // Virtual so that it can be mocked out in tests.
    virtual void IndexAndStoreAndPublishRulesetIfNeeded(
@@ -1623,7 +1614,7 @@ diff --git a/components/subresource_filter/content/browser/ruleset_service.h b/c
  
    // Get the ruleset version associated with the current local_state_.
    IndexedRulesetVersion GetMostRecentlyIndexedVersion() const;
-@@ -215,6 +215,11 @@ class RulesetService : public base::SupportsWeakPtr<RulesetService> {
+@@ -214,6 +214,11 @@ class RulesetService : public base::SupportsWeakPtr<RulesetService> {
        const base::FilePath& indexed_ruleset_base_dir,
        const UnindexedRulesetInfo& unindexed_ruleset_info);
  
@@ -1840,7 +1831,7 @@ diff --git a/components/subresource_filter/core/common/indexed_ruleset.cc b/comp
  #include "base/metrics/histogram_macros.h"
  #include "base/trace_event/trace_event.h"
  #include "components/subresource_filter/core/common/first_party_origin.h"
-@@ -34,8 +35,10 @@ VerifyStatus GetVerifyStatus(const uint8_t* buffer,
+@@ -36,8 +37,10 @@ VerifyStatus GetVerifyStatus(const uint8_t* buffer,
    // least once.  The verifier detects a subset of the errors detected by the
    // checksum, and is unneeded once expected_checksum is consistently nonzero.
    flatbuffers::Verifier verifier(buffer, size);
@@ -1855,10 +1846,10 @@ diff --git a/components/subresource_filter/core/common/indexed_ruleset.cc b/comp
 diff --git a/content/browser/renderer_host/navigation_throttle_runner.cc b/content/browser/renderer_host/navigation_throttle_runner.cc
 --- a/content/browser/renderer_host/navigation_throttle_runner.cc
 +++ b/content/browser/renderer_host/navigation_throttle_runner.cc
-@@ -185,11 +185,6 @@ void NavigationThrottleRunner::RegisterNavigationThrottles() {
+@@ -180,11 +180,6 @@ void NavigationThrottleRunner::RegisterNavigationThrottles() {
+   // than other throttles that might care about those navigations, e.g.
+   // throttles handling pages with 407 errors that require extra authentication.
    AddThrottle(HttpErrorNavigationThrottle::MaybeCreateThrottleFor(*request));
- 
-   AddThrottle(BackForwardCacheThrottle::MaybeCreateThrottleFor(request));
 -
 -  // Insert all testing NavigationThrottles last.
 -  throttles_.insert(throttles_.end(),
