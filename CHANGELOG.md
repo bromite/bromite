@@ -1,3 +1,8 @@
+# 92.0.4515.103
+* disable User Agent client hints
+* fix builds with system sysroots
+* force text/x-suse-ymp to be downloaded
+
 # 91.0.4472.158
 * added x64 releases
 

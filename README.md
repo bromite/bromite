@@ -114,7 +114,7 @@ New flags:
 * `#save-data-header`, disabled by default
 * `#export-bookmarks-use-saf`, disabled by default
 * `#allow-user-certificates`, disabled by default
-* `#cleartext-permitted`, enabled by default
+* `#cleartext-permitted`, enabled by default, can be used to disable all cleartext-HTTP traffic
 * `#omnibox-autocomplete-filtering`, can be used to restrict omnibox autocomplete results
 * `#disable-external-intent-requests`
 
