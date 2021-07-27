@@ -1,3 +1,7 @@
+# 92.0.4515.125
+* replace patch for missing API keys warning
+* fix subresource filter not working (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1299)
+
 # 92.0.4515.103
 * disable User Agent client hints
 * fix builds with system sysroots
