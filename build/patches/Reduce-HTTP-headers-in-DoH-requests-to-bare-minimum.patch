@@ -3,10 +3,10 @@ Date: Sat, 28 Apr 2018 08:30:26 +0200
 Subject: Reduce HTTP headers in DoH requests to bare minimum
 
 ---
- net/base/load_flags_list.h              |  9 +++++++++
- net/dns/dns_transaction.cc              |  2 +-
- net/url_request/url_request_http_job.cc | 16 +++++++++++-----
- 3 files changed, 21 insertions(+), 6 deletions(-)
+ net/base/load_flags_list.h              | 9 +++++++++
+ net/dns/dns_transaction.cc              | 2 +-
+ net/url_request/url_request_http_job.cc | 8 +++++++-
+ 3 files changed, 17 insertions(+), 2 deletions(-)
 
 diff --git a/net/base/load_flags_list.h b/net/base/load_flags_list.h
 --- a/net/base/load_flags_list.h
@@ -27,9 +27,9 @@ diff --git a/net/base/load_flags_list.h b/net/base/load_flags_list.h
 diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
 --- a/net/dns/dns_transaction.cc
 +++ b/net/dns/dns_transaction.cc
-@@ -411,7 +411,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
+@@ -414,7 +414,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
      // Disable secure DNS for any DoH server hostname lookups to avoid deadlock.
-     request_->SetDisableSecureDns(true);
+     request_->SetSecureDnsPolicy(SecureDnsPolicy::kDisable);
      request_->SetLoadFlags(request_->load_flags() | LOAD_DISABLE_CACHE |
 -                           LOAD_BYPASS_PROXY);
 +                           LOAD_MINIMAL_HEADERS | LOAD_BYPASS_PROXY);
@@ -39,7 +39,7 @@ diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
 diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_request_http_job.cc
 --- a/net/url_request/url_request_http_job.cc
 +++ b/net/url_request/url_request_http_job.cc
-@@ -286,6 +286,7 @@ void URLRequestHttpJob::Start() {
+@@ -296,6 +296,7 @@ void URLRequestHttpJob::Start() {
    // plugin could set a referrer although sending the referrer is inhibited.
    request_info_.extra_headers.RemoveHeader(HttpRequestHeaders::kReferer);
  
@@ -47,7 +47,7 @@ diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_reque
    // Our consumer should have made sure that this is a safe referrer (e.g. via
    // URLRequestJob::ComputeReferrerForPolicy).
    if (referrer.is_valid()) {
-@@ -293,11 +294,14 @@ void URLRequestHttpJob::Start() {
+@@ -303,11 +304,14 @@ void URLRequestHttpJob::Start() {
      request_info_.extra_headers.SetHeader(HttpRequestHeaders::kReferer,
                                            referer_value);
    }
@@ -62,24 +62,23 @@ diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_reque
  
    AddExtraHeaders();
    AddCookieHeaderAndStart();
-@@ -499,10 +503,12 @@ void URLRequestHttpJob::AddExtraHeaders() {
-     } else {
-       // Advertise "br" encoding only if transferred data is opaque to proxy.
-       bool advertise_brotli = false;
--      if (request()->context()->enable_brotli()) {
--        if (request()->url().SchemeIsCryptographic() ||
--            IsLocalhost(request()->url())) {
--          advertise_brotli = true;
+@@ -523,6 +527,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
+       if (request_->Supports(SourceStream::SourceType::TYPE_DEFLATE)) {
+         advertised_encoding_names.push_back("deflate");
+       }
 +      if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
-+        if (request()->context()->enable_brotli()) {
-+          if (request()->url().SchemeIsCryptographic() ||
-+              IsLocalhost(request()->url())) {
-+            advertise_brotli = true;
-+          }
+       // Advertise "br" encoding only if transferred data is opaque to proxy.
+       if (request()->context()->enable_brotli() &&
+           request_->Supports(SourceStream::SourceType::TYPE_BROTLI)) {
+@@ -531,6 +536,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
+           advertised_encoding_names.push_back("br");
          }
        }
- 
-@@ -520,7 +526,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
++      } // minimal headers
+       if (!advertised_encoding_names.empty()) {
+         // Tell the server what compression formats are supported.
+         request_info_.extra_headers.SetHeader(
+@@ -540,7 +546,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
      }
    }
  

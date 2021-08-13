@@ -57,12 +57,13 @@ Yes/No
 
 ### Is the bug a crash?
 
-<!--
-If yes then individuate and post the 'adb logcat | grep chromium' dump, otherwise remove this section.
--->
+No
+
+-- or --
+
 Yes, this is the crash dump:
 ```
-<paste here logcat dump>
+<paste here logcat dump individuated with 'adb logcat | grep chromium'>
 ```
 
 ### Describe the bug
