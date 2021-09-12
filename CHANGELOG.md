@@ -1,3 +1,7 @@
+# 92.0.4515.176
+* use upstream feature to prevent default search engine permissions grants
+* slightly improve error message for gateway attacks prevention error
+
 # 92.0.4515.134
 
 # 92.0.4515.125
