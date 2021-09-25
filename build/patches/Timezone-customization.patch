@@ -14,10 +14,11 @@ See also: https://github.com/bromite/bromite/wiki/TimezoneOverride
  .../java/res/xml/website_preferences.xml      |   9 +
  .../ContentSettingsResources.java             |  34 ++-
  .../site_settings/SingleCategorySettings.java |  77 ++++++-
- .../site_settings/SingleWebsiteSettings.java  |  37 +++-
+ .../site_settings/SingleWebsiteSettings.java  |  36 +++-
  .../site_settings/SiteSettings.java           |   2 +-
  .../site_settings/SiteSettingsCategory.java   |   9 +-
  .../site_settings/SiteSettingsDelegate.java   |   2 +
+ .../site_settings/SiteSettingsUtil.java       |   1 +
  ...imezoneOverrideSiteSettingsPreference.java | 193 ++++++++++++++++++
  .../browser_ui/site_settings/Website.java     |  10 +
  .../WebsitePermissionsFetcher.java            |   3 +
@@ -26,7 +27,7 @@ See also: https://github.com/bromite/bromite/wiki/TimezoneOverride
  .../strings/android/site_settings.grdp        |  35 ++++
  .../browser/content_settings_pref_provider.cc |  16 ++
  .../browser/content_settings_pref_provider.h  |   5 +
- .../core/browser/content_settings_registry.cc |  12 ++
+ .../core/browser/content_settings_registry.cc |  23 +++
  .../core/browser/content_settings_utils.cc    |   7 +
  .../core/browser/host_content_settings_map.cc |   8 +
  .../core/browser/host_content_settings_map.h  |   3 +
@@ -41,7 +42,7 @@ See also: https://github.com/bromite/bromite/wiki/TimezoneOverride
  .../renderer/content_settings_agent_impl.cc   |  89 ++++++++
  .../renderer/content_settings_agent_impl.h    |   4 +
  .../WebLayerSiteSettingsDelegate.java         |   3 +
- 35 files changed, 724 insertions(+), 18 deletions(-)
+ 36 files changed, 735 insertions(+), 18 deletions(-)
  create mode 100755 components/browser_ui/site_settings/android/java/res/layout/time_zone_select_dialog.xml
  create mode 100755 components/browser_ui/site_settings/android/java/res/layout/timezoneoverride_site_settings_preference.xml
  create mode 100755 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/TimezoneOverrideSiteSettingsPreference.java
@@ -80,7 +81,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/site_settings/C
 diff --git a/components/browser_ui/site_settings/android/BUILD.gn b/components/browser_ui/site_settings/android/BUILD.gn
 --- a/components/browser_ui/site_settings/android/BUILD.gn
 +++ b/components/browser_ui/site_settings/android/BUILD.gn
-@@ -72,6 +72,7 @@ android_library("java") {
+@@ -73,6 +73,7 @@ android_library("java") {
      "java/src/org/chromium/components/browser_ui/site_settings/WebsitePermissionsFetcher.java",
      "java/src/org/chromium/components/browser_ui/site_settings/WebsitePreference.java",
      "java/src/org/chromium/components/browser_ui/site_settings/WebsitePreferenceBridge.java",
@@ -88,7 +89,7 @@ diff --git a/components/browser_ui/site_settings/android/BUILD.gn b/components/b
    ]
    annotation_processor_deps = [ "//base/android/jni_generator:jni_processor" ]
    resources_package = "org.chromium.components.browser_ui.site_settings"
-@@ -172,6 +173,8 @@ android_resources("java_resources") {
+@@ -173,6 +174,8 @@ android_resources("java_resources") {
      "java/res/xml/single_website_preferences.xml",
      "java/res/xml/site_settings_preferences.xml",
      "java/res/xml/website_preferences.xml",
@@ -255,19 +256,19 @@ diff --git a/components/browser_ui/site_settings/android/java/res/xml/website_pr
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java
 --- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/ContentSettingsResources.java
-@@ -246,6 +246,11 @@ public class ContentSettingsResources {
-                             ContentSettingValues.ASK, ContentSettingValues.BLOCK,
-                             R.string.website_settings_category_vr_ask,
-                             R.string.website_settings_category_vr_blocked));
-+            localMap.put(ContentSettingsType.TIMEZONE_OVERRIDE,
-+                    new ResourceItem(R.drawable.web_asset, 0, R.string.timezone_override_permission_title,
-+                            ContentSettingValues.ALLOW, ContentSettingValues.BLOCK,
-+                            R.string.website_settings_category_timezone_override_custom,
-+                            R.string.website_settings_category_timezone_override_random));
-             sResourceInfo = localMap;
+@@ -259,6 +259,11 @@ public class ContentSettingsResources {
+                         ContentSettingValues.ASK, ContentSettingValues.BLOCK,
+                         R.string.website_settings_category_vr_ask,
+                         R.string.website_settings_category_vr_blocked);
++            case ContentSettingsType.TIMEZONE_OVERRIDE:
++                return new ResourceItem(R.drawable.web_asset, 0, R.string.timezone_override_permission_title,
++                        ContentSettingValues.ALLOW, ContentSettingValues.BLOCK,
++                        R.string.website_settings_category_timezone_override_custom,
++                        R.string.website_settings_category_timezone_override_random);
          }
-         return sResourceInfo;
-@@ -418,6 +423,23 @@ public class ContentSettingsResources {
+         assert false; // NOTREACHED
+         return null;
+@@ -424,6 +429,23 @@ public class ContentSettingsResources {
          }
      }
  
@@ -291,7 +292,7 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
      /**
       * Returns the string resource id for a content type to show with a permission category.
       * @param enabled Whether the content type is enabled.
-@@ -432,7 +454,10 @@ public class ContentSettingsResources {
+@@ -438,7 +460,10 @@ public class ContentSettingsResources {
       * with a particular website.
       * @param value The ContentSetting for which we want the resource.
       */
@@ -303,7 +304,7 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
          switch (value) {
              case ContentSettingValues.ALLOW:
                  return R.string.website_settings_permissions_allow;
-@@ -521,6 +546,13 @@ public class ContentSettingsResources {
+@@ -527,6 +552,13 @@ public class ContentSettingsResources {
                  return descriptionIDs;
              }
          }
@@ -519,15 +520,7 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java
 --- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SingleWebsiteSettings.java
-@@ -104,6 +104,7 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
-             ContentSettingsType.JAVASCRIPT,
-             ContentSettingsType.POPUPS,
-             ContentSettingsType.ADS,
-+            ContentSettingsType.TIMEZONE_OVERRIDE,
-             ContentSettingsType.BACKGROUND_SYNC,
-             ContentSettingsType.AUTOMATIC_DOWNLOADS,
-             ContentSettingsType.PROTECTED_MEDIA_IDENTIFIER,
-@@ -157,6 +158,8 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
+@@ -125,6 +125,8 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
                  return "popup_permission_list";
              case ContentSettingsType.SOUND:
                  return "sound_permission_list";
@@ -536,7 +529,7 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
              case ContentSettingsType.AR:
                  return "ar_permission_list";
              case ContentSettingsType.MEDIASTREAM_CAMERA:
-@@ -962,11 +965,12 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
+@@ -903,11 +905,12 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
          }
  
          ChromeSwitchPreference switchPreference = (ChromeSwitchPreference) preference;
@@ -550,7 +543,7 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
          switchPreference.setOnPreferenceChangeListener(this);
          @ContentSettingsType
          int contentType = getContentSettingsTypeFromPreferenceKey(preference.getKey());
-@@ -984,20 +988,43 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
+@@ -925,20 +928,43 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
              @ContentSettingValues @Nullable Integer value, boolean isEmbargoed) {
          ListPreference listPreference = (ListPreference) preference;
  
@@ -597,7 +590,7 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
          // TODO(crbug.com/735110): Figure out if this is the correct thing to do - here we are
          // effectively treating non-ALLOW values as BLOCK.
          int index = (value == ContentSettingValues.ALLOW ? 0 : 1);
-@@ -1230,7 +1257,7 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
+@@ -1171,7 +1197,7 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
              preference.setSummary(getDSECategorySummary(permission));
          } else {
              preference.setSummary(
@@ -671,6 +664,17 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
 +
 +    void launchTimeZoneOverrideHelpAndFeedbackActivity(Activity currentActivity);
  }
+diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsUtil.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsUtil.java
+--- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsUtil.java
++++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsUtil.java
+@@ -23,6 +23,7 @@ public class SiteSettingsUtil {
+             ContentSettingsType.JAVASCRIPT,
+             ContentSettingsType.POPUPS,
+             ContentSettingsType.ADS,
++            ContentSettingsType.TIMEZONE_OVERRIDE,
+             ContentSettingsType.BACKGROUND_SYNC,
+             ContentSettingsType.AUTOMATIC_DOWNLOADS,
+             ContentSettingsType.PROTECTED_MEDIA_IDENTIFIER,
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/TimezoneOverrideSiteSettingsPreference.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/TimezoneOverrideSiteSettingsPreference.java
 new file mode 100755
 --- /dev/null
@@ -892,15 +896,15 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/WebsitePermissionsFetcher.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/WebsitePermissionsFetcher.java
 --- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/WebsitePermissionsFetcher.java
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/WebsitePermissionsFetcher.java
-@@ -64,6 +64,7 @@ public class WebsitePermissionsFetcher {
-             case ContentSettingsType.JAVASCRIPT:
+@@ -65,6 +65,7 @@ public class WebsitePermissionsFetcher {
+             case ContentSettingsType.JAVASCRIPT_JIT:
              case ContentSettingsType.POPUPS:
              case ContentSettingsType.SOUND:
 +            case ContentSettingsType.TIMEZONE_OVERRIDE:
                  return WebsitePermissionsType.CONTENT_SETTING_EXCEPTION;
              case ContentSettingsType.AR:
              case ContentSettingsType.CLIPBOARD_READ_WRITE:
-@@ -144,6 +145,8 @@ public class WebsitePermissionsFetcher {
+@@ -145,6 +146,8 @@ public class WebsitePermissionsFetcher {
          for (@ContentSettingsType int type = 0; type < ContentSettingsType.NUM_TYPES; type++) {
              addFetcherForContentSettingsType(queue, type);
          }
@@ -1082,11 +1086,10 @@ diff --git a/components/content_settings/core/browser/content_settings_pref_prov
 diff --git a/components/content_settings/core/browser/content_settings_registry.cc b/components/content_settings/core/browser/content_settings_registry.cc
 --- a/components/content_settings/core/browser/content_settings_registry.cc
 +++ b/components/content_settings/core/browser/content_settings_registry.cc
-@@ -612,6 +612,18 @@ void ContentSettingsRegistry::Init() {
-            ContentSettingsInfo::INHERIT_IF_LESS_PERMISSIVE,
+@@ -291,6 +291,29 @@ void ContentSettingsRegistry::Init() {
             ContentSettingsInfo::PERSISTENT,
             ContentSettingsInfo::EXCEPTIONS_ON_SECURE_ORIGINS_ONLY);
-+
+ 
 +  Register(ContentSettingsType::TIMEZONE_OVERRIDE, "timezone-override", CONTENT_SETTING_ALLOW,
 +           WebsiteSettingsInfo::SYNCABLE,
 +           AllowlistedSchemes(kChromeUIScheme, kChromeDevToolsScheme),
@@ -1098,9 +1101,21 @@ diff --git a/components/content_settings/core/browser/content_settings_registry.
 +           ContentSettingsInfo::INHERIT_IN_INCOGNITO,
 +           ContentSettingsInfo::PERSISTENT,
 +           ContentSettingsInfo::EXCEPTIONS_ON_SECURE_AND_INSECURE_ORIGINS);
- }
- 
- void ContentSettingsRegistry::Register(
++  Register(ContentSettingsType::TIMEZONE_OVERRIDE, "timezone-override", CONTENT_SETTING_ALLOW,
++           WebsiteSettingsInfo::SYNCABLE,
++           AllowlistedSchemes(kChromeUIScheme, kChromeDevToolsScheme),
++           ValidSettings(CONTENT_SETTING_ALLOW,   // use system time
++                         CONTENT_SETTING_ASK,     // custom timezone, default UTC
++                         CONTENT_SETTING_BLOCK),  // random
++           WebsiteSettingsInfo::SINGLE_ORIGIN_WITH_EMBEDDED_EXCEPTIONS_SCOPE,
++           WebsiteSettingsRegistry::PLATFORM_ANDROID,
++           ContentSettingsInfo::INHERIT_IN_INCOGNITO,
++           ContentSettingsInfo::PERSISTENT,
++          ContentSettingsInfo::EXCEPTIONS_ON_SECURE_AND_INSECURE_ORIGINS);
++
+   Register(ContentSettingsType::DURABLE_STORAGE, "durable-storage",
+            CONTENT_SETTING_ASK, WebsiteSettingsInfo::UNSYNCABLE,
+            AllowlistedSchemes(),
 diff --git a/components/content_settings/core/browser/content_settings_utils.cc b/components/content_settings/core/browser/content_settings_utils.cc
 --- a/components/content_settings/core/browser/content_settings_utils.cc
 +++ b/components/content_settings/core/browser/content_settings_utils.cc
@@ -1152,7 +1167,7 @@ diff --git a/components/content_settings/core/browser/host_content_settings_map.
 diff --git a/components/content_settings/core/common/content_settings.cc b/components/content_settings/core/common/content_settings.cc
 --- a/components/content_settings/core/common/content_settings.cc
 +++ b/components/content_settings/core/common/content_settings.cc
-@@ -183,7 +183,8 @@ bool RendererContentSettingRules::IsRendererContentSetting(
+@@ -184,7 +184,8 @@ bool RendererContentSettingRules::IsRendererContentSetting(
           content_type == ContentSettingsType::JAVASCRIPT ||
           content_type == ContentSettingsType::CLIENT_HINTS ||
           content_type == ContentSettingsType::POPUPS ||
@@ -1234,7 +1249,7 @@ diff --git a/components/content_settings/core/common/content_settings_types.h b/
 diff --git a/components/content_settings/core/common/pref_names.cc b/components/content_settings/core/common/pref_names.cc
 --- a/components/content_settings/core/common/pref_names.cc
 +++ b/components/content_settings/core/common/pref_names.cc
-@@ -140,4 +140,7 @@ const char kQuietNotificationPermissionUiDisabledTime[] =
+@@ -144,4 +144,7 @@ const char kQuietNotificationPermissionUiDisabledTime[] =
  const char kNotificationsVibrateEnabled[] = "notifications.vibrate_enabled";
  #endif
  
@@ -1245,7 +1260,7 @@ diff --git a/components/content_settings/core/common/pref_names.cc b/components/
 diff --git a/components/content_settings/core/common/pref_names.h b/components/content_settings/core/common/pref_names.h
 --- a/components/content_settings/core/common/pref_names.h
 +++ b/components/content_settings/core/common/pref_names.h
-@@ -75,6 +75,8 @@ extern const char kQuietNotificationPermissionUiDisabledTime[];
+@@ -77,6 +77,8 @@ extern const char kQuietNotificationPermissionUiDisabledTime[];
  extern const char kNotificationsVibrateEnabled[];
  #endif
  
@@ -1288,7 +1303,7 @@ diff --git a/components/content_settings/renderer/content_settings_agent_impl.cc
  namespace content_settings {
  namespace {
  
-@@ -363,6 +371,10 @@ bool ContentSettingsAgentImpl::AllowScript(bool enabled_per_settings) {
+@@ -366,6 +374,10 @@ bool ContentSettingsAgentImpl::AllowScript(bool enabled_per_settings) {
    allow = allow || IsAllowlistedForContentSettings();
  
    cached_script_permissions_[frame] = allow;
@@ -1299,7 +1314,7 @@ diff --git a/components/content_settings/renderer/content_settings_agent_impl.cc
    return allow;
  }
  
-@@ -487,4 +499,81 @@ bool ContentSettingsAgentImpl::IsAllowlistedForContentSettings() const {
+@@ -490,4 +502,81 @@ bool ContentSettingsAgentImpl::IsAllowlistedForContentSettings() const {
    return false;
  }
  
@@ -1384,7 +1399,7 @@ diff --git a/components/content_settings/renderer/content_settings_agent_impl.cc
 diff --git a/components/content_settings/renderer/content_settings_agent_impl.h b/components/content_settings/renderer/content_settings_agent_impl.h
 --- a/components/content_settings/renderer/content_settings_agent_impl.h
 +++ b/components/content_settings/renderer/content_settings_agent_impl.h
-@@ -176,6 +176,10 @@ class ContentSettingsAgentImpl
+@@ -181,6 +181,10 @@ class ContentSettingsAgentImpl
  
    mojo::AssociatedReceiverSet<mojom::ContentSettingsAgent> receivers_;
  

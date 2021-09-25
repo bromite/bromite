@@ -1,3 +1,9 @@
+# 93.0.4577.83
+* dropped patch for FLoC (already disabled by upstream)
+* dropped patch for build with system sysroots
+* disable tab groups by default (needs restart)
+* added 'services/network/public/mojom' to ad blocker patch to avoid a build error
+
 # 92.0.4515.176
 * use upstream feature to prevent default search engine permissions grants
 * slightly improve error message for gateway attacks prevention error
