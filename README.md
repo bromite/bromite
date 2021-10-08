@@ -85,6 +85,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * disable video autoplay by default, reintroduce site settings
 * mobile/desktop user agent customization
 * accessibility preference to force tablet UI
+* use Alt+D to focus address bar
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 
