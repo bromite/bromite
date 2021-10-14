@@ -9,22 +9,22 @@ Enable checking for new version, with proxy support
  chrome/android/chrome_java_sources.gni        |   1 +
  .../java/res/xml/about_chrome_preferences.xml |   5 +
  .../about_settings/AboutChromeSettings.java   |  27 ++-
- .../chrome/browser/omaha/OmahaBase.java       |  59 ++++-
+ .../chrome/browser/omaha/OmahaBase.java       |  66 +++++-
  .../chrome/browser/omaha/UpdateConfigs.java   |   6 +-
- .../browser/omaha/UpdateStatusProvider.java   |  36 ++--
+ .../browser/omaha/UpdateStatusProvider.java   |  41 ++--
  .../browser/omaha/VersionNumberGetter.java    |   2 +-
- .../inline/BromiteInlineUpdateController.java | 204 ++++++++++++++++++
+ .../inline/BromiteInlineUpdateController.java | 211 ++++++++++++++++++
  .../inline/InlineUpdateControllerFactory.java |   8 +-
  chrome/browser/endpoint_fetcher/BUILD.gn      |   2 +
- .../endpoint_fetcher/endpoint_fetcher.cc      | 124 +++++++++++
- .../endpoint_fetcher/endpoint_fetcher.h       |  20 ++
+ .../endpoint_fetcher/endpoint_fetcher.cc      | 130 +++++++++++
+ .../endpoint_fetcher/endpoint_fetcher.h       |  23 +-
  .../endpoint_fetcher/EndpointFetcher.java     |  11 +
  .../EndpointHeaderResponse.java               |  38 ++++
  chrome/browser/flag-metadata.json             |   2 +-
  chrome/browser/flag_descriptions.cc           |   7 +-
  .../flags/android/chrome_feature_list.cc      |   2 +-
  .../strings/android_chrome_strings.grd        |   8 +-
- 20 files changed, 533 insertions(+), 37 deletions(-)
+ 20 files changed, 560 insertions(+), 38 deletions(-)
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/BromiteInlineUpdateController.java
  create mode 100644 chrome/browser/endpoint_fetcher/java/src/org/chromium/chrome/browser/endpoint_fetcher/EndpointHeaderResponse.java
 
@@ -173,16 +173,23 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/OmahaBase
      }
  
      /**
-@@ -630,4 +635,54 @@ public class OmahaBase {
+@@ -630,4 +635,61 @@ public class OmahaBase {
                  // updateStatus is only used for the on-demand check.
                  null);
      }
 +
-+    public static boolean isNewVersionAvailableByBuildTime(Long latestVersionString) {
-+        if (latestVersionString == null ||
-+            latestVersionString == 0) return false;
++    public static boolean isNewVersionAvailableByBuildTime(Long latestVersionBuildTime) {
++        if (latestVersionBuildTime == null ||
++            latestVersionBuildTime == 0) return false;
 +
-+        return latestVersionString > BuildConfig.BUILD_TIME;
++        Log.i(TAG, "isNewVersionAvailable: CurrentBuildTime: %d",
++                BuildConfig.BUILD_TIME);
++        Log.i(TAG, "isNewVersionAvailable: LatestBuildTime: %d",
++                latestVersionBuildTime);
++
++        //disabled since not working yet
++        //return latestVersionBuildTime > BuildConfig.BUILD_TIME;
++        return false;
 +    }
 +
 +    public static boolean isNewVersionAvailableByVersion(String latestVersionString) {
@@ -193,9 +200,9 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/OmahaBase
 +        VersionNumber latestVersion = VersionNumber.fromString(latestVersionString);
 +        if (latestVersion == null) return false;
 +
-+        Log.i(TAG, "isNewVersionAvailable: mCurrentProductVersion: %s",
++        Log.i(TAG, "isNewVersionAvailable: CurrentProductVersion: %s",
 +                mCurrentProductVersion.toString());
-+        Log.i(TAG, "isNewVersionAvailable: latestVersion: %s",
++        Log.i(TAG, "isNewVersionAvailable: LatestVersion: %s",
 +                latestVersion.toString());
 +
 +        return mCurrentProductVersion.isSmallerThan(latestVersion);
@@ -259,7 +266,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateCon
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateStatusProvider.java b/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateStatusProvider.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateStatusProvider.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateStatusProvider.java
-@@ -45,6 +45,11 @@ import java.io.File;
+@@ -45,6 +45,12 @@ import java.io.File;
  import java.lang.annotation.Retention;
  import java.lang.annotation.RetentionPolicy;
  
@@ -267,11 +274,12 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
 +import android.content.SharedPreferences;
 +import android.os.Build;
 +import org.chromium.build.BuildConfig;
++import org.chromium.chrome.browser.version.ChromeVersionInfo;
 +
  /**
   * Provides the current update state for Chrome.  This update state is asynchronously determined and
   * can change as Chrome runs.
-@@ -112,6 +117,8 @@ public class UpdateStatusProvider implements ActivityStateListener {
+@@ -112,6 +118,8 @@ public class UpdateStatusProvider implements ActivityStateListener {
           */
          public String latestUnsupportedVersion;
  
@@ -280,7 +288,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
          /**
           * Whether or not we are currently trying to simulate the update.  Used to ignore other
           * update signals.
-@@ -133,6 +140,7 @@ public class UpdateStatusProvider implements ActivityStateListener {
+@@ -133,6 +141,7 @@ public class UpdateStatusProvider implements ActivityStateListener {
              latestUnsupportedVersion = other.latestUnsupportedVersion;
              mIsSimulated = other.mIsSimulated;
              mIsInlineSimulated = other.mIsInlineSimulated;
@@ -288,7 +296,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
          }
      }
  
-@@ -339,8 +347,7 @@ public class UpdateStatusProvider implements ActivityStateListener {
+@@ -339,8 +348,7 @@ public class UpdateStatusProvider implements ActivityStateListener {
              case UpdateConfigs.UpdateFlowConfiguration.NEVER_SHOW:
                  return UpdateState.NONE;
              case UpdateConfigs.UpdateFlowConfiguration.INLINE_ONLY:
@@ -298,7 +306,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
                  return inlineState;
              case UpdateConfigs.UpdateFlowConfiguration.BEST_EFFORT:
                  if (omahaState != UpdateState.UPDATE_AVAILABLE) return omahaState;
-@@ -415,24 +422,13 @@ public class UpdateStatusProvider implements ActivityStateListener {
+@@ -415,24 +423,17 @@ public class UpdateStatusProvider implements ActivityStateListener {
          private UpdateStatus getRealStatus(Context context) {
              UpdateStatus status = new UpdateStatus();
  
@@ -327,6 +335,10 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
 +            status.updateState = UpdateState.NONE;
 +            if (OmahaBase.isNewVersionAvailableByVersion(status.latestVersion)) {
 +                status.updateState = UpdateState.INLINE_UPDATE_AVAILABLE;
++            }
++            else if (ChromeVersionInfo.getProductVersion().equals(status.latestVersion) &&
++                       OmahaBase.isNewVersionAvailableByBuildTime(status.latestLastModifiedBuildTime)) {
++                status.updateState = UpdateState.INLINE_UPDATE_AVAILABLE;
              }
  
              return status;
@@ -346,7 +358,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/Br
 new file mode 100644
 --- /dev/null
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/BromiteInlineUpdateController.java
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,211 @@
 +// Copyright 2021 The Ungoogled Chromium Authors. All rights reserved.
 +//
 +// This file is part of Ungoogled Chromium Android.
@@ -404,6 +416,7 @@ new file mode 100644
 +
 +import org.chromium.chrome.browser.endpoint_fetcher.EndpointFetcher;
 +import org.chromium.chrome.browser.endpoint_fetcher.EndpointResponse;
++import org.chromium.chrome.browser.omaha.VersionNumber;
 +
 +class BromiteInlineUpdateController implements InlineUpdateController {
 +
@@ -469,12 +482,17 @@ new file mode 100644
 +            case UpdateStatusProvider.UpdateState.INLINE_UPDATE_AVAILABLE:
 +                break;
 +            case UpdateStatusProvider.UpdateState.NONE:
-+                checkLatestVersion((newVersion) -> {
-+                    if (newVersion == null) return;
-+                    // Compare new values
-+                    // if (newBuildTime == null || newBuildTime == 0) return;
++                checkLatestVersion((ok) -> {
++                    if (ok == false) return;
 +
-+                    if (OmahaBase.isNewVersionAvailableByVersion(newVersion)) {
++                    SharedPreferences preferences = OmahaBase.getSharedPreferences();
++                    long lastModifiedBuildTime = preferences.getLong(OmahaBase.PREF_LATEST_MODIFIED_BUILDTIME, 0);
++                    String latestVersion = preferences.getString(OmahaBase.PREF_LATEST_MODIFIED_VERSION, "");
++
++                    if (OmahaBase.isNewVersionAvailableByVersion(latestVersion)) {
++                        postStatus(UpdateStatusProvider.UpdateState.INLINE_UPDATE_AVAILABLE);
++                    } else if (ChromeVersionInfo.getProductVersion().equals(latestVersion) &&
++                               OmahaBase.isNewVersionAvailableByBuildTime(lastModifiedBuildTime)) {
 +                        postStatus(UpdateStatusProvider.UpdateState.INLINE_UPDATE_AVAILABLE);
 +                    } else {
 +                        if (mUpdateState != UpdateStatusProvider.UpdateState.NONE) {
@@ -503,7 +521,7 @@ new file mode 100644
 +        return currentTime - lastPushedTimeStamp >= getUpdateNotificationInterval();
 +    }
 +
-+    private void checkLatestVersion(final Callback<String> callback) {
++    private void checkLatestVersion(final Callback<Boolean> callback) {
 +        assert UPDATE_VERSION_URL != null;
 +
 +        OmahaBase.resetUpdatePrefs();
@@ -514,10 +532,10 @@ new file mode 100644
 +        EndpointFetcher.nativeHeadWithNoAuth(
 +                (endpointResponse) -> {
 +                    long lastModified = endpointResponse.getLastModified();
-+                    Log.i(TAG, "Obtained last build time: %d", lastModified);
-+                    Log.i(TAG, "With message: %s", endpointResponse.getResponseString());
-+                    Log.i(TAG, "and redirect: %s", endpointResponse.getRedirectUrl());
-+                    Log.i(TAG, "Current build time: %d", BuildConfig.BUILD_TIME);
++                    Log.i(TAG, "Obtained last build time: '%d'", lastModified);
++                    Log.i(TAG, "With message: '%s'", endpointResponse.getResponseString());
++                    Log.i(TAG, "and redirect: '%s'", endpointResponse.getRedirectUrl());
++                    Log.i(TAG, "Current build time: '%d'", BuildConfig.BUILD_TIME);
 +
 +                    OmahaBase.setLastModifiedBuildTime(lastModified);
 +                    OmahaBase.updateLastPushedTimeStamp(System.currentTimeMillis());
@@ -526,9 +544,10 @@ new file mode 100644
 +                        String[] parts = endpointResponse.getRedirectUrl()
 +                                                         .split(Pattern.quote("/"));
 +                        for(String part:parts) {
-+                            if (OmahaBase.isNewVersionAvailableByVersion(part)) {
++                            VersionNumber version = VersionNumber.fromString(part);
++                            if (version != null) {
 +                                OmahaBase.setLastModifiedVersion(part);
-+                                callback.onResult(part);
++                                callback.onResult(true);
 +                                return;
 +                            }
 +                        }
@@ -540,7 +559,7 @@ new file mode 100644
 +                        Log.i(TAG, "Some error has occurred. I'll try again in 1 hour");
 +                    }
 +
-+                    callback.onResult(null);
++                    callback.onResult(false);
 +                },
 +                Profile.getLastUsedRegularProfile(),
 +                urlToCheck, /*timeout*/5000, /*follow_redirect*/false);
@@ -625,7 +644,7 @@ diff --git a/chrome/browser/endpoint_fetcher/endpoint_fetcher.cc b/chrome/browse
  EndpointFetcher::~EndpointFetcher() = default;
  
  void EndpointFetcher::Fetch(EndpointFetcherCallback endpoint_fetcher_callback) {
-@@ -279,6 +297,71 @@ void EndpointFetcher::OnSanitizationResult(
+@@ -279,6 +297,77 @@ void EndpointFetcher::OnSanitizationResult(
    std::move(endpoint_fetcher_callback).Run(std::move(response));
  }
  
@@ -652,6 +671,9 @@ diff --git a/chrome/browser/endpoint_fetcher/endpoint_fetcher.cc b/chrome/browse
 +      base::TimeDelta::FromMilliseconds(timeout_ms_));
 +  simple_url_loader_->SetAllowHttpErrorResults(true);
 +
++  if(!response_)
++    response_ = std::make_unique<EndpointResponse>();
++
 +  if (allow_redirect == false) {
 +    simple_url_loader_->SetOnRedirectCallback(base::BindRepeating(
 +      &EndpointFetcher::OnSimpleLoaderRedirect, base::Unretained(this)));
@@ -667,37 +689,40 @@ diff --git a/chrome/browser/endpoint_fetcher/endpoint_fetcher.cc b/chrome/browse
 +    const net::RedirectInfo& redirect_info,
 +    const network::mojom::URLResponseHead& response_head,
 +    std::vector<std::string>* removed_headers) {
-+  auto response = std::make_unique<EndpointResponse>();
-+  response->redirect_url = redirect_info.new_url.spec();
-+  std::move(endpoint_fetcher_callback_).Run(std::move(response));
++  url_ = redirect_info.new_url;
++  if (response_->redirect_url.empty())
++    response_->redirect_url = url_.spec();
++
++  PerformHeadRequest(std::move(endpoint_fetcher_callback_), nullptr, true);
 +}
 +
 +void EndpointFetcher::OnURLLoadComplete(
 +    scoped_refptr<net::HttpResponseHeaders> headers) {
-+  if (!simple_url_loader_)
++  if (!endpoint_fetcher_callback_)
 +    return;
 +
-+  auto response = std::make_unique<EndpointResponse>();
 +  base::Time last_modified;
 +  if (headers) {
 +    headers->GetLastModifiedValue(&last_modified);
-+    response->last_modified = last_modified.ToJavaTime();
++    response_->last_modified = last_modified.ToJavaTime();
 +
-+    std::string location;
-+    if (simple_url_loader_->ResponseInfo()->headers->IsRedirect(&location)) {
-+      response->redirect_url = location;
++    if (response_->redirect_url.empty()) {
++      std::string location;
++      if (simple_url_loader_->ResponseInfo()->headers->IsRedirect(&location)) {
++        response_->redirect_url = location;
++      }
 +    }
 +  }
 +
 +  std::string net_error = net::ErrorToString(simple_url_loader_->NetError());
-+  response->response = net_error;
-+  std::move(endpoint_fetcher_callback_).Run(std::move(response));
++  response_->response = net_error;
++  std::move(endpoint_fetcher_callback_).Run(std::move(response_));
 +}
 +
  #if defined(OS_ANDROID)
  namespace {
  static void OnEndpointFetcherComplete(
-@@ -295,6 +378,26 @@ static void OnEndpointFetcherComplete(
+@@ -295,6 +384,26 @@ static void OnEndpointFetcherComplete(
                         base::android::AttachCurrentThread(),
                         std::move(endpoint_response->response))));
  }
@@ -724,7 +749,7 @@ diff --git a/chrome/browser/endpoint_fetcher/endpoint_fetcher.cc b/chrome/browse
  }  // namespace
  
  // TODO(crbug.com/1077537) Create a KeyProvider so
-@@ -380,4 +483,25 @@ static void JNI_EndpointFetcher_NativeFetchWithNoAuth(
+@@ -380,4 +489,25 @@ static void JNI_EndpointFetcher_NativeFetchWithNoAuth(
        nullptr);
  }
  
@@ -806,11 +831,21 @@ diff --git a/chrome/browser/endpoint_fetcher/endpoint_fetcher.h b/chrome/browser
  
    enum AuthType { CHROME_API_KEY, OAUTH, NO_AUTH };
    AuthType auth_type_;
-@@ -152,6 +170,8 @@ class EndpointFetcher {
+@@ -133,7 +151,7 @@ class EndpointFetcher {
+   // Members set in constructor to be passed to network::ResourceRequest or
+   // network::SimpleURLLoader.
+   const std::string oauth_consumer_name_;
+-  const GURL url_;
++  GURL url_;
+   const std::string http_method_;
+   const std::string content_type_;
+   int64_t timeout_ms_;
+@@ -152,6 +170,9 @@ class EndpointFetcher {
        access_token_fetcher_;
    std::unique_ptr<network::SimpleURLLoader> simple_url_loader_;
  
 +  EndpointFetcherCallback endpoint_fetcher_callback_;
++  std::unique_ptr<EndpointResponse> response_;
 +
    base::WeakPtrFactory<EndpointFetcher> weak_ptr_factory_{this};
  };
