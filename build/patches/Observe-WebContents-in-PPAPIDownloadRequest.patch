@@ -1,0 +1,91 @@
+From: Daniel Rubery <drubery@chromium.org>
+Date: Tue, 28 Sep 2021 19:16:15 +0000
+Subject: Observe WebContents in PPAPIDownloadRequest
+
+If the WebContents is destroyed while the PPAPIDownloadRequest is
+checking the allowlist, we end up with a UaF. The fix for this is to
+observe the WebContents and cancel the request.
+
+(cherry picked from commit e7d560979f89705ea2844f9f64b5c7a598a03f2b)
+
+Bug: 1245578
+Change-Id: Idbe5c1cb966fe21ab1a49a7345a5b197afa0b807
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/3150060
+Reviewed-by: Bettina Dea <bdea@chromium.org>
+Commit-Queue: Daniel Rubery <drubery@chromium.org>
+Cr-Original-Commit-Position: refs/heads/main@{#919488}
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/3188403
+Auto-Submit: Daniel Rubery <drubery@chromium.org>
+Commit-Queue: Bettina Dea <bdea@chromium.org>
+Cr-Commit-Position: refs/branch-heads/4606@{#1241}
+Cr-Branched-From: 35b0d5a9dc8362adfd44e2614f0d5b7402ef63d0-refs/heads/master@{#911515}
+---
+ .../download_protection/ppapi_download_request.cc         | 6 ++++++
+ .../download_protection/ppapi_download_request.h          | 8 ++++++--
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/safe_browsing/download_protection/ppapi_download_request.cc b/chrome/browser/safe_browsing/download_protection/ppapi_download_request.cc
+--- a/chrome/browser/safe_browsing/download_protection/ppapi_download_request.cc
++++ b/chrome/browser/safe_browsing/download_protection/ppapi_download_request.cc
+@@ -71,6 +71,8 @@ PPAPIDownloadRequest::PPAPIDownloadRequest(
+     return;
+   }
+ 
++  Observe(web_contents);
++
+   SafeBrowsingNavigationObserverManager* observer_manager =
+       service->GetNavigationObserverManager(web_contents);
+   if (observer_manager) {
+@@ -138,6 +140,10 @@ GURL PPAPIDownloadRequest::GetDownloadRequestUrl() {
+   return url;
+ }
+ 
++void PPAPIDownloadRequest::WebContentsDestroyed() {
++  Finish(RequestOutcome::REQUEST_DESTROYED, DownloadCheckResult::UNKNOWN);
++}
++
+ // Allowlist checking needs to the done on the IO thread.
+ void PPAPIDownloadRequest::CheckAllowlistsOnIOThread(
+     const GURL& requestor_url,
+diff --git a/chrome/browser/safe_browsing/download_protection/ppapi_download_request.h b/chrome/browser/safe_browsing/download_protection/ppapi_download_request.h
+--- a/chrome/browser/safe_browsing/download_protection/ppapi_download_request.h
++++ b/chrome/browser/safe_browsing/download_protection/ppapi_download_request.h
+@@ -12,6 +12,7 @@
+ #include "base/memory/weak_ptr.h"
+ #include "chrome/browser/safe_browsing/download_protection/download_protection_util.h"
+ #include "components/sessions/core/session_id.h"
++#include "content/public/browser/web_contents_observer.h"
+ #include "url/gurl.h"
+ 
+ namespace content {
+@@ -43,7 +44,7 @@ class PPAPIDownloadRequest;
+ //
+ // PPAPIDownloadRequest objects are owned by the DownloadProtectionService
+ // indicated by |service|.
+-class PPAPIDownloadRequest {
++class PPAPIDownloadRequest : public content::WebContentsObserver {
+  public:
+   // The outcome of the request. These values are used for UMA. New values
+   // should only be added at the end.
+@@ -70,7 +71,7 @@ class PPAPIDownloadRequest {
+       DownloadProtectionService* service,
+       scoped_refptr<SafeBrowsingDatabaseManager> database_manager);
+ 
+-  ~PPAPIDownloadRequest();
++  ~PPAPIDownloadRequest() override;
+ 
+   // Start the process of checking the download request. The callback passed as
+   // the |callback| parameter to the constructor will be invoked with the result
+@@ -89,6 +90,9 @@ class PPAPIDownloadRequest {
+   // Returns the URL that will be used for download requests.
+   static GURL GetDownloadRequestUrl();
+ 
++  // WebContentsObserver implementation
++  void WebContentsDestroyed() override;
++
+  private:
+   static const char kDownloadRequestUrl[];
+ 
+-- 
+2.17.1
+

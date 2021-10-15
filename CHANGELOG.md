@@ -1,3 +1,14 @@
+# 93.0.4577.110
+
+* set enable_reporting to false (thanks to @nikolowry)
+* backported patches for security issues https://crbug.com/1245578 and https://crbug.com/1251787
+* disable AGSA by default
+* disable UA client hint for model
+* disable lock icon in address bar by default
+* enable share intent (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1062)
+* allow forcing external links to open in incognito (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/728)
+* avoid double restart for default tab groups flags status
+
 # 93.0.4577.83
 * dropped patch for FLoC (already disabled by upstream)
 * dropped patch for build with system sysroots
