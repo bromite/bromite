@@ -1,3 +1,9 @@
+# 94.0.4606.94
+* Bromite auto-update feature, disabled by default (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/706)
+* add site setting for images (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1339)
+* use SM-G960U as model provided via client hints and Javascript
+* drop patches already merged upstream
+
 # 93.0.4577.110
 
 * set enable_reporting to false (thanks to @nikolowry)
