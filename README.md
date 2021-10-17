@@ -63,6 +63,12 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * disable RTCGetCurrentBrowsingContextMedia by default
 * disable FLoC by default
 * disable feeds
+* disable reporting of certificate errors
+* use pre-defined phone model for client hints and Javascript
+* site settings to disable images
+* allow forcing external links to open in incognito
+* disable AGSA by default
+* allow disabling JIT
 
 ## Features not related to privacy
 * import/export bookmarks
@@ -86,6 +92,9 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * mobile/desktop user agent customization
 * accessibility preference to force tablet UI
 * use Alt+D to focus address bar
+* allow sharing to Bromite
+* browser automatic updates
+* UI for crash information collection
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 
@@ -131,6 +140,8 @@ Each tag corresponds to a Chromium Stable release tag.
 
 Bromite is currently built for ARM, ARM64 and x86 and for the Android SDK versions 19 and 21; [Bromite SystemWebView](https://www.bromite.org/system_web_view) is provided as well (SDK21+).
 For every Bromite build you can always find a matching [vanilla Chromium](https://www.bromite.org/chromium) build which is used for example to verify which issues are specific to Bromite or not.
+
+You can automatically receive notifications about new updates (and install them) by enabling the auto updater functionality, see [related wiki page](https://github.com/bromite/bromite/wiki/AutomaticUpdates).
 
 All official releases are also available through the [official third-party F-Droid repository](https://www.bromite.org/fdroid).
 
