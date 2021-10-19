@@ -17,14 +17,18 @@ Enable incognito custom tabs and fix crashes for incognito/custom tab intents (c
  .../CustomTabActivityLifecycleUmaTracker.java | 25 ------
  .../CustomTabIntentDataProvider.java          |  5 +-
  .../browser/init/StartupTabPreloader.java     | 14 +++-
- .../privacy/settings/PrivacySettings.java     |  1 +
+ .../privacy/settings/PrivacySettings.java     | 42 +++++++++-
+ .../browser/settings/SettingsActivity.java    |  4 +
  .../browser/tabmodel/ChromeTabCreator.java    | 16 +++-
  .../browser/tabmodel/TabPersistentStore.java  | 10 +++
  .../webapps/WebappIntentDataProvider.java     | 14 ++++
  .../flags/android/chrome_feature_list.cc      |  2 +-
- .../strings/android_chrome_strings.grd        |  7 ++
- 16 files changed, 170 insertions(+), 34 deletions(-)
+ .../strings/android_chrome_strings.grd        | 13 +++
+ chrome/browser/ui/messages/android/BUILD.gn   |  1 +
+ .../snackbar/INeedSnackbarManager.java        | 27 +++++++
+ 19 files changed, 248 insertions(+), 35 deletions(-)
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/AlwaysIncognitoLinkInterceptor.java
+ create mode 100644 chrome/browser/ui/messages/android/java/src/org/chromium/chrome/browser/ui/messages/snackbar/INeedSnackbarManager.java
 
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
@@ -335,14 +339,109 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/init/StartupTab
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
-@@ -42,6 +42,7 @@ import org.chromium.ui.text.SpanApplier;
+@@ -10,6 +10,8 @@ import android.text.SpannableString;
+ import android.view.Menu;
+ import android.view.MenuInflater;
+ import android.view.MenuItem;
++import android.content.Context;
++import android.content.Intent;
+ 
+ import androidx.preference.Preference;
+ import androidx.preference.PreferenceFragmentCompat;
+@@ -27,6 +29,10 @@ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.settings.ChromeManagedPreferenceDelegate;
+ import org.chromium.chrome.browser.settings.SettingsLauncherImpl;
+ import org.chromium.chrome.browser.signin.services.IdentityServicesProvider;
++import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
++import org.chromium.chrome.browser.ui.messages.snackbar.INeedSnackbarManager;
++import org.chromium.chrome.browser.ui.messages.snackbar.Snackbar;
++import org.chromium.chrome.browser.BrowserRestartActivity;
+ import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
+ import org.chromium.components.browser_ui.settings.ManagedPreferenceDelegate;
+ import org.chromium.components.browser_ui.settings.SettingsLauncher;
+@@ -41,7 +47,12 @@ import org.chromium.ui.text.SpanApplier;
+  * Fragment to keep track of the all the privacy related preferences.
   */
  public class PrivacySettings
-         extends PreferenceFragmentCompat implements Preference.OnPreferenceChangeListener {
+-        extends PreferenceFragmentCompat implements Preference.OnPreferenceChangeListener {
++        extends PreferenceFragmentCompat implements Preference.OnPreferenceChangeListener,
++                                                    INeedSnackbarManager {
++    private SnackbarManager mSnackbarManager;
++    private Snackbar mSnackbar;
++
 +    private static final String PREF_ALWAYS_INCOGNITO = "always_incognito";
      private static final String PREF_CAN_MAKE_PAYMENT = "can_make_payment";
      private static final String PREF_NETWORK_PREDICTIONS = "preload_pages";
      private static final String PREF_HTTPS_FIRST_MODE = "https_first_mode";
+@@ -84,6 +95,28 @@ public class PrivacySettings
+                 (ChromeSwitchPreference) findPreference(PREF_CAN_MAKE_PAYMENT);
+         canMakePaymentPref.setOnPreferenceChangeListener(this);
+ 
++        ChromeSwitchPreference alwaysIncognitoPref =
++                (ChromeSwitchPreference) findPreference(PREF_ALWAYS_INCOGNITO);
++        alwaysIncognitoPref.setOnPreferenceChangeListener(this);
++
++        mSnackbar = Snackbar.make(getActivity().getString(R.string.ui_relaunch_notice),
++                new SnackbarManager.SnackbarController() {
++                        @Override
++                        public void onDismissNoAction(Object actionData) { }
++
++                        @Override
++                        public void onAction(Object actionData) {
++                                Context context = ContextUtils.getApplicationContext();
++                                Intent intent = BrowserRestartActivity.createIntent(context,
++                                        /*RestartChromeOnDestroy*/ true);
++                                context.startActivity(intent);
++                        }
++                }, Snackbar.TYPE_NOTIFICATION, Snackbar.UMA_UNKNOWN)
++                .setSingleLine(false)
++                .setAction(getActivity().getString(R.string.relaunch),
++                        /*actionData*/null)
++                .setDuration(/*durationMs*/70000);
++
+         ChromeSwitchPreference networkPredictionPref =
+                 (ChromeSwitchPreference) findPreference(PREF_NETWORK_PREDICTIONS);
+         networkPredictionPref.setChecked(
+@@ -115,6 +148,9 @@ public class PrivacySettings
+         } else if (PREF_NETWORK_PREDICTIONS.equals(key)) {
+             PrivacyPreferencesManagerImpl.getInstance().setNetworkPredictionEnabled(
+                     (boolean) newValue);
++        } else if (PREF_ALWAYS_INCOGNITO.equals(key)) {
++            if (!mSnackbarManager.isShowing())
++                mSnackbarManager.showSnackbar(mSnackbar);
+         } else if (PREF_HTTPS_FIRST_MODE.equals(key)) {
+             UserPrefs.get(Profile.getLastUsedRegularProfile())
+                     .setBoolean(Pref.HTTPS_ONLY_MODE_ENABLED, (boolean) newValue);
+@@ -192,4 +228,8 @@ public class PrivacySettings
+         }
+         return false;
+     }
++
++    public void setSnackbarManager(SnackbarManager manager) {
++        mSnackbarManager = manager;
++    }
+ }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/SettingsActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/SettingsActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/settings/SettingsActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/SettingsActivity.java
+@@ -51,6 +51,7 @@ import org.chromium.chrome.browser.safety_check.SafetyCheckSettingsFragment;
+ import org.chromium.chrome.browser.safety_check.SafetyCheckUpdatesDelegateImpl;
+ import org.chromium.chrome.browser.search_engines.settings.SearchEngineSettings;
+ import org.chromium.chrome.browser.site_settings.ChromeSiteSettingsDelegate;
++import org.chromium.chrome.browser.ui.messages.snackbar.INeedSnackbarManager;
+ import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
+ import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager.SnackbarManageable;
+ import org.chromium.components.browser_ui.settings.FragmentSettingsLauncher;
+@@ -171,6 +172,9 @@ public class SettingsActivity extends ChromeBaseAppCompatActivity
+                                                           .getSiteSettingsDelegate());
+             delegate.setSnackbarManager(mSnackbarManager);
+         }
++        if (fragment instanceof INeedSnackbarManager) {
++            ((INeedSnackbarManager)fragment).setSnackbarManager(mSnackbarManager);
++        }
+     }
+ 
+     @Override
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/ChromeTabCreator.java b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/ChromeTabCreator.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/ChromeTabCreator.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/ChromeTabCreator.java
@@ -505,7 +604,7 @@ diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browse
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -907,6 +907,13 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -907,6 +907,19 @@ Your Google account may have other forms of browsing history like searches and a
        <message name="IDS_CLEAR_BROWSING_HISTORY_SUMMARY_SYNCED_NO_LINK" desc="A text for the basic tab explaining browsing history for users with history sync. This version is shown when the link to MyActivity is displayed separately.">
          Clears history from all synced devices.
        </message>
@@ -516,9 +615,58 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
 +      <message name="IDS_ALWAYS_INCOGNITO_SUMMARY" desc="Summary for always incognito mode">
 +        Opens links in incognito tabs when you click on new tab or on a link
 +      </message>
++      <message name="IDS_RELAUNCH" desc="Summary for always incognito mode">
++        Relaunch
++      </message>
++      <message name="IDS_UI_RELAUNCH_NOTICE" desc="Summary for always incognito mode">
++        Your changes will take effect the next time you relaunch Bromite.
++      </message>
        <message name="IDS_CLEAR_BROWSING_HISTORY_SUMMARY_SIGNED_IN" desc="A text explaining other forms of activity for signed in users.">
          Clears history and autocompletions in the address bar. Your Google Account may have other forms of browsing history at <ph name="BEGIN_LINK">&lt;link&gt;</ph>myactivity.google.com<ph name="END_LINK">&lt;/link&gt;</ph>.
        </message>
+diff --git a/chrome/browser/ui/messages/android/BUILD.gn b/chrome/browser/ui/messages/android/BUILD.gn
+--- a/chrome/browser/ui/messages/android/BUILD.gn
++++ b/chrome/browser/ui/messages/android/BUILD.gn
+@@ -22,6 +22,7 @@ android_resources("java_resources") {
+ android_library("java") {
+   sources = [
+     "java/src/org/chromium/chrome/browser/ui/messages/infobar/SimpleConfirmInfoBarBuilder.java",
++    "java/src/org/chromium/chrome/browser/ui/messages/snackbar/INeedSnackbarManager.java",
+     "java/src/org/chromium/chrome/browser/ui/messages/snackbar/Snackbar.java",
+     "java/src/org/chromium/chrome/browser/ui/messages/snackbar/SnackbarCollection.java",
+     "java/src/org/chromium/chrome/browser/ui/messages/snackbar/SnackbarManager.java",
+diff --git a/chrome/browser/ui/messages/android/java/src/org/chromium/chrome/browser/ui/messages/snackbar/INeedSnackbarManager.java b/chrome/browser/ui/messages/android/java/src/org/chromium/chrome/browser/ui/messages/snackbar/INeedSnackbarManager.java
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/messages/android/java/src/org/chromium/chrome/browser/ui/messages/snackbar/INeedSnackbarManager.java
+@@ -0,0 +1,27 @@
++/*
++    This file is part of Bromite.
++
++    Bromite is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    Bromite is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with Bromite. If not, see <https://www.gnu.org/licenses/>.
++*/
++
++package org.chromium.chrome.browser.ui.messages.snackbar;
++
++import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
++
++/**
++ * An interface that allows using snackbars in the settings
++ */
++public interface INeedSnackbarManager {
++    void setSnackbarManager(SnackbarManager manager);
++}
 -- 
 2.17.1
 
