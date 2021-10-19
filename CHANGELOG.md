@@ -1,3 +1,30 @@
+# 94.0.4606.94
+* Bromite auto-update feature, disabled by default (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/706)
+* add site setting for images (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1339)
+* use SM-G960U as model provided via client hints and Javascript
+* drop patches already merged upstream
+
+# 93.0.4577.110
+
+* set enable_reporting to false (thanks to @nikolowry)
+* backported patches for security issues https://crbug.com/1245578 and https://crbug.com/1251787
+* disable AGSA by default
+* disable UA client hint for model
+* disable lock icon in address bar by default
+* enable share intent (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1062)
+* allow forcing external links to open in incognito (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/728)
+* avoid double restart for default tab groups flags status
+
+# 93.0.4577.83
+* dropped patch for FLoC (already disabled by upstream)
+* dropped patch for build with system sysroots
+* disable tab groups by default (needs restart)
+* added 'services/network/public/mojom' to ad blocker patch to avoid a build error
+
+# 92.0.4515.176
+* use upstream feature to prevent default search engine permissions grants
+* slightly improve error message for gateway attacks prevention error
+
 # 92.0.4515.134
 
 # 92.0.4515.125
@@ -25,7 +52,6 @@
 
 # 91.0.4472.102
 * fix opening new tabs from links in always-incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1154)
-* allow saving pages in incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1182)
 
 # 91.0.4472.97
 * add flag for omnibox autocomplete filtering (fixes https://github.com/bromite/bromite/issues/1152)

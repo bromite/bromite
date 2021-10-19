@@ -3,23 +3,19 @@ Date: Thu, 11 Sep 2014 16:37:32 +0200
 Subject: autofill: disable autofill download manager
 
 Disables the autofill download manager (trk:158).
+
+Make sure that autofill is disabled by default
 ---
- .../core/browser/autofill_download_manager.cc | 60 +++----------------
- .../autofill/core/browser/autofill_manager.cc | 20 -------
- 2 files changed, 7 insertions(+), 73 deletions(-)
+ .../core/browser/autofill_download_manager.cc | 35 +++----------------
+ .../core/browser/autofill_download_manager.h  |  2 --
+ .../autofill/core/browser/autofill_manager.cc | 20 -----------
+ .../autofill/core/common/autofill_prefs.cc    |  2 +-
+ 4 files changed, 6 insertions(+), 53 deletions(-)
 
 diff --git a/components/autofill/core/browser/autofill_download_manager.cc b/components/autofill/core/browser/autofill_download_manager.cc
 --- a/components/autofill/core/browser/autofill_download_manager.cc
 +++ b/components/autofill/core/browser/autofill_download_manager.cc
-@@ -65,7 +65,6 @@ constexpr std::pair<int, int> kAutofillExperimentRanges[] = {
-     {3314445, 3314448}, {3314854, 3314883},
- };
- 
--const size_t kMaxQueryGetSize = 1400;  // 1.25 KiB
- const size_t kAutofillDownloadManagerMaxFormCacheSize = 16;
- const size_t kMaxFieldsPerQueryRequest = 100;
- 
-@@ -511,35 +510,6 @@ bool GetUploadPayloadForApi(const AutofillUploadContents& upload,
+@@ -534,35 +534,6 @@ bool GetUploadPayloadForApi(const AutofillUploadContents& upload,
    return upload_request.SerializeToString(payload);
  }
  
@@ -55,18 +51,19 @@ diff --git a/components/autofill/core/browser/autofill_download_manager.cc b/com
  // Gets HTTP body payload for API POST request.
  bool GetAPIBodyPayload(const std::string& payload,
                         AutofillDownloadManager::RequestType type,
-@@ -774,6 +744,7 @@ size_t AutofillDownloadManager::GetPayloadLength(
- 
- std::tuple<GURL, std::string> AutofillDownloadManager::GetRequestURLAndMethod(
-     const FormRequestData& request_data) const {
+@@ -800,6 +771,7 @@ std::tuple<GURL, std::string> AutofillDownloadManager::GetRequestURLAndMethod(
+   // ID of the resource to add to the API request URL. Nothing will be added if
+   // |resource_id| is empty.
+   std::string resource_id;
 +#if 0
-   std::string method("POST");
-   std::string query_str;
+   std::string method = "POST";
  
-@@ -795,35 +766,18 @@ std::tuple<GURL, std::string> AutofillDownloadManager::GetRequestURLAndMethod(
-   GURL url = autofill_server_url_
-                  .Resolve(RequestTypeToString(request_data.request_type))
-                  .ReplaceComponents(replacements);
+   if (request_data.request_type == AutofillDownloadManager::REQUEST_QUERY) {
+@@ -820,7 +792,10 @@ std::tuple<GURL, std::string> AutofillDownloadManager::GetRequestURLAndMethod(
+ 
+   // Add the query parameter to set the response format to a serialized proto.
+   url = net::AppendQueryParameter(url, "alt", "proto");
+-
 +#else
 +  std::string method("GET");
 +  GURL url = GURL("about:blank");
@@ -74,41 +71,22 @@ diff --git a/components/autofill/core/browser/autofill_download_manager.cc b/com
    return std::make_tuple(std::move(url), std::move(method));
  }
  
- std::tuple<GURL, std::string>
- AutofillDownloadManager::GetRequestURLAndMethodForApi(
-     const FormRequestData& request_data) const {
--  // ID of the resource to add to the API request URL. Nothing will be added if
--  // |resource_id| is empty.
--  std::string resource_id;
--  std::string method = "POST";
--
--  if (request_data.request_type == AutofillDownloadManager::REQUEST_QUERY) {
--    if (GetPayloadLength(request_data.payload) <= kMaxAPIQueryGetSize) {
--      resource_id = request_data.payload;
--      method = "GET";
--      UMA_HISTOGRAM_BOOLEAN("Autofill.Query.ApiUrlIsTooLong", false);
--    } else {
--      UMA_HISTOGRAM_BOOLEAN("Autofill.Query.ApiUrlIsTooLong", true);
--    }
--    UMA_HISTOGRAM_BOOLEAN("Autofill.Query.Method", (method == "GET") ? 0 : 1);
--  }
--
--  // Make the canonical URL to query the API, e.g.,
--  // https://autofill.googleapis.com/v1/forms/1234?alt=proto.
--  GURL url = autofill_server_url_.Resolve(
--      GetAPIMethodUrl(request_data.request_type, resource_id, method));
--
--  // Add the query parameter to set the response format to a serialized proto.
--  url = net::AppendQueryParameter(url, "alt", "proto");
-+  std::string method("GET");
-+  GURL url = GURL("about:blank");
+diff --git a/components/autofill/core/browser/autofill_download_manager.h b/components/autofill/core/browser/autofill_download_manager.h
+--- a/components/autofill/core/browser/autofill_download_manager.h
++++ b/components/autofill/core/browser/autofill_download_manager.h
+@@ -35,8 +35,6 @@ namespace autofill {
+ class AutofillDriver;
+ class LogManager;
  
-   return std::make_tuple(std::move(url), std::move(method));
- }
+-const size_t kMaxQueryGetSize = 10240;  // 10 KiB
+-
+ // A helper to make sure that tests which modify the set of active autofill
+ // experiments do not interfere with one another.
+ struct ScopedActiveAutofillExperiments {
 diff --git a/components/autofill/core/browser/autofill_manager.cc b/components/autofill/core/browser/autofill_manager.cc
 --- a/components/autofill/core/browser/autofill_manager.cc
 +++ b/components/autofill/core/browser/autofill_manager.cc
-@@ -61,19 +61,6 @@ bool CachedFormNeedsUpdate(const FormData& live_form,
+@@ -60,19 +60,6 @@ bool CachedFormNeedsUpdate(const FormData& live_form,
    return false;
  }
  
@@ -128,7 +106,7 @@ diff --git a/components/autofill/core/browser/autofill_manager.cc b/components/a
  }  // namespace
  
  using base::TimeTicks;
-@@ -127,13 +114,6 @@ AutofillManager::AutofillManager(
+@@ -126,13 +113,6 @@ AutofillManager::AutofillManager(
        client_(client),
        log_manager_(client ? client->GetLogManager() : nullptr),
        form_interactions_ukm_logger_(CreateFormInteractionsUkmLogger()) {
@@ -142,6 +120,18 @@ diff --git a/components/autofill/core/browser/autofill_manager.cc b/components/a
    if (client) {
      translate::TranslateDriver* translate_driver = client->GetTranslateDriver();
      if (translate_driver) {
+diff --git a/components/autofill/core/common/autofill_prefs.cc b/components/autofill/core/common/autofill_prefs.cc
+--- a/components/autofill/core/common/autofill_prefs.cc
++++ b/components/autofill/core/common/autofill_prefs.cc
+@@ -141,7 +141,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+       prefs::kAutofillEnabledDeprecated, true,
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+   registry->RegisterBooleanPref(
+-      prefs::kAutofillProfileEnabled, true,
++      prefs::kAutofillProfileEnabled, false,
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+   registry->RegisterIntegerPref(
+       prefs::kAutofillLastVersionDeduped, 0,
 -- 
 2.17.1
 

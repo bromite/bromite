@@ -1,0 +1,414 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Sun, 3 Oct 2021 16:18:24 +0000
+Subject: Enable share intent
+
+This patch allows to activate the management of android.intent.action.SEND
+with new flag "shared-intent-ui" default active.
+
+See also: https://github.com/bromite/bromite/issues/1062
+---
+ chrome/android/chrome_java_resources.gni      |   1 +
+ chrome/android/chrome_java_sources.gni        |   1 +
+ chrome/android/java/AndroidManifest.xml       |  18 +++
+ .../res/layout/sharing_intent_content.xml     |  83 +++++++++++++
+ .../init/ProcessInitializationHandler.java    |   3 +
+ .../SharedIntentShareActivity.java            | 114 ++++++++++++++++++
+ chrome/browser/about_flags.cc                 |   4 +
+ chrome/browser/flag_descriptions.cc           |   5 +
+ chrome/browser/flag_descriptions.h            |   3 +
+ .../flags/android/chrome_feature_list.cc      |   4 +
+ .../flags/android/chrome_feature_list.h       |   1 +
+ .../browser/flags/ChromeFeatureList.java      |   1 +
+ .../strings/android_chrome_strings.grd        |  13 ++
+ 13 files changed, 251 insertions(+)
+ create mode 100644 chrome/android/java/res/layout/sharing_intent_content.xml
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/sharing/shared_intent/SharedIntentShareActivity.java
+
+diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_java_resources.gni
+--- a/chrome/android/chrome_java_resources.gni
++++ b/chrome/android/chrome_java_resources.gni
+@@ -719,6 +719,7 @@ chrome_java_resources = [
+   "java/res/layout/share_sheet_content.xml",
+   "java/res/layout/share_sheet_item.xml",
+   "java/res/layout/sharing_device_picker.xml",
++  "java/res/layout/sharing_intent_content.xml",
+   "java/res/layout/sheet_tab_toolbar.xml",
+   "java/res/layout/signin_activity.xml",
+   "java/res/layout/status_indicator_container.xml",
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -1053,6 +1053,7 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/sharing/shared_clipboard/SharedClipboardMessageHandler.java",
+   "java/src/org/chromium/chrome/browser/sharing/shared_clipboard/SharedClipboardMetrics.java",
+   "java/src/org/chromium/chrome/browser/sharing/shared_clipboard/SharedClipboardShareActivity.java",
++  "java/src/org/chromium/chrome/browser/sharing/shared_intent/SharedIntentShareActivity.java",
+   "java/src/org/chromium/chrome/browser/sharing/sms_fetcher/SmsFetcherMessageHandler.java",
+   "java/src/org/chromium/chrome/browser/site_settings/ChromeSiteSettingsDelegate.java",
+   "java/src/org/chromium/chrome/browser/site_settings/CookieControlsServiceBridge.java",
+diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/AndroidManifest.xml
+--- a/chrome/android/java/AndroidManifest.xml
++++ b/chrome/android/java/AndroidManifest.xml
+@@ -810,6 +810,24 @@ by a child template that "extends" this file.
+             </intent-filter>
+         </activity>
+ 
++        <activity
++            android:name="org.chromium.chrome.browser.sharing.shared_intent.SharedIntentShareActivity"
++            android:icon="@drawable/ic_launcher"
++            android:roundIcon="@drawable/ic_launcher_round"
++            android:label="@string/shared_intent_share_activity_title"
++            android:enabled="false"
++            android:excludeFromRecents="true"
++            android:exported="true"
++            android:noHistory="true"
++            android:theme="@style/Theme.Chromium.Activity.TranslucentNoAnimations"
++            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|mcc|mnc|screenLayout|smallestScreenSize" >
++            <intent-filter>
++                <action android:name="android.intent.action.SEND" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:mimeType="text/plain" />
++            </intent-filter>
++        </activity>
++
+         <activity
+             android:name="org.chromium.chrome.browser.vr.VrCancelAnimationActivity"
+             android:exported="false"
+diff --git a/chrome/android/java/res/layout/sharing_intent_content.xml b/chrome/android/java/res/layout/sharing_intent_content.xml
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/res/layout/sharing_intent_content.xml
+@@ -0,0 +1,83 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright 2019 The Chromium Authors. All rights reserved.
++     Use of this source code is governed by a BSD-style license that can be
++     found in the LICENSE file. -->
++<LinearLayout
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent"
++    android:orientation="vertical">
++
++  <View
++      android:id="@+id/mask"
++      android:layout_width="match_parent"
++      android:layout_height="0dp"
++      android:layout_weight="1"
++      android:background="@android:color/transparent"/>
++
++  <LinearLayout
++      android:layout_width="match_parent"
++      android:layout_height="wrap_content"
++      android:orientation="vertical"
++      android:background="@color/sheet_bg_color">
++
++    <LinearLayout
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:paddingBottom="32dp"
++        android:orientation="vertical">
++
++      <ImageView
++          android:layout_height="wrap_content"
++          android:layout_width ="match_parent"
++          app:srcCompat="@drawable/ic_launcher"/>
++
++      <TextView
++        android:layout_width="match_parent"
++        android:layout_height="@dimen/min_touch_target_size"
++        android:gravity="center"
++        android:paddingStart="30dp"
++        android:paddingEnd="30dp"
++        android:paddingTop="16dp"
++        android:ellipsize="end"
++        android:textAppearance="@style/TextAppearance.BlackToolbarTitle"
++        android:text="@string/shared_intent_share_activity_title"/>
++
++      <TextView
++          android:id="@+id/share_message_text"
++          android:layout_width="match_parent"
++          android:layout_height="wrap_content"
++          android:gravity="center"
++          android:paddingStart="30dp"
++          android:paddingEnd="30dp"
++          android:paddingTop="16dp"
++          android:ellipsize="end"
++          android:textAppearance="@style/TextAppearance.TextLarge.Secondary"
++          android:text="@string/shared_intent_share_activity_text"/>
++
++      <org.chromium.ui.widget.ButtonCompat
++          android:id="@+id/open_url_button"
++          android:layout_height="wrap_content"
++          android:layout_width="wrap_content"
++          android:layout_gravity="center"
++          android:layout_marginTop="16dp"
++          android:text="@string/shared_intent_share_activity_open_text"
++          android:visibility="gone"
++          style="@style/FilledButton"/>
++
++      <org.chromium.ui.widget.ButtonCompat
++          android:id="@+id/open_url_incognito_button"
++          android:layout_height="wrap_content"
++          android:layout_width="wrap_content"
++          android:layout_gravity="center"
++          android:layout_marginTop="16dp"
++          android:text="@string/shared_intent_share_activity_openincognito_text"
++          android:visibility="gone"
++          style="@style/TextButton"/>
++
++    </LinearLayout>
++
++  </LinearLayout>
++
++</LinearLayout>
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java b/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java
+@@ -72,6 +72,7 @@ import org.chromium.chrome.browser.quickactionsearchwidget.QuickActionSearchWidg
+ import org.chromium.chrome.browser.rlz.RevenueStats;
+ import org.chromium.chrome.browser.searchwidget.SearchWidgetProvider;
+ import org.chromium.chrome.browser.sharing.shared_clipboard.SharedClipboardShareActivity;
++import org.chromium.chrome.browser.sharing.shared_intent.SharedIntentShareActivity;
+ import org.chromium.chrome.browser.tab.state.ShoppingPersistedTabData;
+ import org.chromium.chrome.browser.util.AfterStartupTaskUtils;
+ import org.chromium.chrome.browser.webapps.WebApkVersionManager;
+@@ -405,6 +406,8 @@ public class ProcessInitializationHandler {
+         deferredStartupHandler.addDeferredTask(
+                 () -> IncognitoTabLauncher.updateComponentEnabledState());
+ 
++        deferredStartupHandler.addDeferredTask(
++                () -> SharedIntentShareActivity.updateComponentEnabledState());
+         deferredStartupHandler.addDeferredTask(
+                 () -> SharedClipboardShareActivity.updateComponentEnabledState());
+         deferredStartupHandler.addDeferredTask(
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/sharing/shared_intent/SharedIntentShareActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/sharing/shared_intent/SharedIntentShareActivity.java
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/sharing/shared_intent/SharedIntentShareActivity.java
+@@ -0,0 +1,114 @@
++// Copyright 2019 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.sharing.shared_intent;
++
++import org.chromium.base.Log;
++
++import android.content.res.Resources;
++import android.content.ComponentName;
++import android.content.Context;
++import android.content.Intent;
++import android.content.pm.PackageManager;
++import android.view.View;
++import android.widget.TextView;
++import android.net.Uri;
++
++import org.chromium.base.ContextUtils;
++import org.chromium.base.IntentUtils;
++import org.chromium.base.ThreadUtils;
++import org.chromium.base.task.PostTask;
++import org.chromium.base.task.TaskTraits;
++import org.chromium.chrome.R;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
++import org.chromium.chrome.browser.init.AsyncInitializationActivity;
++import org.chromium.chrome.browser.LaunchIntentDispatcher;
++import org.chromium.chrome.browser.IntentHandler;
++import org.chromium.ui.widget.ButtonCompat;
++
++/**
++ * Activity to display device targets to share text.
++ */
++public class SharedIntentShareActivity
++        extends AsyncInitializationActivity {
++
++    /**
++     * Checks whether sending shared clipboard message is enabled for the user and enables/disables
++     * the SharedIntentShareActivity appropriately. This call requires native to be loaded.
++     */
++    public static void updateComponentEnabledState() {
++        boolean enabled = ChromeFeatureList.isEnabled(ChromeFeatureList.SHARED_INTENT_UI);
++        PostTask.postTask(TaskTraits.USER_VISIBLE, () -> setComponentEnabled(enabled));
++    }
++
++    /**
++     * Sets whether or not the SharedIntentShareActivity should be enabled. This may trigger a
++     * StrictMode violation so shouldn't be called on the UI thread.
++     */
++    private static void setComponentEnabled(boolean enabled) {
++        ThreadUtils.assertOnBackgroundThread();
++        Context context = ContextUtils.getApplicationContext();
++        PackageManager packageManager = context.getPackageManager();
++        ComponentName componentName =
++                new ComponentName(context, SharedIntentShareActivity.class);
++
++        int newState = enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
++                               : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
++
++        // This indicates that we don't want to kill Chrome when changing component enabled state.
++        int flags = PackageManager.DONT_KILL_APP;
++
++        if (packageManager.getComponentEnabledSetting(componentName) != newState) {
++            packageManager.setComponentEnabledSetting(componentName, newState, flags);
++        }
++    }
++
++    @Override
++    protected void triggerLayoutInflation() {
++        setContentView(R.layout.sharing_intent_content);
++
++        String linkUrl = IntentUtils.safeGetStringExtra(getIntent(), Intent.EXTRA_TEXT);
++        Resources resources = ContextUtils.getApplicationContext().getResources();
++        TextView share_message_text = findViewById(R.id.share_message_text);
++        share_message_text.setText(
++            resources.getString(R.string.shared_intent_share_activity_text, linkUrl));
++
++        View mask = findViewById(R.id.mask);
++        mask.setOnClickListener(v -> finish());
++
++        ButtonCompat open_url_button = findViewById(R.id.open_url_button);
++        open_url_button.setVisibility(View.VISIBLE);
++        open_url_button.setOnClickListener(view -> {
++            Context applicationContext = ContextUtils.getApplicationContext();
++            Intent chromeIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(linkUrl));
++            chromeIntent.setPackage(applicationContext.getPackageName());
++            chromeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++
++            LaunchIntentDispatcher.dispatch(this, chromeIntent);
++            finish();
++        });
++
++        ButtonCompat open_url_incognito_button = findViewById(R.id.open_url_incognito_button);
++        open_url_incognito_button.setVisibility(View.VISIBLE);
++        open_url_incognito_button.setOnClickListener(view -> {
++            Context applicationContext = ContextUtils.getApplicationContext();
++            Intent chromeIntent = IntentHandler.createTrustedOpenNewTabIntent(applicationContext,
++                /*incognito*/true);
++
++            chromeIntent.setData(Uri.parse(linkUrl));
++            chromeIntent.setPackage(applicationContext.getPackageName());
++            chromeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++
++            LaunchIntentDispatcher.dispatch(this, chromeIntent);
++            finish();
++        });
++
++        onInitialLayoutInflationComplete();
++    }
++
++    @Override
++    public boolean shouldStartGpuProcess() {
++        return false;
++    }
++}
+diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
+--- a/chrome/browser/about_flags.cc
++++ b/chrome/browser/about_flags.cc
+@@ -5408,6 +5408,10 @@ const FeatureEntry kFeatureEntries[] = {
+      FEATURE_VALUE_TYPE(sharing_hub::kDesktopScreenshots)},
+ #endif
+ 
++    {"shared-intent-ui", flag_descriptions::kSharedIntentUIName,
++     flag_descriptions::kSharedIntentUIDescription, kOsAll,
++     FEATURE_VALUE_TYPE(chrome::android::kSharedIntentUI)},
++
+     {"sharing-prefer-vapid", flag_descriptions::kSharingPreferVapidName,
+      flag_descriptions::kSharingPreferVapidDescription, kOsAll,
+      FEATURE_VALUE_TYPE(kSharingPreferVapid)},
+diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
+--- a/chrome/browser/flag_descriptions.cc
++++ b/chrome/browser/flag_descriptions.cc
+@@ -2275,6 +2275,11 @@ const char kSharingDesktopScreenshotsDescription[] =
+     "Enables taking"
+     " screenshots from the desktop sharing hub.";
+ 
++const char kSharedIntentUIName[] =
++    "Enable shared feature";
++const char kSharedIntentUIDescription[] =
++    "Enables shared feature";
++
+ const char kSharingHubDesktopAppMenuName[] = "Desktop Sharing Hub in App Menu";
+ const char kSharingHubDesktopAppMenuDescription[] =
+     "Enables the Chrome Sharing Hub in the 3-dot menu for desktop.";
+diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptions.h
+--- a/chrome/browser/flag_descriptions.h
++++ b/chrome/browser/flag_descriptions.h
+@@ -1307,6 +1307,9 @@ extern const char kSharedClipboardUIDescription[];
+ extern const char kSharingDesktopScreenshotsName[];
+ extern const char kSharingDesktopScreenshotsDescription[];
+ 
++extern const char kSharedIntentUIName[];
++extern const char kSharedIntentUIDescription[];
++
+ extern const char kSharingHubDesktopAppMenuName[];
+ extern const char kSharingHubDesktopAppMenuDescription[];
+ 
+diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browser/flags/android/chrome_feature_list.cc
+--- a/chrome/browser/flags/android/chrome_feature_list.cc
++++ b/chrome/browser/flags/android/chrome_feature_list.cc
+@@ -256,6 +256,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
+     &kServiceManagerForDownload,
+     &kShareButtonInTopToolbar,
+     &kSharedClipboardUI,
++    &kSharedIntentUI,
+     &kSharingHubLinkToggle,
+     &kSingleTouchSelect,
+     &kSpannableInlineAutocomplete,
+@@ -640,6 +641,9 @@ const base::Feature kSearchEnginePromoExistingDevice{
+ const base::Feature kSearchEnginePromoNewDevice{
+     "SearchEnginePromo.NewDevice", base::FEATURE_ENABLED_BY_DEFAULT};
+ 
++const base::Feature kSharedIntentUI{
++    "SharedIntentUI", base::FEATURE_ENABLED_BY_DEFAULT};
++
+ const base::Feature kNewWindowAppMenu{"NewWindowAppMenu",
+                                       base::FEATURE_ENABLED_BY_DEFAULT};
+ 
+diff --git a/chrome/browser/flags/android/chrome_feature_list.h b/chrome/browser/flags/android/chrome_feature_list.h
+--- a/chrome/browser/flags/android/chrome_feature_list.h
++++ b/chrome/browser/flags/android/chrome_feature_list.h
+@@ -123,6 +123,7 @@ extern const base::Feature kRelatedSearchesSimplifiedUx;
+ extern const base::Feature kRelatedSearchesUi;
+ extern const base::Feature kSearchEnginePromoExistingDevice;
+ extern const base::Feature kSearchEnginePromoNewDevice;
++extern const base::Feature kSharedIntentUI;
+ extern const base::Feature kSearchReadyOmniboxFeature;
+ extern const base::Feature kServiceManagerForBackgroundPrefetch;
+ extern const base::Feature kServiceManagerForDownload;
+diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
+--- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
++++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
+@@ -495,6 +495,7 @@ public abstract class ChromeFeatureList {
+     public static final String SHARE_USAGE_RANKING = "ShareUsageRanking";
+     public static final String SHARE_USAGE_RANKING_FIXED_MORE = "ShareUsageRankingFixedMore";
+     public static final String SHARED_CLIPBOARD_UI = "SharedClipboardUI";
++    public static final String SHARED_INTENT_UI = "SharedIntentUI";
+     public static final String SHARED_HIGHLIGHTING_V2 = "SharedHighlightingV2";
+     public static final String SHARED_HIGHLIGHTING_AMP = "SharedHighlightingAmp";
+     public static final String SHARING_HUB_LINK_TOGGLE = "SharingHubLinkToggle";
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -4453,6 +4453,19 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+         Send text to Your Devices
+       </message>
+ 
++      <message name="IDS_SHARED_INTENT_SHARE_ACTIVITY_TITLE" desc="Text that will appear in the Android share dialog to open an URL with Bromite.">
++        Open URL with Bromite
++      </message>
++      <message name="IDS_SHARED_INTENT_SHARE_ACTIVITY_TEXT" desc="Text to show for opening with Bromite.">
++        Will open <ph name="URL">%1$s</ph> with Bromite
++      </message>
++      <message name="IDS_SHARED_INTENT_SHARE_ACTIVITY_OPEN_TEXT" desc="Text to show in the button for opening with Bromite.">
++        Open with Bromite
++      </message>
++      <message name="IDS_SHARED_INTENT_SHARE_ACTIVITY_OPENINCOGNITO_TEXT" desc="Text to show in the button for opening with Bromite in incognito.">
++        Open with Bromite Incognito
++      </message>
++
+       <!-- Sms Fetcher -->
+       <message name="IDS_SMS_FETCHER_NOTIFICATION_TITLE" desc="Title text shown when the Android Chrome receives a ONE_TIME_CODE from an incoming SMS and ask users for permission to submit the code to their linked Desktop Chrome">
+         Submit <ph name="ONE_TIME_CODE">%1$s<ex>123</ex></ph> on <ph name="CLIENT_NAME">%2$s<ex>Zoe's Macbook</ex></ph>?
+-- 
+2.17.1
+
