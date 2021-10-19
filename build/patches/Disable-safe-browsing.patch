@@ -31,6 +31,7 @@ Disable CrowdDeny feature
  .../browser/download/download_item_model.cc   | 15 +++-
  chrome/browser/download/download_item_model.h |  4 ++
  chrome/browser/download/download_prefs.cc     | 17 ++---
+ chrome/browser/download/download_stats.cc     |  4 ++
  .../download/download_target_determiner.cc    | 46 ++++++------
  .../download/download_target_determiner.h     |  6 ++
  .../browser/download/download_target_info.cc  |  4 ++
@@ -52,7 +53,7 @@ Disable CrowdDeny feature
  ...hrome_browser_main_extra_parts_profiles.cc |  2 -
  chrome/browser/profiles/profile_impl.cc       |  4 +-
  chrome/browser/safe_browsing/BUILD.gn         |  4 +-
- chrome/browser/safe_browsing/android/BUILD.gn |  8 ---
+ chrome/browser/safe_browsing/android/BUILD.gn |  4 --
  .../safe_browsing/SafeBrowsingBridge.java     | 71 -------------------
  .../android/safe_browsing_bridge.cc           | 51 -------------
  .../download_protection_service.cc            |  5 --
@@ -78,7 +79,7 @@ Disable CrowdDeny feature
  .../file_system_access_file_writer_impl.cc    | 41 +----------
  .../file_system_access_file_writer_impl.h     |  9 +--
  .../file_system_access_permission_context.h   |  6 --
- 72 files changed, 169 insertions(+), 660 deletions(-)
+ 73 files changed, 173 insertions(+), 656 deletions(-)
 
 diff --git a/chrome/android/java/res/xml/google_services_preferences.xml b/chrome/android/java/res/xml/google_services_preferences.xml
 --- a/chrome/android/java/res/xml/google_services_preferences.xml
@@ -823,11 +824,12 @@ diff --git a/chrome/browser/download/chrome_download_manager_delegate.cc b/chrom
  #include "chrome/browser/ui/chrome_pages.h"
  #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
  #include "chrome/common/buildflags.h"
-@@ -70,7 +72,9 @@
+@@ -69,8 +71,10 @@
+ #include "components/prefs/pref_member.h"
  #include "components/prefs/pref_service.h"
  #include "components/safe_browsing/buildflags.h"
- #include "components/safe_browsing/content/browser/download/download_stats.h"
 +#if defined(FULL_SAFE_BROWSING)
+ #include "components/safe_browsing/content/browser/download/download_stats.h"
  #include "components/safe_browsing/content/common/file_type_policies.h"
 +#endif
  #include "components/services/quarantine/public/mojom/quarantine.mojom.h"
@@ -1165,14 +1167,40 @@ diff --git a/chrome/browser/download/download_prefs.cc b/chrome/browser/download
  
    DCHECK(extension[0] == base::FilePath::kExtensionSeparator);
    extension.erase(0, 1);
+diff --git a/chrome/browser/download/download_stats.cc b/chrome/browser/download/download_stats.cc
+--- a/chrome/browser/download/download_stats.cc
++++ b/chrome/browser/download/download_stats.cc
+@@ -4,7 +4,9 @@
+ 
+ #include "chrome/browser/download/download_stats.h"
+ #include "components/profile_metrics/browser_profile_type.h"
++#if defined(FULL_SAFE_BROWSING)
+ #include "components/safe_browsing/content/browser/download/download_stats.h"
++#endif
+ 
+ #include "base/metrics/histogram_functions.h"
+ #include "base/metrics/user_metrics.h"
+@@ -26,8 +28,10 @@ void RecordDangerousDownloadWarningShown(
+     bool has_user_gesture) {
+   base::UmaHistogramEnumeration("Download.ShowedDownloadWarning", danger_type,
+                                 download::DOWNLOAD_DANGER_TYPE_MAX);
++#if defined(FULL_SAFE_BROWSING)
+   safe_browsing::RecordDangerousDownloadWarningShown(
+       danger_type, file_path, is_https, has_user_gesture);
++#endif
+ }
+ 
+ void RecordOpenedDangerousConfirmDialog(
 diff --git a/chrome/browser/download/download_target_determiner.cc b/chrome/browser/download/download_target_determiner.cc
 --- a/chrome/browser/download/download_target_determiner.cc
 +++ b/chrome/browser/download/download_target_determiner.cc
-@@ -31,7 +31,9 @@
+@@ -29,9 +29,11 @@
+ #include "components/download/public/common/download_interrupt_reasons.h"
+ #include "components/history/core/browser/history_service.h"
  #include "components/prefs/pref_service.h"
++#if defined(FULL_SAFE_BROWSING)
  #include "components/safe_browsing/content/browser/download/download_stats.h"
  #include "components/safe_browsing/content/browser/safe_browsing_metrics_collector.h"
-+#if defined(FULL_SAFE_BROWSING)
  #include "components/safe_browsing/content/common/file_type_policies.h"
 +#endif
  #include "content/public/browser/browser_context.h"
@@ -1245,13 +1273,15 @@ diff --git a/chrome/browser/download/download_target_determiner.cc b/chrome/brow
    return CONTINUE;
  }
  
-@@ -882,11 +894,13 @@ void DownloadTargetDeterminer::CheckVisitedReferrerBeforeDone(
-           virtual_path_.BaseName()),
-       download_->HasUserGesture(), visited_referrer_before,
-       GetLastDownloadBypassTimestamp());
+@@ -877,6 +889,7 @@ void DownloadTargetDeterminer::CheckVisitedReferrerBeforeDone(
+     bool visited_referrer_before) {
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+   DCHECK_EQ(STATE_DETERMINE_INTERMEDIATE_PATH, next_state_);
 +#if defined(FULL_SAFE_BROWSING)
-   danger_level_ = GetDangerLevel(
-       visited_referrer_before ? VISITED_REFERRER : NO_VISITS_TO_REFERRER);
+   safe_browsing::RecordDownloadFileTypeAttributes(
+       safe_browsing::FileTypePolicies::GetInstance()->GetFileDangerLevel(
+           virtual_path_.BaseName()),
+@@ -887,6 +900,7 @@ void DownloadTargetDeterminer::CheckVisitedReferrerBeforeDone(
    if (danger_level_ != DownloadFileType::NOT_DANGEROUS &&
        danger_type_ == download::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS)
      danger_type_ = download::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE;
@@ -1287,7 +1317,7 @@ diff --git a/chrome/browser/download/download_target_determiner.cc b/chrome/brow
  DownloadFileType::DangerLevel DownloadTargetDeterminer::GetDangerLevel(
      PriorVisitsToReferrer visits) const {
    DCHECK_CURRENTLY_ON(BrowserThread::UI);
-@@ -1111,30 +1130,9 @@ DownloadFileType::DangerLevel DownloadTargetDeterminer::GetDangerLevel(
+@@ -1111,29 +1130,7 @@ DownloadFileType::DangerLevel DownloadTargetDeterminer::GetDangerLevel(
        download_->HasUserGesture())
      return DownloadFileType::NOT_DANGEROUS;
  
@@ -1316,10 +1346,16 @@ diff --git a/chrome/browser/download/download_target_determiner.cc b/chrome/brow
 -  return danger_level;
 +  return DownloadFileType::NOT_DANGEROUS;
  }
-+#endif
  
  absl::optional<base::Time>
- DownloadTargetDeterminer::GetLastDownloadBypassTimestamp() const {
+@@ -1147,6 +1144,7 @@ DownloadTargetDeterminer::GetLastDownloadBypassTimestamp() const {
+                                      EventType::DANGEROUS_DOWNLOAD_BYPASS)
+                            : absl::nullopt;
+ }
++#endif
+ 
+ void DownloadTargetDeterminer::OnDownloadDestroyed(
+     DownloadItem* download) {
 diff --git a/chrome/browser/download/download_target_determiner.h b/chrome/browser/download/download_target_determiner.h
 --- a/chrome/browser/download/download_target_determiner.h
 +++ b/chrome/browser/download/download_target_determiner.h
@@ -1923,16 +1959,7 @@ diff --git a/chrome/browser/safe_browsing/BUILD.gn b/chrome/browser/safe_browsin
 diff --git a/chrome/browser/safe_browsing/android/BUILD.gn b/chrome/browser/safe_browsing/android/BUILD.gn
 --- a/chrome/browser/safe_browsing/android/BUILD.gn
 +++ b/chrome/browser/safe_browsing/android/BUILD.gn
-@@ -26,21 +26,13 @@ source_set("android") {
-     # that workarounds aren't needed.
-     "//content/public/browser",
-   ]
--
--  if (safe_browsing_mode != 0) {
--    deps += [ "//components/safe_browsing/content/common:file_type_policies" ]
--  }
- }
- 
+@@ -35,12 +35,8 @@ source_set("android") {
  android_library("java") {
    sources = [
      "java/src/org/chromium/chrome/browser/safe_browsing/SafeBrowsingBridge.java",
