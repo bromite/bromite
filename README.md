@@ -1,3 +1,124 @@
+# Chromium Bromite patches + Promethean additions
+
+This is a fork of the [Bromite repo on Github](https://github.com/bromite/bromite).
+
+It contains a number of patches to Chromium that greatly increase
+security and privacy and fix various annoyances.
+
+One patch has been removed from the original Bromite distribution:
+
+  - Automated domain substitution
+
+One patch has been modified:
+
+  - The Bromite adblock engine is disabled by default
+
+# Build instructions
+
+## Getting Chromium
+
+Building requires a [properly set up
+environment](https://chromium.googlesource.com/chromium/src/+/refs/tags/94.0.4606.109/docs/android_build_instructions.md#System-requirements). The
+Promethean [builder machine](https://builder.waq.be) has the proper
+dependencies installed.
+
+The builder also has an existing Chromium checkout in
+`/tank/chromium/src` and a checkout of this repo in
+`/tank/chromium/bromite`.  Before starting, you may wish to make a
+clone of `/tank/chromium`:
+
+```
+sudo zfs snapshot tank/chromium@allen
+sudo zfs clone tank/chromium@allen tank/chromium4allen
+```
+
+If you are not using the builder or wish to
+start from scratch, follow the instructions to [install depot_tools]
+and [get the code] but stop before the [Install additional build
+dependencies](https://chromium.googlesource.com/chromium/src/+/refs/tags/94.0.4606.109/docs/android_build_instructions.md#Install-additional-build-dependencies)
+section. If you're building on the builder box, skip that particular
+instruction. Apply the patches before continuing.
+
+## Prepare your environment
+
+All the operations that follow assume you are in an updated checkout
+of Chromium. It's advisable to set your `PATH` to where `gclient` is
+located. For example:
+
+```
+export PATH=/tank/chromium4allen/depot_tools/:$PATH
+cd /tank/chromium4allen/src
+```
+
+## Prepare Chromium
+
+The patches are intended to be applied to the `94.0.4606.109` tag of
+the Chromium repo. Before continuing, make sure you are on that tag in
+the Chromium source repo:
+
+```
+git fetch origin
+git checkout -B promethean-94.0.4606.109 94.0.4606.109
+gclient sync --with_branch_heads --with_tags
+gclient runhooks
+```
+
+Do a quick check to see if there are any new dependencies that might be missing:
+
+```
+./build/install-build-deps.sh --quick-check
+```
+
+Note: this does not do a comprehensive check for missing
+dependencies. If you have troubles with the build, you may wish to run
+`./build/install-build-deps.sh` to make sure dependencies are properly
+installed.
+
+## Applying the patches
+
+Now apply the patches in correct order. Make sure you do this from the
+`src/` directory of the Chromium checkout and set the `BROMITE_REPO`
+variable to the location of this checkout:
+
+```
+export BROMITE_REPO=/tank/chromium4allen/bromite
+for patchName in `cat $BROMITE_REPO/build/bromite_patches_list.txt`; do
+  git am $BROMITE_REPO/build/patches/$patchName || break
+done
+```
+
+All patches should apply cleanly. If they did not, make sure you have
+checked out the proper Chromium tag (94.0.4606.109).
+
+## Setting the build arguments
+
+The arguments in `bromite/build/GN_ARGS` must be used as the Chromium
+build arguments. To do this, run `gn args` with the default args
+file. You can optionally set your preferred editor. This is done from
+the Chromium src directory:
+
+```
+EDITOR=vi gn args out/Default
+```
+
+Replace all the args with the contents of the `build/GN_ARGS` file in this repo.
+
+## Continuing the build
+
+This command will build Chromium for the Android API 28 target. This
+should produce a package with the highest level of optimization for
+ActivPanel devices:
+
+```
+autoninja -C out/Default monochrome_public_apk
+```
+
+The resulting APK can be found at
+`out/Default/apks/MonochromePublic.apk` in the Chromium source
+directory.
+
+(Original Bromite README follows)
+
 # Bromite - Take back your browser
 
 <img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> <img src="https://www.bromite.org/license.svg" alt="GNU GPL v3" title="GNU VPL v3" />
