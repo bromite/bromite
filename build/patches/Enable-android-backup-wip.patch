@@ -1,0 +1,569 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Thu, 21 Oct 2021 07:06:08 +0000
+Subject: [wip] enable android backup
+
+---
+ chrome/android/chrome_public_apk_tmpl.gni     |   1 +
+ .../java/res/xml/about_chrome_preferences.xml |  11 ++
+ .../chrome/browser/ChromeBackupAgentImpl.java | 122 ++++++++++++++++--
+ .../about_settings/AboutChromeSettings.java   |  70 +++++++++-
+ chrome/browser/android/chrome_backup_agent.cc |  97 ++++++++++++++
+ .../strings/android_chrome_strings.grd        |  12 ++
+ components/prefs/json_pref_store.cc           |   5 +
+ components/prefs/json_pref_store.h            |   2 +
+ components/prefs/persistent_pref_store.h      |   3 +
+ components/prefs/pref_service.cc              |   4 +
+ components/prefs/pref_service.h               |   2 +
+ 11 files changed, 316 insertions(+), 13 deletions(-)
+
+diff --git a/chrome/android/chrome_public_apk_tmpl.gni b/chrome/android/chrome_public_apk_tmpl.gni
+--- a/chrome/android/chrome_public_apk_tmpl.gni
++++ b/chrome/android/chrome_public_apk_tmpl.gni
+@@ -22,6 +22,7 @@ default_chrome_public_jinja_variables = [
+   "channel=$android_channel",
+   "enable_vr=$enable_vr",
+   "include_arcore_manifest_flag=false",
++  "backup_key=unused" # see https://developer.android.com/guide/topics/data/keyvaluebackup#BackupManifest
+ ]
+ 
+ # Enable stack unwinding only on official build with specific channels. It is
+diff --git a/chrome/android/java/res/xml/about_chrome_preferences.xml b/chrome/android/java/res/xml/about_chrome_preferences.xml
+--- a/chrome/android/java/res/xml/about_chrome_preferences.xml
++++ b/chrome/android/java/res/xml/about_chrome_preferences.xml
+@@ -19,4 +19,15 @@
+         android:fragment="org.chromium.chrome.browser.about_settings.LegalInformationSettings"
+         android:key="legal_information"
+         android:title="@string/legal_information_title" />
++    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
++        android:key="allow_android_backup"
++        android:title="@string/allow_android_backup_title"
++        android:summary="@string/allow_android_backup_summary"
++        android:defaultValue="false" />
++    <Preference
++        android:key="backup_now"
++        android:title="@string/backup_now_title"/>
++    <Preference
++        android:key="restore_now"
++        android:title="@string/restore_now_title"/>
+ </PreferenceScreen>
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeBackupAgentImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeBackupAgentImpl.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeBackupAgentImpl.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeBackupAgentImpl.java
+@@ -48,6 +48,9 @@ import java.util.List;
+ import java.util.concurrent.CountDownLatch;
+ import java.util.concurrent.TimeUnit;
+ import java.util.concurrent.atomic.AtomicReference;
++import java.util.Map;
++import java.io.ByteArrayInputStream;
++import java.io.ByteArrayOutputStream;
+ 
+ /**
+  * Backup agent for Chrome, using Android key/value backup.
+@@ -57,6 +60,11 @@ public class ChromeBackupAgentImpl extends ChromeBackupAgent.Impl {
+     private static final String ANDROID_DEFAULT_PREFIX = "AndroidDefault.";
+     private static final String NATIVE_PREF_PREFIX = "native.";
+ 
++    private static final String NATIVE_LOCALSTATE_PREF_JSON = "localstate_prefs_json";
++    private static final String NATIVE_PROFILE_PREF_JSON = "profile_prefs_json";
++    private static final String SHARED_PREFS_PREFIX = "shared.";
++    private static final String PREF_ALLOW_ANDROID_BACKUP = "allow_android_backup";
++
+     private static final String TAG = "ChromeBackupAgent";
+ 
+     @VisibleForTesting
+@@ -175,9 +183,30 @@ public class ChromeBackupAgentImpl extends ChromeBackupAgent.Impl {
+         return bytes[0] != 0;
+     }
+ 
++    private static byte[] convertToBytes(Object object) throws IOException {
++        try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
++            ObjectOutputStream out = new ObjectOutputStream(bos)) {
++            out.writeObject(object);
++            return bos.toByteArray();
++        }
++    }
++
++    private static Object convertFromBytes(byte[] bytes) throws IOException, ClassNotFoundException {
++        try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
++            ObjectInputStream in = new ObjectInputStream(bis)) {
++            return in.readObject();
++        }
++    }
++
+     @Override
+     public void onBackup(ParcelFileDescriptor oldState, BackupDataOutput data,
+             ParcelFileDescriptor newState) throws IOException {
++        SharedPreferences sharedPrefs = ContextUtils.getAppSharedPreferences();
++        if (sharedPrefs.getBoolean(PREF_ALLOW_ANDROID_BACKUP, false) == false) {
++            Log.i(TAG, "Backup disabled by user");
++            return;
++        }
++
+         final ArrayList<String> backupNames = new ArrayList<>();
+         final ArrayList<byte[]> backupValues = new ArrayList<>();
+         final AtomicReference<CoreAccountInfo> syncAccount = new AtomicReference<>();
+@@ -203,9 +232,20 @@ public class ChromeBackupAgentImpl extends ChromeBackupAgent.Impl {
+             for (boolean val : nativeBackupValues) {
+                 backupValues.add(booleanToBytes(val));
+             }
++
++            // serialize local state and prefs as json string
++            String jsonPrefs = ChromeBackupAgentImplJni.get().getLocalStatePrefJson(this);
++            Log.i(TAG, "--- local state prefs %s", jsonPrefs);
++            backupNames.add(NATIVE_LOCALSTATE_PREF_JSON);
++            backupValues.add(jsonPrefs.getBytes());
++
++            jsonPrefs = ChromeBackupAgentImplJni.get().getProfilePrefsJson(this);
++            Log.i(TAG, "--- prefs %s", jsonPrefs);
++            backupNames.add(NATIVE_PROFILE_PREF_JSON);
++            backupValues.add(jsonPrefs.getBytes());
++
+             return true;
+         });
+-        SharedPreferences sharedPrefs = ContextUtils.getAppSharedPreferences();
+ 
+         if (!nativePrefsRead) {
+             // Something went wrong reading the native preferences, skip the backup, but try again
+@@ -244,6 +284,17 @@ public class ChromeBackupAgentImpl extends ChromeBackupAgent.Impl {
+             }
+         }
+ 
++        // Serialize all java SharedPreferences
++        Map<String, ?> allValues = sharedPrefs.getAll();
++        for (Map.Entry<String, ?> entry : allValues.entrySet()) {
++            String prefName = entry.getKey();
++            Object value = entry.getValue();
++            byte[] serialized = convertToBytes(value);
++
++            backupNames.add(SHARED_PREFS_PREFIX + prefName);
++            backupValues.add(serialized);
++        }
++
+         // Finally add the user id.
+         backupNames.add(ANDROID_DEFAULT_PREFIX + SIGNED_IN_ACCOUNT_KEY);
+         backupValues.add(ApiCompatibilityUtils.getBytesUtf8(
+@@ -286,10 +337,11 @@ public class ChromeBackupAgentImpl extends ChromeBackupAgent.Impl {
+         // Check that the user hasn't already seen FRE (not sure if this can ever happen, but if it
+         // does then restoring the backup will overwrite the user's choices).
+         SharedPreferences sharedPrefs = ContextUtils.getAppSharedPreferences();
+-        if (FirstRunStatus.getFirstRunFlowComplete()
+-                || FirstRunStatus.getLightweightFirstRunFlowComplete()) {
+-            setRestoreStatus(RestoreStatus.RESTORE_AFTER_FIRST_RUN);
+-            Log.w(TAG, "Restore attempted after first run");
++        if (sharedPrefs.getBoolean(PREF_ALLOW_ANDROID_BACKUP, false) == false) {
++            // this is currently a problem.
++            // when the application is reinstalled, this method is launched automatically, and, since the default flag is false, I exit.
++            // a possible alternative is to check the flag in the backup.
++            Log.i(TAG, "Restore disabled by user");
+             return;
+         }
+ 
+@@ -347,13 +399,6 @@ public class ChromeBackupAgentImpl extends ChromeBackupAgent.Impl {
+             return;
+         }
+ 
+-        // If the user hasn't signed in, or can't sign in, then don't restore anything.
+-        if (!accountExistsOnDevice(restoredUserName)) {
+-            setRestoreStatus(RestoreStatus.NOT_SIGNED_IN);
+-            Log.i(TAG, "Chrome was not signed in with a known account name, not restoring");
+-            return;
+-        }
+-
+         // Restore the native preferences on the UI thread
+         PostTask.runSynchronously(UiThreadTaskTraits.DEFAULT, () -> {
+             ArrayList<String> nativeBackupNames = new ArrayList<>();
+@@ -363,9 +408,34 @@ public class ChromeBackupAgentImpl extends ChromeBackupAgent.Impl {
+             for (int i = 0; i < backupNames.size(); i++) {
+                 String name = backupNames.get(i);
+                 if (name.startsWith(NATIVE_PREF_PREFIX)) {
++                    Log.i(TAG, "Restore attempted for %s", name);
+                     nativeBackupNames.add(name.substring(prefixLength));
+                     nativeBackupValues[count] = bytesToBoolean(backupValues.get(i));
+                     count++;
++                } else if (name.equals(NATIVE_LOCALSTATE_PREF_JSON)) {
++                    try {
++                        String value = new String(backupValues.get(i));
++                        if (ChromeBackupAgentImplJni.get().setLocalStatePrefJson(this,
++                                    value) == false) {
++                            Log.e(TAG, "Failed to restore local state from native.");
++                        } else {
++                            Log.i(TAG, "Local state restored.");
++                        }
++                    } catch (Exception e) {
++                        Log.e(TAG, "Failed to restore local state: %s", e.toString());
++                    }
++                } else if (name.equals(NATIVE_PROFILE_PREF_JSON)) {
++                    try {
++                        String value = new String(backupValues.get(i));
++                        if (ChromeBackupAgentImplJni.get().setProfilePrefsJson(this,
++                                    value) == false) {
++                            Log.e(TAG, "Failed to restore profile prefs from native.");
++                        } else {
++                            Log.i(TAG, "Profile prefs restored.");
++                        }
++                    } catch (Exception e) {
++                        Log.e(TAG, "Failed to restore profile prefs: %s", e.toString());
++                    }
+                 }
+             }
+             ChromeBackupAgentImplJni.get().setBoolBackupPrefs(this,
+@@ -386,6 +456,30 @@ public class ChromeBackupAgentImpl extends ChromeBackupAgent.Impl {
+                 editor.putBoolean(
+                         name.substring(prefixLength), bytesToBoolean(backupValues.get(i)));
+             }
++            else if (name.startsWith(SHARED_PREFS_PREFIX)) {
++                String prefName = name.substring(SHARED_PREFS_PREFIX.length());
++                try {
++                    if (sharedPrefs.contains(prefName)) {
++                        Log.i(TAG, "Restoring %s", prefName);
++                        Object value = convertFromBytes(backupValues.get(i));
++                        if (value instanceof String) {
++                            editor.putString(prefName, (String)value);
++                        } else if (value instanceof Integer) {
++                            editor.putInt(prefName, (int)value);
++                        } else if (value instanceof Long) {
++                            editor.putLong(prefName, (long)value);
++                        } else if (value instanceof Float) {
++                            editor.putFloat(prefName, (float)value);
++                        } else if (value instanceof Boolean) {
++                            editor.putBoolean(prefName, (boolean)value);
++                        } else {
++                            Log.e(TAG, "Unknow type for %s", prefName);
++                        }
++                    }
++                } catch (Exception e) {
++                    Log.e(TAG, "Failed to restore shared pref %s: %s", prefName, e.toString());
++                }
++            }
+         }
+ 
+         // Because FirstRunSignInProcessor.FIRST_RUN_FLOW_SIGNIN_COMPLETE is not restored Chrome
+@@ -467,5 +561,9 @@ public class ChromeBackupAgentImpl extends ChromeBackupAgent.Impl {
+         String[] getBoolBackupNames(ChromeBackupAgentImpl caller);
+         boolean[] getBoolBackupValues(ChromeBackupAgentImpl caller);
+         void setBoolBackupPrefs(ChromeBackupAgentImpl caller, String[] name, boolean[] value);
++        String getLocalStatePrefJson(ChromeBackupAgentImpl caller);
++        boolean setLocalStatePrefJson(ChromeBackupAgentImpl caller, String json);
++        String getProfilePrefsJson(ChromeBackupAgentImpl caller);
++        boolean setProfilePrefsJson(ChromeBackupAgentImpl caller, String json);
+     }
+ }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
+@@ -4,6 +4,17 @@
+ 
+ package org.chromium.chrome.browser.about_settings;
+ 
++import android.app.backup.BackupManager;
++import android.app.backup.RestoreObserver;
++import org.chromium.base.ContextUtils;
++import org.chromium.base.StrictModeContext;
++import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
++import org.chromium.chrome.browser.ui.messages.snackbar.INeedSnackbarManager;
++import org.chromium.chrome.browser.ui.messages.snackbar.Snackbar;
++import org.chromium.chrome.browser.ApplicationLifetime;
++import android.os.Build;
++import android.os.Build.VERSION_CODES;
++
+ import android.content.Context;
+ import android.content.pm.PackageInfo;
+ import android.content.pm.PackageManager.NameNotFoundException;
+@@ -30,13 +41,15 @@ import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
+  */
+ public class AboutChromeSettings
+         extends PreferenceFragmentCompat implements Preference.OnPreferenceClickListener,
+-                                                    Preference.OnPreferenceChangeListener {
++                                                    Preference.OnPreferenceChangeListener,
++                                                    INeedSnackbarManager {
+     private static final int TAPS_FOR_DEVELOPER_SETTINGS = 7;
+ 
+     private static final String PREF_APPLICATION_VERSION = "application_version";
+     private static final String PREF_ALLOW_INLINE_UPDATE = "allow_inline_update";
+     private static final String PREF_OS_VERSION = "os_version";
+     private static final String PREF_LEGAL_INFORMATION = "legal_information";
++    private static final String PREF_ALLOW_ANDROID_BACKUP = "allow_android_backup";
+ 
+     // Non-translated strings:
+     private static final String MSG_DEVELOPER_ENABLE_COUNTDOWN =
+@@ -51,6 +64,9 @@ public class AboutChromeSettings
+             DeveloperSettings.shouldShowDeveloperSettings() ? -1 : TAPS_FOR_DEVELOPER_SETTINGS;
+     private Toast mToast;
+ 
++    private SnackbarManager mSnackbarManager;
++    private Snackbar mSnackbar;
++
+     @Override
+     public void onCreatePreferences(Bundle bundle, String s) {
+         getActivity().setTitle(R.string.prefs_about_chrome);
+@@ -72,6 +88,58 @@ public class AboutChromeSettings
+             OmahaBase.getSharedPreferences()
+                     .getBoolean(OmahaBase.PREF_ALLOW_INLINE_UPDATE, false));
+         allowInlineUpdate.setOnPreferenceChangeListener(this);
++
++        mSnackbar = Snackbar.make(getActivity().getString(R.string.ui_relaunch_notice),
++                new SnackbarManager.SnackbarController() {
++                        @Override
++                        public void onDismissNoAction(Object actionData) { }
++
++                        @Override
++                        public void onAction(Object actionData) {
++                            ApplicationLifetime.terminate(true);
++                        }
++                }, Snackbar.TYPE_NOTIFICATION, Snackbar.UMA_UNKNOWN)
++                .setSingleLine(false)
++                .setAction(getActivity().getString(R.string.relaunch),
++                        /*actionData*/null)
++                .setDuration(/*durationMs*/70000);
++
++        Preference backupNow = findPreference("backup_now");
++        backupNow.setOnPreferenceClickListener(preference -> {
++            // make a backup request
++            BackupManager backupManager = new BackupManager(ContextUtils.getApplicationContext());
++            try (StrictModeContext ignored = StrictModeContext.allowDiskReads()) {
++                // note: this is a request
++                // it is not possible to know when android decides to actually launch the backup
++                backupManager.dataChanged();
++            }
++            mToast = Toast.makeText(getActivity(), "Backup requested.", Toast.LENGTH_LONG);
++            mToast.show();
++            return true;
++        });
++
++        Preference restoreNow = findPreference("restore_now");
++        restoreNow.setOnPreferenceClickListener(preference -> {
++            // make a restore request
++            BackupManager backupManager = new BackupManager(ContextUtils.getApplicationContext());
++            backupManager.requestRestore(
++                new RestoreObserver() {
++                    public void restoreFinished(int error) {
++                        if (!mSnackbarManager.isShowing())
++                            mSnackbarManager.showSnackbar(mSnackbar);
++                    }
++                }
++            );
++            return true;
++        });
++
++        // Since Android P app can no longer request restoring of its backup.
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
++            restoreNow.getParent().removePreference(restoreNow);
++    }
++
++    public void setSnackbarManager(SnackbarManager manager) {
++        mSnackbarManager = manager;
+     }
+ 
+     /**
+diff --git a/chrome/browser/android/chrome_backup_agent.cc b/chrome/browser/android/chrome_backup_agent.cc
+--- a/chrome/browser/android/chrome_backup_agent.cc
++++ b/chrome/browser/android/chrome_backup_agent.cc
+@@ -15,6 +15,10 @@
+ #include "components/prefs/pref_service.h"
+ #include "components/sync/base/pref_names.h"
+ 
++#include "base/android/jni_string.h"
++#include "base/json/json_string_value_serializer.h"
++#include "chrome/browser/browser_process.h"
++
+ namespace {
+ 
+ const char* backed_up_preferences_[] = {
+@@ -77,6 +81,99 @@ static void JNI_ChromeBackupAgentImpl_SetBoolBackupPrefs(
+   prefs->CommitPendingWrite();
+ }
+ 
++static base::android::ScopedJavaLocalRef<jstring>
++  JNI_ChromeBackupAgentImpl_GetLocalStatePrefJson(
++    JNIEnv* env,
++    const base::android::JavaParamRef<jobject>& jcaller)
++{
++  // Extract the local state and serialize to a string.
++  base::Value local_state =
++      g_browser_process->local_state()->GetPreferenceValues(
++          PrefService::EXCLUDE_DEFAULTS);
++  std::string serialized_settings;
++  JSONStringValueSerializer serializer(&serialized_settings);
++  serializer.set_pretty_print(false);
++  if (!serializer.Serialize(local_state))
++    return base::android::ConvertUTF8ToJavaString(env, {});
++
++  return base::android::ConvertUTF8ToJavaString(env, serialized_settings);
++}
++
++static jboolean JNI_ChromeBackupAgentImpl_SetLocalStatePrefJson(
++    JNIEnv* env,
++    const base::android::JavaParamRef<jobject>& jcaller,
++    const base::android::JavaParamRef<jstring>& json_java)
++{
++  std::string json = base::android::ConvertJavaStringToUTF8(json_java);
++
++  JSONStringValueDeserializer deserializer(json);
++
++  int error_code = 0;
++  std::string error_message;
++  std::unique_ptr<base::Value> value =
++      deserializer.Deserialize(&error_code, &error_message);
++  if (error_code != 0) {
++    LOG(ERROR) << "Failed to deserialize json: " << error_code
++               << ": " << error_message;
++    return false;
++  }
++
++  auto unfiltered_prefs = std::make_unique<base::DictionaryValue>();
++  unfiltered_prefs.reset(
++    static_cast<base::DictionaryValue*>(value.release()));
++  g_browser_process->local_state()->OverridePrefs(
++    std::move(unfiltered_prefs));
++
++  return true;
++}
++
++static base::android::ScopedJavaLocalRef<jstring>
++  JNI_ChromeBackupAgentImpl_GetProfilePrefsJson(
++    JNIEnv* env,
++    const base::android::JavaParamRef<jobject>& jcaller)
++{
++  // Extract the profile prefs and serialize to a string.
++  PrefService* prefs =
++    ProfileManager::GetLastUsedProfile()->GetOriginalProfile()->GetPrefs();
++  base::Value prefs_state =
++      prefs->GetPreferenceValues(
++          PrefService::EXCLUDE_DEFAULTS);
++  std::string serialized_settings;
++  JSONStringValueSerializer serializer(&serialized_settings);
++  if (!serializer.Serialize(prefs_state))
++    return base::android::ConvertUTF8ToJavaString(env, {});
++
++  return base::android::ConvertUTF8ToJavaString(env, serialized_settings);
++}
++
++static jboolean JNI_ChromeBackupAgentImpl_SetProfilePrefsJson(
++    JNIEnv* env,
++    const base::android::JavaParamRef<jobject>& jcaller,
++    const base::android::JavaParamRef<jstring>& json_java)
++{
++  std::string json = base::android::ConvertJavaStringToUTF8(json_java);
++
++  JSONStringValueDeserializer deserializer(json);
++
++  int error_code = 0;
++  std::string error_message;
++  std::unique_ptr<base::Value> value =
++      deserializer.Deserialize(&error_code, &error_message);
++  if (error_code != 0) {
++    LOG(ERROR) << "Failed to deserialize json: " << error_code
++               << ": " << error_message;
++    return false;
++  }
++
++  auto unfiltered_prefs = std::make_unique<base::DictionaryValue>();
++  unfiltered_prefs.reset(
++    static_cast<base::DictionaryValue*>(value.release()));
++  ProfileManager::GetLastUsedProfile()->GetOriginalProfile()
++              ->GetPrefs()->OverridePrefs(std::move(unfiltered_prefs));
++
++  return true;
++}
++
+ namespace android {
+ 
+ std::vector<std::string> GetBackupPrefNames() {
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -1669,6 +1669,18 @@ Your Google account may have other forms of browsing history like searches and a
+       <message name="IDS_ALLOW_INLINE_UPDATE_SUMMARY" desc="Summary for allow inline update preference">
+         Check for updates by contacting the Bromite repo
+       </message>
++      <message name="IDS_ALLOW_ANDROID_BACKUP_TITLE" desc="Title for allow android backup">
++        Allow Android Backup
++      </message>
++      <message name="IDS_ALLOW_ANDROID_BACKUP_SUMMARY" desc="Summary for allow android backup">
++        Activate Android backup manager
++      </message>
++      <message name="IDS_BACKUP_NOW_TITLE" desc="Summary for backup now button">
++        Backup now
++      </message>
++      <message name="IDS_RESTORE_NOW_TITLE" desc="Summary for restore now button">
++        Restore now
++      </message>
+ 
+       <!-- Account management UI strings. -->
+       <message name="IDS_ACCOUNT_MANAGEMENT_TITLE" desc="Header title for the account management screen. [CHAR_LIMIT=32]">
+diff --git a/components/prefs/json_pref_store.cc b/components/prefs/json_pref_store.cc
+--- a/components/prefs/json_pref_store.cc
++++ b/components/prefs/json_pref_store.cc
+@@ -558,6 +558,11 @@ void JsonPrefStore::FinalizeFileRead(
+   return;
+ }
+ 
++void JsonPrefStore::OverridePrefs(
++    std::unique_ptr<base::DictionaryValue> new_values) {
++  prefs_ = std::move(new_values);
++}
++
+ void JsonPrefStore::ScheduleWrite(uint32_t flags) {
+   if (read_only_)
+     return;
+diff --git a/components/prefs/json_pref_store.h b/components/prefs/json_pref_store.h
+--- a/components/prefs/json_pref_store.h
++++ b/components/prefs/json_pref_store.h
+@@ -123,6 +123,8 @@ class COMPONENTS_PREFS_EXPORT JsonPrefStore
+ 
+   void OnStoreDeletionFromDisk() override;
+ 
++  void OverridePrefs(std::unique_ptr<base::DictionaryValue> new_values) override;
++
+ #if defined(UNIT_TEST)
+   base::ImportantFileWriter& get_writer() { return writer_; }
+ #endif
+diff --git a/components/prefs/persistent_pref_store.h b/components/prefs/persistent_pref_store.h
+--- a/components/prefs/persistent_pref_store.h
++++ b/components/prefs/persistent_pref_store.h
+@@ -8,6 +8,7 @@
+ #include "base/callback.h"
+ #include "components/prefs/prefs_export.h"
+ #include "components/prefs/writeable_pref_store.h"
++#include "base/values.h"
+ 
+ // This interface is complementary to the PrefStore interface, declaring
+ // additional functionality that adds support for setting values and persisting
+@@ -89,6 +90,8 @@ class COMPONENTS_PREFS_EXPORT PersistentPrefStore : public WriteablePrefStore {
+   // Cleans preference data that may have been saved outside of the store.
+   virtual void OnStoreDeletionFromDisk() = 0;
+ 
++  virtual void OverridePrefs(std::unique_ptr<base::DictionaryValue> new_values) {}
++
+   // TODO(crbug.com/942491) Remove this after fixing the bug.
+   virtual bool IsInMemoryPrefStore() const;
+ 
+diff --git a/components/prefs/pref_service.cc b/components/prefs/pref_service.cc
+--- a/components/prefs/pref_service.cc
++++ b/components/prefs/pref_service.cc
+@@ -405,6 +405,10 @@ void PrefService::OnStoreDeletionFromDisk() {
+   user_pref_store_->OnStoreDeletionFromDisk();
+ }
+ 
++void PrefService::OverridePrefs(std::unique_ptr<base::DictionaryValue> new_values) {
++  user_pref_store_->OverridePrefs(std::move(new_values));
++}
++
+ void PrefService::ChangePrefValueStore(
+     PrefStore* managed_prefs,
+     PrefStore* supervised_user_prefs,
+diff --git a/components/prefs/pref_service.h b/components/prefs/pref_service.h
+--- a/components/prefs/pref_service.h
++++ b/components/prefs/pref_service.h
+@@ -380,6 +380,8 @@ class COMPONENTS_PREFS_EXPORT PrefService {
+   void AddPrefObserverAllPrefs(PrefObserver* obs);
+   void RemovePrefObserverAllPrefs(PrefObserver* obs);
+ 
++  void OverridePrefs(std::unique_ptr<base::DictionaryValue> new_values);
++
+ #if defined(OS_ANDROID)
+   base::android::ScopedJavaLocalRef<jobject> GetJavaObject();
+ #endif
+-- 
+2.17.1
+
