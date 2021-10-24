@@ -1,0 +1,483 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Sun, 24 Oct 2021 16:54:04 +0000
+Subject: Enable android autofill
+
+---
+ chrome/android/BUILD.gn                       |  1 +
+ .../settings/PasswordSettings.java            | 58 ++++++++++++++++++-
+ .../chromium/chrome/browser/tab/TabImpl.java  | 43 ++++++++++++++
+ .../browser/tab/TabViewAndroidDelegate.java   | 14 +++++
+ chrome/browser/BUILD.gn                       |  8 +++
+ chrome/browser/android/tab_android.cc         | 26 +++++++++
+ chrome/browser/android/tab_android.h          |  2 +
+ .../strings/android_chrome_strings.grd        |  3 +
+ chrome/browser/ui/tab_helpers.cc              |  6 +-
+ .../autofill/core/common/autofill_prefs.cc    |  5 ++
+ .../autofill/core/common/autofill_prefs.h     |  1 +
+ .../embedder_support/view/ContentView.java    | 48 ++++++++++++++-
+ .../chromium/ui/base/ViewAndroidDelegate.java |  8 +++
+ 13 files changed, 220 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
+--- a/chrome/android/BUILD.gn
++++ b/chrome/android/BUILD.gn
+@@ -410,6 +410,7 @@ android_library("chrome_java") {
+     "//chrome/browser/xsurface:java",
+     "//components/autofill/android:autofill_java",
+     "//components/autofill_assistant/browser:proto_java",
++    "//components/android_autofill/browser:java",
+     "//components/background_task_scheduler:background_task_scheduler_java",
+     "//components/background_task_scheduler:background_task_scheduler_task_ids_java",
+     "//components/bookmarks/common/android:bookmarks_java",
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/password_manager/settings/PasswordSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/password_manager/settings/PasswordSettings.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/password_manager/settings/PasswordSettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/password_manager/settings/PasswordSettings.java
+@@ -52,12 +52,18 @@ import org.chromium.ui.text.SpanApplier;
+ 
+ import java.util.Locale;
+ 
++import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
++import org.chromium.chrome.browser.ui.messages.snackbar.INeedSnackbarManager;
++import org.chromium.chrome.browser.ui.messages.snackbar.Snackbar;
++import org.chromium.chrome.browser.ApplicationLifetime;
++
+ /**
+  * The "Passwords" screen in Settings, which allows the user to enable or disable password saving,
+  * to view saved passwords (just the username and URL), and to delete saved passwords.
+  */
+ public class PasswordSettings extends PreferenceFragmentCompat
+-        implements PasswordManagerHandler.PasswordListObserver, Preference.OnPreferenceClickListener {
++        implements PasswordManagerHandler.PasswordListObserver, Preference.OnPreferenceClickListener,
++                   INeedSnackbarManager {
+     // Keys for name/password dictionaries.
+     public static final String PASSWORD_LIST_URL = "url";
+     public static final String PASSWORD_LIST_NAME = "name";
+@@ -75,6 +81,10 @@ public class PasswordSettings extends PreferenceFragmentCompat
+     public static final String PREF_TRUSTED_VAULT_OPT_IN = "trusted_vault_opt_in";
+     public static final String PREF_KEY_MANAGE_ACCOUNT_LINK = "manage_account_link";
+     public static final String PREF_KEY_SECURITY_KEY_LINK = "security_key_link";
++    public static final String PREF_ANDROID_AUTOFILL_SWITCH = "android_autofill_switch";
++
++    private SnackbarManager mSnackbarManager;
++    private Snackbar mSnackbar;
+ 
+     // A PasswordEntryViewer receives a boolean value with this key. If set true, the the entry was
+ 
+@@ -110,6 +120,7 @@ public class PasswordSettings extends PreferenceFragmentCompat
+     private Preference mLinkPref;
+     private Preference mSecurityKey;
+     private ChromeSwitchPreference mSavePasswordsSwitch;
++    private ChromeSwitchPreference mEnableAndroidAutofillSwitch;
+     private ChromeSwitchPreference mAutoSignInSwitch;
+     private ChromeBasePreference mCheckPasswords;
+     private ChromeBasePreference mTrustedVaultOptIn;
+@@ -274,6 +285,7 @@ public class PasswordSettings extends PreferenceFragmentCompat
+         getPreferenceScreen().removeAll();
+         if (mSearchQuery == null) {
+             createSavePasswordsSwitch();
++            createEnableAndroidAutofillSwitch();
+             createAutoSignInCheckbox();
+             if (mPasswordCheck != null) {
+                 createCheckPasswords();
+@@ -517,6 +529,50 @@ public class PasswordSettings extends PreferenceFragmentCompat
+                 getPrefService().getBoolean(Pref.CREDENTIALS_ENABLE_SERVICE));
+     }
+ 
++    private void createEnableAndroidAutofillSwitch() {
++        if (mSnackbar == null) {
++            mSnackbar = Snackbar.make(getActivity().getString(R.string.ui_relaunch_notice),
++                    new SnackbarManager.SnackbarController() {
++                            @Override
++                            public void onDismissNoAction(Object actionData) { }
++
++                            @Override
++                            public void onAction(Object actionData) {
++                                ApplicationLifetime.terminate(true);
++                            }
++                    }, Snackbar.TYPE_NOTIFICATION, Snackbar.UMA_UNKNOWN)
++                    .setSingleLine(false)
++                    .setAction(getActivity().getString(R.string.relaunch),
++                            /*actionData*/null)
++                    .setDuration(/*durationMs*/70000);
++        }
++
++        mEnableAndroidAutofillSwitch = new ChromeSwitchPreference(getStyledContext(), null);
++        mEnableAndroidAutofillSwitch.setKey(PREF_ANDROID_AUTOFILL_SWITCH);
++        mEnableAndroidAutofillSwitch.setTitle(R.string.enable_android_autofill);
++        mEnableAndroidAutofillSwitch.setOrder(ORDER_SWITCH);
++        mEnableAndroidAutofillSwitch.setSummaryOn(R.string.text_on);
++        mEnableAndroidAutofillSwitch.setSummaryOff(R.string.text_off);
++
++        try (StrictModeContext ignored = StrictModeContext.allowDiskReads()) {
++            getPreferenceScreen().addPreference(mEnableAndroidAutofillSwitch);
++        }
++
++        mEnableAndroidAutofillSwitch.setChecked(
++                getPrefService().getBoolean(Pref.AUTOFILL_ANDROID_ENABLED));
++
++        mEnableAndroidAutofillSwitch.setOnPreferenceChangeListener((preference, newValue) -> {
++            getPrefService().setBoolean(Pref.AUTOFILL_ANDROID_ENABLED, (boolean) newValue);
++            if (!mSnackbarManager.isShowing())
++                mSnackbarManager.showSnackbar(mSnackbar);
++            return true;
++        });
++    }
++
++    public void setSnackbarManager(SnackbarManager manager) {
++        mSnackbarManager = manager;
++    }
++
+     private void createAutoSignInCheckbox() {
+         mAutoSignInSwitch = new ChromeSwitchPreference(getStyledContext(), null);
+         mAutoSignInSwitch.setKey(PREF_AUTOSIGNIN_SWITCH);
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.java
+@@ -72,6 +72,18 @@ import org.chromium.url.GURL;
+ 
+ import java.nio.ByteBuffer;
+ 
++import android.os.Build;
++import android.util.SparseArray;
++import org.chromium.base.annotations.VerifiesOnO;
++import org.chromium.ui.base.EventOffsetHandler;
++import android.view.ViewStructure;
++import android.view.autofill.AutofillValue;
++import org.chromium.components.autofill.AutofillProvider;
++import org.chromium.components.autofill.AutofillActionModeCallback;
++import org.chromium.content_public.browser.SelectionPopupController;
++import org.chromium.chrome.browser.preferences.Pref;
++import org.chromium.components.user_prefs.UserPrefs;
++
+ /**
+  * Implementation of the interface {@link Tab}. Contains and manages a {@link ContentView}.
+  * This class is not intended to be extended.
+@@ -215,6 +227,8 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+     /** Whether or not the user manually changed the user agent. */
+     private boolean mUserForcedUserAgent;
+ 
++    AutofillProvider mAutofillProvider;
++
+     /**
+      * Creates an instance of a {@link TabImpl}.
+      *
+@@ -765,6 +779,11 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+         for (TabObserver observer : mObservers) observer.onDestroyed(this);
+         mObservers.clear();
+ 
++        if (mAutofillProvider != null) {
++            mAutofillProvider.destroy();
++            mAutofillProvider = null;
++        }
++
+         mUserDataHost.destroy();
+         mTabViewManager.destroy();
+         hideNativePage(false, null);
+@@ -1356,6 +1375,16 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+         return tabsPtrArray;
+     }
+ 
++    public void onProvideAutofillVirtualStructure(ViewStructure structure, int flags) {
++        if (mAutofillProvider != null)
++            mAutofillProvider.onProvideAutoFillVirtualStructure(structure, flags);
++    }
++
++    public void autofill(final SparseArray<AutofillValue> values) {
++        if (mAutofillProvider != null)
++            mAutofillProvider.autofill(values);
++    }
++
+     /**
+      * Initializes the {@link WebContents}. Completes the browser content components initialization
+      * around a native WebContents pointer.
+@@ -1405,6 +1434,19 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+                             mDelegateFactory.createContextMenuPopulatorFactory(this), this));
+ 
+             mWebContents.notifyRendererPreferenceUpdate();
++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
++                    UserPrefs.get(Profile.getLastUsedRegularProfile())
++                             .getBoolean(Pref.AUTOFILL_ANDROID_ENABLED) == true) {
++                SelectionPopupController selectionController =
++                        SelectionPopupController.fromWebContents(mWebContents);
++
++                mAutofillProvider = new AutofillProvider(getContext(), cv, webContents, "bromite");
++                TabImplJni.get().initializeAutofillIfNecessary(mNativeTabAndroid);
++                mAutofillProvider.setWebContents(webContents);
++                cv.setWebContents(webContents);
++                selectionController.setNonSelectionActionModeCallback(
++                        new AutofillActionModeCallback(mThemedApplicationContext, mAutofillProvider));
++            }
+             TabHelpers.initWebContentsHelpers(this);
+             notifyContentChanged();
+         } finally {
+@@ -1765,5 +1807,6 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+         void setActiveNavigationEntryTitleForUrl(long nativeTabAndroid, String url, String title);
+         void loadOriginalImage(long nativeTabAndroid);
+         boolean handleNonNavigationAboutURL(GURL url);
++        void initializeAutofillIfNecessary(long nativeTabAndroid);
+     }
+ }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabViewAndroidDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tab/TabViewAndroidDelegate.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabViewAndroidDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/tab/TabViewAndroidDelegate.java
+@@ -14,6 +14,10 @@ import org.chromium.content_public.browser.RenderWidgetHostView;
+ import org.chromium.ui.base.ViewAndroidDelegate;
+ import org.chromium.ui.base.WindowAndroid;
+ 
++import android.util.SparseArray;
++import android.view.autofill.AutofillValue;
++import android.view.ViewStructure;
++
+ /**
+  * Implementation of the abstract class {@link ViewAndroidDelegate} for Chrome.
+  */
+@@ -101,4 +105,14 @@ public class TabViewAndroidDelegate extends ViewAndroidDelegate {
+     protected int getViewportInsetBottom() {
+         return mApplicationViewportInsetBottomPx;
+     }
++
++    @Override
++    public void onProvideAutofillVirtualStructure(ViewStructure structure, int flags) {
++        mTab.onProvideAutofillVirtualStructure(structure, flags);
++    }
++
++    @Override
++    public void autofill(final SparseArray<AutofillValue> values) {
++        mTab.autofill(values);
++    }
+ }
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -2352,6 +2352,14 @@ static_library("browser") {
+     "//ui/webui/resources/cr_components/customize_themes:mojom",
+     "//ui/webui/resources/cr_components/most_visited:mojom",
+   ]
++
++  if (is_android) {
++    deps += [
++        "//components/android_autofill/browser",
++        "//components/android_autofill/browser:android"
++    ]
++  }
++
+   if (is_chromeos_ash) {
+     testonly = enable_weston_test
+     sources += [
+diff --git a/chrome/browser/android/tab_android.cc b/chrome/browser/android/tab_android.cc
+--- a/chrome/browser/android/tab_android.cc
++++ b/chrome/browser/android/tab_android.cc
+@@ -65,6 +65,13 @@
+ #include "url/android/gurl_android.h"
+ #include "url/gurl.h"
+ 
++#include "components/android_autofill/browser/android_autofill_manager.h"
++#include "components/android_autofill/browser/autofill_provider.h"
++#include "components/android_autofill/browser/autofill_provider_android.h"
++#include "components/autofill/content/browser/content_autofill_driver_factory.h"
++#include "chrome/browser/ui/autofill/chrome_autofill_client.h"
++#include "chrome/browser/browser_process.h"
++
+ using base::android::AttachCurrentThread;
+ using base::android::ConvertUTF8ToJavaString;
+ using base::android::JavaParamRef;
+@@ -437,3 +444,22 @@ static void JNI_TabImpl_Init(JNIEnv* env, const JavaParamRef<jobject>& obj) {
+   // This will automatically bind to the Java object and pass ownership there.
+   new TabAndroid(env, obj);
+ }
++
++void TabAndroid::InitializeAutofillIfNecessary(JNIEnv* env) {
++  if (!autofill::ContentAutofillDriverFactory::FromWebContents(
++          web_contents_.get())) {
++     content::WebContents* web_contents = web_contents_.get();
++    DCHECK(
++        !autofill::ContentAutofillDriverFactory::FromWebContents(web_contents));
++    DCHECK(autofill::AutofillProvider::FromWebContents(web_contents));
++
++    autofill::ChromeAutofillClient::CreateForWebContents(web_contents);
++
++    autofill::ContentAutofillDriverFactory::CreateForWebContentsAndDelegate(
++        web_contents,
++        autofill::ChromeAutofillClient::FromWebContents(web_contents),
++        g_browser_process->GetApplicationLocale(),
++        autofill::BrowserAutofillManager::DISABLE_AUTOFILL_DOWNLOAD_MANAGER,
++        base::BindRepeating(&autofill::AndroidAutofillManager::Create));
++  }
++}
+diff --git a/chrome/browser/android/tab_android.h b/chrome/browser/android/tab_android.h
+--- a/chrome/browser/android/tab_android.h
++++ b/chrome/browser/android/tab_android.h
+@@ -150,6 +150,8 @@ class TabAndroid : public base::SupportsUserData {
+ 
+   void SetDevToolsAgentHost(scoped_refptr<content::DevToolsAgentHost> host);
+ 
++  void InitializeAutofillIfNecessary(JNIEnv* env);
++
+  private:
+   JavaObjectWeakGlobalRef weak_java_tab_;
+ 
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -558,6 +558,9 @@ CHAR_LIMIT guidelines:
+       <message name="IDS_PASSWORD_SETTINGS_SAVE_PASSWORDS" desc="Title for the checkbox toggling whether passwords are saved or not. [CHAR_LIMIT=32]">
+         Save passwords
+       </message>
++      <message name="IDS_ENABLE_ANDROID_AUTOFILL" desc="Title for the checkbox toggling whether enable android autofill or not. [CHAR_LIMIT=32]">
++        Enable native Android autofill
++      </message>
+       <message name="IDS_PASSWORDS_AUTO_SIGNIN_TITLE" desc="Title for checkbox to enable automatically signing the user in to websites">
+         Auto Sign-in
+       </message>
+diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
+--- a/chrome/browser/ui/tab_helpers.cc
++++ b/chrome/browser/ui/tab_helpers.cc
+@@ -125,6 +125,9 @@
+ #include "chrome/browser/ui/android/context_menu_helper.h"
+ #include "chrome/browser/ui/javascript_dialogs/javascript_tab_modal_dialog_manager_delegate_android.h"
+ #include "chrome/browser/video_tutorials/video_tutorial_tab_helper.h"
++#include "components/android_autofill/browser/android_autofill_manager.h"
++#include "components/android_autofill/browser/autofill_provider.h"
++#include "components/android_autofill/browser/autofill_provider_android.h"
+ #else
+ #include "chrome/browser/accuracy_tips/accuracy_service_factory.h"
+ #include "chrome/browser/banners/app_banner_manager_desktop.h"
+@@ -244,7 +247,8 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
+       web_contents,
+       autofill::ChromeAutofillClient::FromWebContents(web_contents),
+       g_browser_process->GetApplicationLocale(),
+-      autofill::BrowserAutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER);
++      autofill::BrowserAutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER,
++      base::BindRepeating(&autofill::AndroidAutofillManager::Create));
+   chrome_browser_net::NetErrorTabHelper::CreateForWebContents(web_contents);
+   ChromePasswordManagerClient::CreateForWebContentsWithAutofillClient(
+       web_contents,
+diff --git a/components/autofill/core/common/autofill_prefs.cc b/components/autofill/core/common/autofill_prefs.cc
+--- a/components/autofill/core/common/autofill_prefs.cc
++++ b/components/autofill/core/common/autofill_prefs.cc
+@@ -135,6 +135,9 @@ const char kAutofillWalletImportStorageCheckboxState[] =
+ const char kAutocompleteLastVersionRetentionPolicy[] =
+     "autocomplete.retention_policy_last_version";
+ 
++// Boolean that is true to enable native Android Autofill
++const char kAutofillAndroidEnabled[] = "autofill.android_autofill_enabled";
++
+ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   // Synced prefs. Used for cross-device choices, e.g., credit card Autofill.
+   registry->RegisterBooleanPref(
+@@ -167,6 +170,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(
+       prefs::kAutofillCreditCardFidoAuthOfferCheckboxState, true);
+ #endif
++  registry->RegisterBooleanPref(
++      prefs::kAutofillAndroidEnabled, true);
+   registry->RegisterIntegerPref(
+       prefs::kAutofillCreditCardSigninPromoImpressionCount, 0);
+   registry->RegisterBooleanPref(prefs::kAutofillWalletImportEnabled, true);
+diff --git a/components/autofill/core/common/autofill_prefs.h b/components/autofill/core/common/autofill_prefs.h
+--- a/components/autofill/core/common/autofill_prefs.h
++++ b/components/autofill/core/common/autofill_prefs.h
+@@ -48,6 +48,7 @@ extern const char kAutofillUploadEventsLastResetTimestamp[];
+ extern const char kAutofillWalletImportEnabled[];
+ extern const char kAutofillWalletImportStorageCheckboxState[];
+ extern const char kAutocompleteLastVersionRetentionPolicy[];
++extern const char kAutofillAndroidEnabled[];
+ 
+ namespace sync_transport_opt_in {
+ enum Flags {
+diff --git a/components/embedder_support/android/java/src/org/chromium/components/embedder_support/view/ContentView.java b/components/embedder_support/android/java/src/org/chromium/components/embedder_support/view/ContentView.java
+--- a/components/embedder_support/android/java/src/org/chromium/components/embedder_support/view/ContentView.java
++++ b/components/embedder_support/android/java/src/org/chromium/components/embedder_support/view/ContentView.java
+@@ -36,6 +36,12 @@ import org.chromium.content_public.browser.WebContentsAccessibility;
+ import org.chromium.ui.base.EventForwarder;
+ import org.chromium.ui.base.EventOffsetHandler;
+ 
++import org.chromium.base.Log;
++import org.chromium.base.annotations.VerifiesOnO;
++import android.util.SparseArray;
++import android.view.autofill.AutofillValue;
++import org.chromium.ui.base.ViewAndroidDelegate;
++
+ /**
+  * The containing view for {@link WebContents} that exists in the Android UI hierarchy and exposes
+  * the various {@link View} functionality to it.
+@@ -83,7 +89,7 @@ public class ContentView extends FrameLayout
+     public static ContentView createContentView(Context context,
+             @Nullable EventOffsetHandler eventOffsetHandler, @Nullable WebContents webContents) {
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+-            return new ContentViewApi23(context, eventOffsetHandler, webContents);
++            return new ContentViewWithAutofill(context, eventOffsetHandler, webContents);
+         }
+         return new ContentView(context, eventOffsetHandler, webContents);
+     }
+@@ -549,4 +555,44 @@ public class ContentView extends FrameLayout
+             if (wcax != null) wcax.onProvideVirtualStructure(structure, false);
+         }
+     }
++
++    /**
++    * API level 26 implementation that includes autofill.
++    */
++    @VerifiesOnO
++    public static class ContentViewWithAutofill extends ContentViewApi23 {
++        private ViewAndroidDelegate viewAndroidDelegate;
++
++        private ContentViewWithAutofill(Context context, EventOffsetHandler eventOffsetHandler, WebContents webContents) {
++            super(context, eventOffsetHandler, webContents);
++
++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
++                // The Autofill system-level infrastructure has heuristics for which Views it considers
++                // important for autofill; only these Views will be queried for their autofill
++                // structure on notifications that a new (virtual) View was entered. By default,
++                // FrameLayout is not considered important for autofill. Thus, for ContentView to be
++                // queried for its autofill structure, we must explicitly inform the autofill system
++                // that this View is important for autofill.
++                setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_YES);
++            }
++        }
++
++        @Override
++        public void setWebContents(WebContents webContents) {
++            viewAndroidDelegate = webContents.getViewAndroidDelegate();
++            super.setWebContents(webContents);
++        }
++
++        @Override
++        public void onProvideAutofillVirtualStructure(ViewStructure structure, int flags) {
++            if (viewAndroidDelegate != null)
++                viewAndroidDelegate.onProvideAutofillVirtualStructure(structure, flags);
++        }
++
++        @Override
++        public void autofill(final SparseArray<AutofillValue> values) {
++            if (viewAndroidDelegate != null)
++                viewAndroidDelegate.autofill(values);
++        }
++    }
+ }
+diff --git a/ui/android/java/src/org/chromium/ui/base/ViewAndroidDelegate.java b/ui/android/java/src/org/chromium/ui/base/ViewAndroidDelegate.java
+--- a/ui/android/java/src/org/chromium/ui/base/ViewAndroidDelegate.java
++++ b/ui/android/java/src/org/chromium/ui/base/ViewAndroidDelegate.java
+@@ -26,6 +26,10 @@ import org.chromium.base.annotations.JNINamespace;
+ import org.chromium.base.compat.ApiHelperForN;
+ import org.chromium.ui.mojom.CursorType;
+ 
++import android.util.SparseArray;
++import android.view.autofill.AutofillValue;
++import android.view.ViewStructure;
++
+ /**
+  * Class to acquire, position, and remove anchor views from the implementing View.
+  */
+@@ -488,4 +492,8 @@ public class ViewAndroidDelegate {
+     protected int[] getDisplayFeature() {
+         return null;
+     }
++
++    public void onProvideAutofillVirtualStructure(ViewStructure structure, int flags) {}
++
++    public void autofill(final SparseArray<AutofillValue> values) {}
+ }
+-- 
+2.17.1
+
