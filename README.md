@@ -32,6 +32,7 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 # Features
 
 * customizable adblock filters via user-provided URL (see https://www.bromite.org/custom-filters)
+* automatically updated adblock filters
 * remove click-tracking and AMP from search results
 * DNS-over-HTTPS support with any valid IETF DoH endpoint
 * always-incognito mode
@@ -71,6 +72,8 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * allow disabling JIT
 
 ## Features not related to privacy
+* browser automatic updates, enabled by default
+* native Android autofill support
 * import/export bookmarks
 * bookmark all tabs from tabs regroup menu
 * flag to allow screenshots of incognito tabs
@@ -93,7 +96,6 @@ ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
 * accessibility preference to force tablet UI
 * use Alt+D to focus address bar
 * allow sharing to Bromite
-* browser automatic updates
 * UI for crash information collection
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
@@ -141,7 +143,7 @@ Each tag corresponds to a Chromium Stable release tag.
 Bromite is currently built for ARM, ARM64 and x86 and for the Android SDK versions 19 and 21; [Bromite SystemWebView](https://www.bromite.org/system_web_view) is provided as well (SDK21+).
 For every Bromite build you can always find a matching [vanilla Chromium](https://www.bromite.org/chromium) build which is used for example to verify which issues are specific to Bromite or not.
 
-You can automatically receive notifications about new updates (and install them) by enabling the auto updater functionality, see [related wiki page](https://github.com/bromite/bromite/wiki/AutomaticUpdates).
+You will automatically receive notifications about new updates (and be able to install them) via the auto updater functionality (enabled by default), see [related wiki page](https://github.com/bromite/bromite/wiki/AutomaticUpdates).
 
 All official releases are also available through the [official third-party F-Droid repository](https://www.bromite.org/fdroid).
 
