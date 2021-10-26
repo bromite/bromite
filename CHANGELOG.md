@@ -1,3 +1,8 @@
+# 94.0.4606.109
+* experimental user scripts support (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/792)
+* Bromite auto-update notifications enabled by default
+* enable Android native autofill (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/547)
+
 # 94.0.4606.102
 * add flag to disable pull-to-refresh effect
 * add recents, offlinepage and send to home screen for always incognito (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1182 and https://github.com/bromite/bromite/issues/1362)
