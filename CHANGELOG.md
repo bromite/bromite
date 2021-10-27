@@ -6,7 +6,7 @@
 # 94.0.4606.102
 * add flag to disable pull-to-refresh effect
 * add recents, offlinepage and send to home screen for always incognito (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1182 and https://github.com/bromite/bromite/issues/1362)
-* prompt to restart when always-incognito is enabled (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1474)
+* prompt to restart when always-incognito is enabled (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1459)
 * merge patches for custom tab intents
 
 # 94.0.4606.94
