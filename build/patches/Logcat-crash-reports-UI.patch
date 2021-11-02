@@ -8,7 +8,7 @@ Subject: Logcat crash reports UI
  .../crash_upload_list_android.h               |   1 +
  chrome/browser/net/chrome_network_delegate.cc |   7 +
  chrome/browser/ui/BUILD.gn                    |   1 +
- chrome/browser/ui/webui/crashes_ui.cc         | 164 ++++++++++++++++--
+ chrome/browser/ui/webui/crashes_ui.cc         | 166 ++++++++++++++++--
  .../crash/core/browser/crashes_ui_util.cc     |   4 +
  .../crash/core/browser/crashes_ui_util.h      |   2 +
  .../crash/core/browser/resources/crashes.css  |  67 ++++++-
@@ -17,11 +17,11 @@ Subject: Logcat crash reports UI
  components/crash_strings.grdp                 |  22 ++-
  .../minidump_uploader/CrashFileManager.java   |   7 +-
  .../MinidumpUploadCallable.java               |  20 +--
- .../minidump_uploader/MinidumpUploader.java   |  29 +---
+ .../minidump_uploader/MinidumpUploader.java   |  29 +--
  .../upload_list/text_log_upload_list.cc       |   1 +
  components/upload_list/upload_list.cc         |  17 +-
  components/upload_list/upload_list.h          |   9 +
- 18 files changed, 372 insertions(+), 80 deletions(-)
+ 18 files changed, 374 insertions(+), 80 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/crash/MinidumpUploadServiceImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/crash/MinidumpUploadServiceImpl.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/crash/MinidumpUploadServiceImpl.java
@@ -155,7 +155,7 @@ diff --git a/chrome/browser/net/chrome_network_delegate.cc b/chrome/browser/net/
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -595,6 +595,7 @@ static_library("ui") {
+@@ -594,6 +594,7 @@ static_library("ui") {
      "//third_party/re2",
      "//third_party/webrtc_overrides:webrtc_component",
      "//third_party/zlib",
@@ -221,11 +221,11 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
 +  void RequestSingleUploadCallback(const std::string& local_id, const std::string& filename);
 +
 +  // Asynchronously requests a user log extraction. Called from JS.
-+  void HandleRequestNewExtraction(const base::ListValue* args);
++  void HandleRequestNewExtraction(base::Value::ConstListView args);
 +  void RequestNewExtraction();
 +
 +  // Requests remove all crash files. Called from JS.
-+  void HandleRequestClearAll(const base::ListValue* args);
++  void HandleRequestClearAll(base::Value::ConstListView args);
 +  void ClearAll();
 +
    scoped_refptr<UploadList> upload_list_;
@@ -244,7 +244,7 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
    upload_list_ = CreateCrashUploadList();
  }
  
-@@ -142,10 +172,23 @@ void CrashesDOMHandler::RegisterMessages() {
+@@ -142,10 +172,24 @@ void CrashesDOMHandler::RegisterMessages() {
        crash_reporter::kCrashesUIRequestSingleCrashUpload,
        base::BindRepeating(&CrashesDOMHandler::HandleRequestSingleCrashUpload,
                            base::Unretained(this)));
@@ -257,6 +257,7 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
 +  web_ui()->RegisterMessageCallback(
 +      crash_reporter::kCrashesUIHandleRequestNewExtraction,
 +      base::BindRepeating(&CrashesDOMHandler::HandleRequestNewExtraction,
++                          base::Unretained(this)));
  }
  
  void CrashesDOMHandler::HandleRequestCrashes(base::Value::ConstListView args) {
@@ -268,7 +269,7 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
    if (first_load_) {
      first_load_ = false;
      if (list_available_)
-@@ -178,8 +221,7 @@ void CrashesDOMHandler::OnUploadListAvailable() {
+@@ -178,8 +222,7 @@ void CrashesDOMHandler::OnUploadListAvailable() {
  }
  
  void CrashesDOMHandler::UpdateUI() {
@@ -278,7 +279,7 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
  
    bool system_crash_reporter = false;
  #if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
-@@ -235,14 +277,111 @@ void CrashesDOMHandler::UpdateUI() {
+@@ -235,14 +278,112 @@ void CrashesDOMHandler::UpdateUI() {
  
  void CrashesDOMHandler::HandleRequestSingleCrashUpload(
      base::Value::ConstListView args) {
@@ -286,6 +287,7 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
 -  if (!ChromeMetricsServiceAccessor::IsMetricsAndCrashReportingEnabled() &&
 -      IsMetricsReportingPolicyManaged()) {
 -    return;
++  std::string local_id = args[0].GetString();
 +  base::ThreadPool::PostTaskAndReplyWithResult(
 +      FROM_HERE, kLoadingTaskTraits,
 +      base::BindOnce(&CrashesDOMHandler::RequestSingleUpload, base::Unretained(this), local_id),
@@ -359,7 +361,7 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
 +}
 +
 +void CrashesDOMHandler::HandleRequestNewExtraction(
-+    const base::ListValue* args) {
++    base::Value::ConstListView args) {
 +  base::ThreadPool::PostTask(
 +      FROM_HERE, kLoadingTaskTraits,
 +      base::BindOnce(&CrashesDOMHandler::RequestNewExtraction, base::Unretained(this)));
@@ -372,7 +374,7 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
 +}
 +
 +void CrashesDOMHandler::HandleRequestClearAll(
-+    const base::ListValue* args) {
++    base::Value::ConstListView args) {
 +  base::ThreadPool::PostTaskAndReply(
 +      FROM_HERE, kLoadingTaskTraits,
 +      base::BindOnce(&CrashesDOMHandler::ClearAll, base::Unretained(this)),
@@ -396,7 +398,7 @@ diff --git a/chrome/browser/ui/webui/crashes_ui.cc b/chrome/browser/ui/webui/cra
  }
  
  }  // namespace
-@@ -254,7 +393,8 @@ void CrashesDOMHandler::HandleRequestSingleCrashUpload(
+@@ -254,7 +395,8 @@ void CrashesDOMHandler::HandleRequestSingleCrashUpload(
  ///////////////////////////////////////////////////////////////////////////////
  
  CrashesUI::CrashesUI(content::WebUI* web_ui) : WebUIController(web_ui) {
