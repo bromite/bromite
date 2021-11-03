@@ -32,7 +32,7 @@ See also: https://github.com/bromite/bromite/pull/1427
  chrome/browser/history/history_tab_helper.cc  |  16 +
  chrome/browser/history/history_tab_helper.h   |  10 +-
  .../history/history_tab_helper_unittest.cc    |  22 ++
- .../android/offline_page_bridge.cc            |  13 +-
+ .../android/offline_page_bridge.cc            |   9 +
  .../android/offline_page_model_factory.cc     |  21 +-
  .../android/request_coordinator_factory.cc    |  17 +
  .../offline_page_model_factory.h              |   2 +
@@ -46,7 +46,7 @@ See also: https://github.com/bromite/bromite/pull/1427
  chrome/common/pref_names.cc                   |   5 +
  chrome/common/pref_names.h                    |   4 +
  chrome/test/BUILD.gn                          |   5 +
- 36 files changed, 1046 insertions(+), 38 deletions(-)
+ 36 files changed, 1044 insertions(+), 36 deletions(-)
  create mode 100644 chrome/android/javatests/src/org/chromium/chrome/browser/history/Bromite_HistoryManagerTest.java
  create mode 100644 chrome/android/javatests/src/org/chromium/chrome/browser/privacy/settings/Bromite_PrivacySettingsFragmentTest_HistoryInAlwaysIncognito.java
  create mode 100644 chrome/android/junit/src/org/chromium/chrome/browser/app/appmenu/Bromite_AppMenuPropertiesDelegateUnitTest.java
@@ -1377,48 +1377,29 @@ diff --git a/chrome/browser/history/history_tab_helper_unittest.cc b/chrome/brow
 diff --git a/chrome/browser/offline_pages/android/offline_page_bridge.cc b/chrome/browser/offline_pages/android/offline_page_bridge.cc
 --- a/chrome/browser/offline_pages/android/offline_page_bridge.cc
 +++ b/chrome/browser/offline_pages/android/offline_page_bridge.cc
-@@ -49,6 +49,9 @@
+@@ -49,6 +49,10 @@
  #include "content/public/browser/web_contents.h"
  #include "net/base/filename_util.h"
  #include "url/android/gurl_android.h"
++#include "chrome/browser/android/profile_key_util.h"
 +#include "components/prefs/pref_registry_simple.h"
 +#include "components/prefs/pref_service.h"
 +#include "chrome/common/pref_names.h"
  
  using base::android::ConvertJavaStringToUTF8;
  using base::android::ConvertUTF16ToJavaString;
-@@ -158,7 +161,13 @@ void ValidateFileCallback(
-     int64_t offline_id,
+@@ -159,6 +163,11 @@ void ValidateFileCallback(
      const GURL& url,
      const base::FilePath& file_path,
-+    SimpleFactoryKey* key,
      bool is_trusted) {
 +  // in always incognito, never trust input file (show file name in url)
-+  ProfileKey* profile_key = ProfileKey::FromSimpleFactoryKey(key);
++  ProfileKey* profile_key = ::android::GetLastUsedRegularProfileKey();
 +  if(profile_key->GetPrefs()->GetBoolean(prefs::kIncognitoTabHistoryEnabled))
 +    is_trusted = false;
 +
    // If trusted, the launch url will be the http/https url of the offline
    // page. If the file path is content URI, directly open it. Otherwise, the
    // launch url will be the file URL pointing to the archive file of the offline
-@@ -785,7 +794,7 @@ void OfflinePageBridge::GetPageByOfflineIdDone(
-   if (offline_page_model_->IsArchiveInInternalDir(offline_page->file_path)) {
-     ValidateFileCallback(launch_location, j_callback_obj,
-                          offline_page->offline_id, offline_page->url,
--                         offline_page->file_path, true /* is_trusted*/);
-+                         offline_page->file_path, key_, true /* is_trusted*/);
-     return;
-   }
- 
-@@ -795,7 +804,7 @@ void OfflinePageBridge::GetPageByOfflineIdDone(
-                      offline_page->file_size, offline_page->digest),
-       base::BindOnce(&ValidateFileCallback, launch_location, j_callback_obj,
-                      offline_page->offline_id, offline_page->url,
--                     offline_page->file_path));
-+                     offline_page->file_path, key_));
- }
- 
- void OfflinePageBridge::GetSizeAndComputeDigestDone(
 diff --git a/chrome/browser/offline_pages/android/offline_page_model_factory.cc b/chrome/browser/offline_pages/android/offline_page_model_factory.cc
 --- a/chrome/browser/offline_pages/android/offline_page_model_factory.cc
 +++ b/chrome/browser/offline_pages/android/offline_page_model_factory.cc
