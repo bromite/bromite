@@ -9,11 +9,13 @@ Flags are mutually exclusive.
 
 See also: https://github.com/bromite/bromite/issues/1474
 ---
- .../java/res/xml/privacy_preferences.xml      | 10 ++++++
- .../browser/LaunchIntentDispatcher.java       | 19 ++++++++++
- .../privacy/settings/PrivacySettings.java     | 36 +++++++++++++++++++
- .../strings/android_chrome_strings.grd        | 15 ++++++++
- 4 files changed, 80 insertions(+)
+ .../java/res/xml/privacy_preferences.xml      | 10 ++++++++
+ .../browser/LaunchIntentDispatcher.java       | 22 +++++++++++++++++
+ .../IncognitoCustomTabIntentDataProvider.java |  6 +++++
+ .../privacy/settings/PrivacySettings.java     | 24 +++++++++++++++++++
+ .../chrome/browser/tab/TabAssociatedApp.java  |  6 ++++-
+ .../strings/android_chrome_strings.grd        | 15 ++++++++++++
+ 6 files changed, 82 insertions(+), 1 deletion(-)
 
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
 --- a/chrome/android/java/res/xml/privacy_preferences.xml
@@ -38,7 +40,15 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcher.java b/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcher.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcher.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDispatcher.java
-@@ -59,6 +59,8 @@ import java.lang.annotation.Retention;
+@@ -46,6 +46,7 @@ import org.chromium.chrome.browser.notifications.NotificationPlatformBridge;
+ import org.chromium.chrome.browser.partnercustomizations.PartnerBrowserCustomizations;
+ import org.chromium.chrome.browser.searchwidget.SearchActivity;
+ import org.chromium.chrome.browser.tab.Tab;
++import org.chromium.chrome.browser.tab.TabLaunchType;
+ import org.chromium.chrome.browser.translate.TranslateIntentHandler;
+ import org.chromium.chrome.browser.util.AndroidTaskUtils;
+ import org.chromium.chrome.browser.vr.VrModuleProvider;
+@@ -59,6 +60,8 @@ import java.lang.annotation.Retention;
  import java.lang.annotation.RetentionPolicy;
  import java.util.Set;
  
@@ -47,20 +57,28 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDis
  /**
   * Dispatches incoming intents to the appropriate activity based on the current configuration and
   * Intent fired.
-@@ -279,6 +281,12 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
+@@ -279,6 +282,9 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
       */
      public static boolean isCustomTabIntent(Intent intent) {
          if (intent == null) return false;
-+        if (ContextUtils.getAppSharedPreferences()
-+                .getBoolean(PrivacySettings.PREF_OPEN_EXTERNAL_LINKS_INCOGNITO, false))
-+            return false;
 +        if (!ContextUtils.getAppSharedPreferences()
 +                .getBoolean(PrivacySettings.PREF_ALLOW_CUSTOM_TAB_INTENTS, false))
 +            return false;
          if (CustomTabsIntent.shouldAlwaysUseBrowserUI(intent)
                  || !intent.hasExtra(CustomTabsIntent.EXTRA_SESSION)) {
              return false;
-@@ -417,6 +425,17 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
+@@ -298,6 +304,10 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
+         newIntent.setData(uri);
+         newIntent.setClassName(context, CustomTabActivity.class.getName());
+ 
++        if (ContextUtils.getAppSharedPreferences()
++                .getBoolean(PrivacySettings.PREF_OPEN_EXTERNAL_LINKS_INCOGNITO, false))
++            newIntent.putExtra(IntentHandler.EXTRA_OPEN_NEW_INCOGNITO_TAB, true);
++
+         // Since configureIntentForResizableCustomTab() might change the componenet/class
+         // associated with the passed intent, it needs to be called after #setClassName(context,
+         // CustomTabActivity.class.getName());
+@@ -417,6 +427,18 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
  
          if (Intent.ACTION_VIEW.equals(newIntent.getAction())
                  && !IntentHandler.wasIntentSenderChrome(newIntent)) {
@@ -72,12 +90,36 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/LaunchIntentDis
 +                    /*incognito*/true);
 +                newIntent.setData(mIntent.getData());
 +                newIntent.setPackage(applicationContext.getPackageName());
++                IntentHandler.setTabLaunchType(newIntent, TabLaunchType.FROM_EXTERNAL_APP);
 +                newIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 +            }
 +
              long time = SystemClock.elapsedRealtime();
              if (!chromeTabbedTaskExists()) {
                  newIntent.putExtra(IntentHandler.EXTRA_STARTED_TABBED_CHROME_TASK, true);
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/IncognitoCustomTabIntentDataProvider.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/IncognitoCustomTabIntentDataProvider.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/IncognitoCustomTabIntentDataProvider.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/IncognitoCustomTabIntentDataProvider.java
+@@ -36,6 +36,9 @@ import org.chromium.components.browser_ui.widget.TintedDrawable;
+ import java.util.ArrayList;
+ import java.util.List;
+ 
++import org.chromium.base.ContextUtils;
++import org.chromium.chrome.browser.privacy.settings.PrivacySettings;
++
+ /**
+  * A model class that parses the incoming intent for incognito Custom Tabs specific customization
+  * data.
+@@ -109,6 +112,9 @@ public class IncognitoCustomTabIntentDataProvider extends BrowserServicesIntentD
+     }
+ 
+     private static boolean isIntentFromThirdPartyAllowed() {
++        if (ContextUtils.getAppSharedPreferences()
++                        .getBoolean(PrivacySettings.PREF_OPEN_EXTERNAL_LINKS_INCOGNITO, false))
++            return true;
+         return CachedFeatureFlags.isEnabled(
+                 ChromeFeatureList.CCT_INCOGNITO_AVAILABLE_TO_THIRD_PARTY);
+     }
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
@@ -101,7 +143,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
      @Override
      public boolean onPreferenceChange(Preference preference, Object newValue) {
          String key = preference.getKey();
-@@ -222,6 +228,26 @@ public class PrivacySettings
+@@ -222,6 +228,14 @@ public class PrivacySettings
          } else if (PREF_INCOGNITO_TAB_HISTORY_ENABLED.equals(key)) {
              UserPrefs.get(Profile.getLastUsedRegularProfile())
                      .setBoolean(Pref.INCOGNITO_TAB_HISTORY_ENABLED, (boolean) newValue);
@@ -109,26 +151,14 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
 +            SharedPreferences.Editor sharedPreferencesEditor = ContextUtils.getAppSharedPreferences().edit();
 +            sharedPreferencesEditor.putBoolean(PREF_ALLOW_CUSTOM_TAB_INTENTS, (boolean)newValue);
 +            sharedPreferencesEditor.apply();
-+
-+            // PREF_ALLOW_CUSTOM_TAB_INTENTS and PREF_OPEN_EXTERNAL_LINKS_INCOGNITO
-+            // are mutually exclusive
-+            if((boolean)newValue && ContextUtils.getAppSharedPreferences()
-+                    .getBoolean(PrivacySettings.PREF_OPEN_EXTERNAL_LINKS_INCOGNITO, false))
-+                openExternalLinksPref.setChecked(!(boolean)newValue);
 +        } else if (PREF_OPEN_EXTERNAL_LINKS_INCOGNITO.equals(key)) {
 +            SharedPreferences.Editor sharedPreferencesEditor = ContextUtils.getAppSharedPreferences().edit();
 +            sharedPreferencesEditor.putBoolean(PREF_OPEN_EXTERNAL_LINKS_INCOGNITO, (boolean)newValue);
 +            sharedPreferencesEditor.apply();
-+
-+            // PREF_ALLOW_CUSTOM_TAB_INTENTS and PREF_OPEN_EXTERNAL_LINKS_INCOGNITO
-+            // are mutually exclusive
-+            if((boolean)newValue && ContextUtils.getAppSharedPreferences()
-+                    .getBoolean(PrivacySettings.PREF_ALLOW_CUSTOM_TAB_INTENTS, false))
-+                allowCustomTabIntentsPref.setChecked(false);
          }
  
          return true;
-@@ -257,6 +283,16 @@ public class PrivacySettings
+@@ -257,6 +271,16 @@ public class PrivacySettings
              canMakePaymentPref.setChecked(prefService.getBoolean(Pref.CAN_MAKE_PAYMENT_ENABLED));
          }
  
@@ -145,6 +175,22 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
          Preference doNotTrackPref = findPreference(PREF_DO_NOT_TRACK);
          if (doNotTrackPref != null) {
              doNotTrackPref.setSummary(prefService.getBoolean(Pref.ENABLE_DO_NOT_TRACK)
+diff --git a/chrome/browser/tab/java/src/org/chromium/chrome/browser/tab/TabAssociatedApp.java b/chrome/browser/tab/java/src/org/chromium/chrome/browser/tab/TabAssociatedApp.java
+--- a/chrome/browser/tab/java/src/org/chromium/chrome/browser/tab/TabAssociatedApp.java
++++ b/chrome/browser/tab/java/src/org/chromium/chrome/browser/tab/TabAssociatedApp.java
+@@ -84,7 +84,11 @@ public final class TabAssociatedApp extends TabWebContentsUserData implements Im
+     public static boolean isOpenedFromExternalApp(Tab tab) {
+         TabAssociatedApp app = get(tab);
+         if (app == null) return false;
+-
++        if (ContextUtils.getAppSharedPreferences()
++                        .getBoolean("open_external_links_incognito", false) &&
++                tab.isIncognito() &&
++                tab.getLaunchType() == TabLaunchType.FROM_EXTERNAL_APP)
++            return true;
+         String packageName = ContextUtils.getApplicationContext().getPackageName();
+         return tab.getLaunchType() == TabLaunchType.FROM_EXTERNAL_APP
+                 && !TextUtils.equals(app.getAppId(), packageName);
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
