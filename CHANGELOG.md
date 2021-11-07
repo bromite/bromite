@@ -1,5 +1,5 @@
 # 95.0.4638.78
-* disable third-party originl trials
+* disable third-party origin trials (fixes https://github.com/bromite/bromite/issues/1530)
 * dropped patch for async DNS flag
 * dropped duplicate patch for pull-to-refresh flag
 * fix application not closing on incognito tab (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1503)
