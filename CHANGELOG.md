@@ -1,3 +1,13 @@
+# 95.0.4638.78
+* disable third-party originl trials
+* dropped patch for async DNS flag
+* dropped duplicate patch for pull-to-refresh flag
+* fix application not closing on incognito tab (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1503)
+* fix external links in incognito not always opening (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1474)
+* fix incognito tab closing new tab under normal tab (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1030)
+* allow custom tab intents and opening external links in incognito (thanks to @uazo)
+* never use HTTP probes for connectivity check on Android < M
+
 # 94.0.4606.109
 * experimental user scripts support (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/792)
 * Bromite auto-update notifications enabled by default
