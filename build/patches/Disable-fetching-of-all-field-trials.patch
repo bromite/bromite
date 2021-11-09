@@ -3,13 +3,129 @@ Date: Sun, 8 Jul 2018 18:16:34 +0200
 Subject: Disable fetching of all field trials
 
 ---
- .../variations/service/variations_service.cc       | 14 ++------------
- 1 file changed, 2 insertions(+), 12 deletions(-)
+ .../chrome_metrics_services_manager_client.cc |  2 ++
+ components/ukm/ukm_recorder_impl.cc           |  3 +++
+ .../firstrun/VariationsSeedBridge.java        |  2 +-
+ .../firstrun/VariationsSeedFetcher.java       | 23 ++++---------------
+ .../variations/net/omnibox_http_headers.cc    |  2 +-
+ .../variations/net/variations_http_headers.cc |  3 +++
+ .../variations/service/variations_service.cc  | 15 +++---------
+ 7 files changed, 17 insertions(+), 33 deletions(-)
 
+diff --git a/chrome/browser/metrics/chrome_metrics_services_manager_client.cc b/chrome/browser/metrics/chrome_metrics_services_manager_client.cc
+--- a/chrome/browser/metrics/chrome_metrics_services_manager_client.cc
++++ b/chrome/browser/metrics/chrome_metrics_services_manager_client.cc
+@@ -174,6 +174,8 @@ ChromeMetricsServicesManagerClient::~ChromeMetricsServicesManagerClient() {}
+ void ChromeMetricsServicesManagerClient::CreateFallbackSamplingTrial(
+     version_info::Channel channel,
+     base::FeatureList* feature_list) {
++  if ((true))
++    return;
+   // The trial name must be kept in sync with the server config controlling
+   // sampling. If they don't match, then clients will be shuffled into different
+   // groups when the server config takes over from the fallback trial.
+diff --git a/components/ukm/ukm_recorder_impl.cc b/components/ukm/ukm_recorder_impl.cc
+--- a/components/ukm/ukm_recorder_impl.cc
++++ b/components/ukm/ukm_recorder_impl.cc
+@@ -189,6 +189,9 @@ UkmRecorderImpl::~UkmRecorderImpl() = default;
+ void UkmRecorderImpl::CreateFallbackSamplingTrial(
+     bool is_stable_channel,
+     base::FeatureList* feature_list) {
++  if ((true))
++    return;
++
+   static const char kSampledGroup_Stable[] = "Sampled_NoSeed_Stable";
+   static const char kSampledGroup_Other[] = "Sampled_NoSeed_Other";
+   const char* sampled_group = kSampledGroup_Other;
+diff --git a/components/variations/android/java/src/org/chromium/components/variations/firstrun/VariationsSeedBridge.java b/components/variations/android/java/src/org/chromium/components/variations/firstrun/VariationsSeedBridge.java
+--- a/components/variations/android/java/src/org/chromium/components/variations/firstrun/VariationsSeedBridge.java
++++ b/components/variations/android/java/src/org/chromium/components/variations/firstrun/VariationsSeedBridge.java
+@@ -51,7 +51,7 @@ public class VariationsSeedBridge {
+     }
+ 
+     @CalledByNative
+-    private static void clearFirstRunPrefs() {
++    public static void clearFirstRunPrefs() {
+         ContextUtils.getAppSharedPreferences()
+                 .edit()
+                 .remove(VARIATIONS_FIRST_RUN_SEED_BASE64)
+diff --git a/components/variations/android/java/src/org/chromium/components/variations/firstrun/VariationsSeedFetcher.java b/components/variations/android/java/src/org/chromium/components/variations/firstrun/VariationsSeedFetcher.java
+--- a/components/variations/android/java/src/org/chromium/components/variations/firstrun/VariationsSeedFetcher.java
++++ b/components/variations/android/java/src/org/chromium/components/variations/firstrun/VariationsSeedFetcher.java
+@@ -45,7 +45,7 @@ public class VariationsSeedFetcher {
+     }
+ 
+     private static final String VARIATIONS_SERVER_URL =
+-            "https://clientservices.googleapis.com/chrome-variations/seed?osname=";
++            "https://clientservices.9oo91apis.qjz9zk/chrome-variations/seed?osname=";
+ 
+     private static final int READ_TIMEOUT = 3000; // time in ms
+     private static final int REQUEST_TIMEOUT = 1000; // time in ms
+@@ -184,24 +184,9 @@ public class VariationsSeedFetcher {
+         assert !ThreadUtils.runningOnUiThread();
+         // Prevent multiple simultaneous fetches
+         synchronized (sLock) {
+-            SharedPreferences prefs = ContextUtils.getAppSharedPreferences();
+-            // Early return if an attempt has already been made to fetch the seed, even if it
+-            // failed. Only attempt to get the initial Java seed once, since a failure probably
+-            // indicates a network problem that is unlikely to be resolved by a second attempt.
+-            // Note that VariationsSeedBridge.hasNativePref() is a pure Java function, reading an
+-            // Android preference that is set when the seed is fetched by the native code.
+-            if (prefs.getBoolean(VARIATIONS_INITIALIZED_PREF, false)
+-                    || VariationsSeedBridge.hasNativePref()) {
+-                return;
+-            }
++            VariationsSeedBridge.clearFirstRunPrefs();
+ 
+-            SeedFetchInfo fetchInfo =
+-                    downloadContent(VariationsPlatform.ANDROID, restrictMode, milestone, channel);
+-            if (fetchInfo.seedInfo != null) {
+-                SeedInfo info = fetchInfo.seedInfo;
+-                VariationsSeedBridge.setVariationsFirstRunSeed(info.seedData, info.signature,
+-                        info.country, info.date, info.isGzipCompressed);
+-            }
++            SharedPreferences prefs = ContextUtils.getAppSharedPreferences();
+             // VARIATIONS_INITIALIZED_PREF should still be set to true when exceptions occur
+             prefs.edit().putBoolean(VARIATIONS_INITIALIZED_PREF, true).apply();
+         }
+@@ -230,7 +215,7 @@ public class VariationsSeedFetcher {
+      * @param channel the channel parameter to pass to the server via a URL param.
+      * @return the object holds the request result and seed data with its related header fields.
+      */
+-    public SeedFetchInfo downloadContent(@VariationsPlatform int platform, String restrictMode,
++    private SeedFetchInfo downloadContent(@VariationsPlatform int platform, String restrictMode,
+             String milestone, String channel) {
+         SeedFetchInfo fetchInfo = new SeedFetchInfo();
+         HttpURLConnection connection = null;
+diff --git a/components/variations/net/omnibox_http_headers.cc b/components/variations/net/omnibox_http_headers.cc
+--- a/components/variations/net/omnibox_http_headers.cc
++++ b/components/variations/net/omnibox_http_headers.cc
+@@ -21,7 +21,7 @@ const char kOmniboxOnDeviceSuggestionsHeader[] =
+ // Whether to enable reporting the header. Included as a quick escape hatch in
+ // case of crashes.
+ const base::Feature kReportOmniboxOnDeviceSuggestionsHeader{
+-    "ReportOmniboxOnDeviceSuggestionsHeader", base::FEATURE_ENABLED_BY_DEFAULT};
++    "ReportOmniboxOnDeviceSuggestionsHeader", base::FEATURE_DISABLED_BY_DEFAULT};
+ 
+ std::string GetHeaderValue() {
+   const std::string group =
+diff --git a/components/variations/net/variations_http_headers.cc b/components/variations/net/variations_http_headers.cc
+--- a/components/variations/net/variations_http_headers.cc
++++ b/components/variations/net/variations_http_headers.cc
+@@ -235,6 +235,9 @@ class VariationsHeaderHelper {
+   }
+ 
+   bool AppendHeaderIfNeeded(const GURL& url, InIncognito incognito) {
++    if((true))
++      return false;
++
+     AppendOmniboxOnDeviceSuggestionsHeaderIfNeeded(url, resource_request_);
+ 
+     // Note the criteria for attaching client experiment headers:
 diff --git a/components/variations/service/variations_service.cc b/components/variations/service/variations_service.cc
 --- a/components/variations/service/variations_service.cc
 +++ b/components/variations/service/variations_service.cc
-@@ -240,17 +240,7 @@ bool GetInstanceManipulations(const net::HttpResponseHeaders* headers,
+@@ -240,17 +240,8 @@ bool GetInstanceManipulations(const net::HttpResponseHeaders* headers,
  // Variations seed fetching is only enabled in official Chrome builds, if a URL
  // is specified on the command line, and for testing.
  bool IsFetchingEnabled() {
@@ -24,11 +140,12 @@ diff --git a/components/variations/service/variations_service.cc b/components/va
 -  }
 -#endif
 -  return true;
++  // set to false event if not used in android
 +  return false;
  }
  
  std::unique_ptr<SeedResponse> MaybeImportFirstRunSeed(
-@@ -610,7 +600,7 @@ bool VariationsService::DoFetchFromURL(const GURL& url, bool is_http_retry) {
+@@ -610,7 +601,7 @@ bool VariationsService::DoFetchFromURL(const GURL& url, bool is_http_retry) {
    // debugger or if the machine was suspended) and OnURLFetchComplete() hasn't
    // had a chance to run yet from the previous request. In this case, don't
    // start a new request and just let the previous one finish.
