@@ -3,17 +3,24 @@ Date: Fri, 22 May 2020 22:43:27 -0400
 Subject: Allow building without enable_reporting
 
 ---
- content/browser/BUILD.gn                                 | 8 ++++----
- content/browser/devtools/protocol/network_handler.cc     | 2 ++
- content/browser/devtools/protocol/network_handler.h      | 2 ++
- .../common/content_switch_dependent_feature_overrides.cc | 3 +++
- services/network/network_context.cc                      | 2 +-
- services/network/public/mojom/BUILD.gn                   | 3 +++
- third_party/blink/renderer/core/frame/local_frame.cc     | 3 +++
- third_party/blink/renderer/core/frame/local_frame.h      | 6 +++---
- .../blink/renderer/core/frame/reporting_context.cc       | 9 +++++++++
- .../blink/renderer/core/frame/reporting_context.h        | 7 +++++--
- 10 files changed, 35 insertions(+), 10 deletions(-)
+ content/browser/BUILD.gn                       |  8 ++++----
+ .../devtools/protocol/network_handler.cc       |  2 ++
+ .../devtools/protocol/network_handler.h        |  2 ++
+ .../cross_origin_embedder_policy_reporter.cc   |  2 ++
+ .../net/cross_origin_opener_policy_reporter.cc | 10 ++++++++++
+ .../renderer_host/render_frame_host_impl.cc    |  2 ++
+ .../web_package/signed_exchange_reporter.cc    |  2 ++
+ ...ntent_switch_dependent_feature_overrides.cc |  3 +++
+ net/reporting/reporting_service.cc             |  6 ++++++
+ services/network/network_context.cc            | 18 +-----------------
+ services/network/network_context.h             | 11 -----------
+ services/network/public/mojom/BUILD.gn         |  3 +++
+ .../network/public/mojom/network_context.mojom |  2 ++
+ .../blink/renderer/core/frame/local_frame.cc   |  3 +++
+ .../blink/renderer/core/frame/local_frame.h    |  6 +++---
+ .../renderer/core/frame/reporting_context.cc   |  9 +++++++++
+ .../renderer/core/frame/reporting_context.h    |  7 +++++--
+ 17 files changed, 59 insertions(+), 37 deletions(-)
 
 diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
 --- a/content/browser/BUILD.gn
@@ -73,6 +80,130 @@ diff --git a/content/browser/devtools/protocol/network_handler.h b/content/brows
  
    // TODO(dgozman): Remove this.
    const std::string host_id_;
+diff --git a/content/browser/net/cross_origin_embedder_policy_reporter.cc b/content/browser/net/cross_origin_embedder_policy_reporter.cc
+--- a/content/browser/net/cross_origin_embedder_policy_reporter.cc
++++ b/content/browser/net/cross_origin_embedder_policy_reporter.cc
+@@ -107,6 +107,7 @@ void CrossOriginEmbedderPolicyReporter::QueueAndNotify(
+         kType, context_url_, blink::mojom::ReportBody::New(std::move(list))));
+   }
+   if (endpoint) {
++#if BUILDFLAG(ENABLE_REPORTING)
+     base::DictionaryValue body_to_pass;
+     for (const auto& pair : body) {
+       body_to_pass.SetString(pair.first, pair.second);
+@@ -117,6 +118,7 @@ void CrossOriginEmbedderPolicyReporter::QueueAndNotify(
+         kType, *endpoint, context_url_, reporting_source_,
+         network_isolation_key_,
+         /*user_agent=*/absl::nullopt, std::move(body_to_pass));
++#endif
+   }
+ }
+ 
+diff --git a/content/browser/net/cross_origin_opener_policy_reporter.cc b/content/browser/net/cross_origin_opener_policy_reporter.cc
+--- a/content/browser/net/cross_origin_opener_policy_reporter.cc
++++ b/content/browser/net/cross_origin_opener_policy_reporter.cc
+@@ -16,11 +16,14 @@
+ #include "services/network/public/mojom/network_context.mojom.h"
+ #include "services/network/public/mojom/source_location.mojom.h"
+ #include "url/origin.h"
++#include "build/build_config.h"
+ 
+ namespace content {
+ 
+ namespace {
+ 
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wunused-const-variable"
+ // Report attribute names (camelCase):
+ constexpr char kColumnNumber[] = "columnNumber";
+ constexpr char kDisposition[] = "disposition";
+@@ -42,7 +45,9 @@ constexpr char kDispositionEnforce[] = "enforce";
+ constexpr char kDispositionReporting[] = "reporting";
+ constexpr char kTypeFromResponse[] = "navigation-from-response";
+ constexpr char kTypeToResponse[] = "navigation-to-response";
++#pragma GCC diagnostic pop
+ 
++#if BUILDFLAG(ENABLE_REPORTING)
+ std::string ToString(network::mojom::CrossOriginOpenerPolicyValue coop_value) {
+   switch (coop_value) {
+     case network::mojom::CrossOriginOpenerPolicyValue::kUnsafeNone:
+@@ -55,6 +60,7 @@ std::string ToString(network::mojom::CrossOriginOpenerPolicyValue coop_value) {
+       return "same-origin-plus-coep";
+   }
+ }
++#endif
+ 
+ FrameTreeNode* TopLevelOpener(FrameTreeNode* frame) {
+   FrameTreeNode* opener = frame->original_opener();
+@@ -225,6 +231,7 @@ void CrossOriginOpenerPolicyReporter::QueueAccessReport(
+     network::mojom::SourceLocationPtr source_location,
+     const std::string& reported_window_url,
+     const std::string& initial_popup_url) const {
++#if BUILDFLAG(ENABLE_REPORTING)
+   // Cross-Origin-Opener-Policy-Report-Only is not required to provide
+   // endpoints.
+   if (!coop_.report_only_reporting_endpoint)
+@@ -273,12 +280,14 @@ void CrossOriginOpenerPolicyReporter::QueueAccessReport(
+   storage_partition_->GetNetworkContext()->QueueReport(
+       "coop", endpoint, context_url_, reporting_source_, network_isolation_key_,
+       absl::nullopt, std::move(body));
++#endif
+ }
+ 
+ void CrossOriginOpenerPolicyReporter::QueueNavigationReport(
+     base::DictionaryValue body,
+     const std::string& endpoint,
+     bool is_report_only) {
++#if BUILDFLAG(ENABLE_REPORTING)
+   body.SetString(kDisposition,
+                  is_report_only ? kDispositionReporting : kDispositionEnforce);
+   body.SetString(
+@@ -287,6 +296,7 @@ void CrossOriginOpenerPolicyReporter::QueueNavigationReport(
+   storage_partition_->GetNetworkContext()->QueueReport(
+       "coop", endpoint, context_url_, reporting_source_, network_isolation_key_,
+       /*user_agent=*/absl::nullopt, std::move(body));
++#endif
+ }
+ 
+ }  // namespace content
+diff --git a/content/browser/renderer_host/render_frame_host_impl.cc b/content/browser/renderer_host/render_frame_host_impl.cc
+--- a/content/browser/renderer_host/render_frame_host_impl.cc
++++ b/content/browser/renderer_host/render_frame_host_impl.cc
+@@ -10653,6 +10653,7 @@ void RenderFrameHostImpl::OnSameDocumentCommitProcessed(
+ void RenderFrameHostImpl::MaybeGenerateCrashReport(
+     base::TerminationStatus status,
+     int exit_code) {
++#if BUILDFLAG(ENABLE_REPORTING)
+   if (!last_committed_url_.SchemeIsHTTPOrHTTPS())
+     return;
+ 
+@@ -10702,6 +10703,7 @@ void RenderFrameHostImpl::MaybeGenerateCrashReport(
+       /*type=*/"crash", /*group=*/"default", last_committed_url_,
+       GetReportingSource(), isolation_info_.network_isolation_key(),
+       absl::nullopt /* user_agent */, std::move(body));
++#endif
+ }
+ 
+ void RenderFrameHostImpl::SendCommitNavigation(
+diff --git a/content/browser/web_package/signed_exchange_reporter.cc b/content/browser/web_package/signed_exchange_reporter.cc
+--- a/content/browser/web_package/signed_exchange_reporter.cc
++++ b/content/browser/web_package/signed_exchange_reporter.cc
+@@ -120,6 +120,7 @@ bool ShouldDowngradeReport(const char* result_string,
+ void ReportResult(int frame_tree_node_id,
+                   network::mojom::SignedExchangeReportPtr report,
+                   const net::NetworkIsolationKey& network_isolation_key) {
++#if BUILDFLAG(ENABLE_REPORTING)
+   FrameTreeNode* frame_tree_node =
+       FrameTreeNode::GloballyFindByID(frame_tree_node_id);
+   if (!frame_tree_node)
+@@ -134,6 +135,7 @@ void ReportResult(int frame_tree_node_id,
+   DCHECK(partition);
+   partition->GetNetworkContext()->QueueSignedExchangeReport(
+       std::move(report), network_isolation_key);
++#endif
+ }
+ 
+ }  // namespace
 diff --git a/content/public/common/content_switch_dependent_feature_overrides.cc b/content/public/common/content_switch_dependent_feature_overrides.cc
 --- a/content/public/common/content_switch_dependent_feature_overrides.cc
 +++ b/content/public/common/content_switch_dependent_feature_overrides.cc
@@ -96,10 +227,26 @@ diff --git a/content/public/common/content_switch_dependent_feature_overrides.cc
        {switches::kEnableExperimentalWebPlatformFeatures,
         std::cref(features::kExperimentalContentSecurityPolicyFeatures),
         base::FeatureList::OVERRIDE_ENABLE_FEATURE},
+diff --git a/net/reporting/reporting_service.cc b/net/reporting/reporting_service.cc
+--- a/net/reporting/reporting_service.cc
++++ b/net/reporting/reporting_service.cc
+@@ -202,6 +202,12 @@ class ReportingServiceImpl : public ReportingService {
+       std::unique_ptr<const base::Value> body,
+       int depth,
+       base::TimeTicks queued_ticks) {
++#if BUILDFLAG(ENABLE_REPORTING)
++    if ((true))
++      return;
++#else
++    Build Error!
++#endif
+     DCHECK(initialized_);
+     context_->cache()->AddReport(
+         reporting_source, network_isolation_key, sanitized_url, user_agent,
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
-@@ -1118,7 +1118,7 @@ void NetworkContext::SetDocumentReportingEndpoints(
+@@ -1118,25 +1118,9 @@ void NetworkContext::SetDocumentReportingEndpoints(
  
  void NetworkContext::SendReportsAndRemoveSource(
      const base::UnguessableToken& reporting_source) {
@@ -107,7 +254,46 @@ diff --git a/services/network/network_context.cc b/services/network/network_cont
 +  // NOTREACHED(); removed for build in debug
  }
  
- void NetworkContext::QueueReport(
+-void NetworkContext::QueueReport(
+-    const std::string& type,
+-    const std::string& group,
+-    const GURL& url,
+-    const absl::optional<base::UnguessableToken>& reporting_source,
+-    const net::NetworkIsolationKey& network_isolation_key,
+-    const absl::optional<std::string>& user_agent,
+-    base::Value body) {
+-  NOTREACHED();
+-}
+-
+-void NetworkContext::QueueSignedExchangeReport(
+-    mojom::SignedExchangeReportPtr report,
+-    const net::NetworkIsolationKey& network_isolation_key) {
+-  NOTREACHED();
+-}
+ #endif  // BUILDFLAG(ENABLE_REPORTING)
+ 
+ void NetworkContext::ClearDomainReliability(
+diff --git a/services/network/network_context.h b/services/network/network_context.h
+--- a/services/network/network_context.h
++++ b/services/network/network_context.h
+@@ -415,17 +415,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+       const base::flat_map<std::string, std::string>& endpoints) override;
+   void SendReportsAndRemoveSource(
+       const base::UnguessableToken& reporting_source) override;
+-  void QueueReport(
+-      const std::string& type,
+-      const std::string& group,
+-      const GURL& url,
+-      const absl::optional<base::UnguessableToken>& reporting_source,
+-      const net::NetworkIsolationKey& network_isolation_key,
+-      const absl::optional<std::string>& user_agent,
+-      base::Value body) override;
+-  void QueueSignedExchangeReport(
+-      mojom::SignedExchangeReportPtr report,
+-      const net::NetworkIsolationKey& network_isolation_key) override;
+   void AddDomainReliabilityContextForTesting(
+       const GURL& origin,
+       const GURL& upload_url,
 diff --git a/services/network/public/mojom/BUILD.gn b/services/network/public/mojom/BUILD.gn
 --- a/services/network/public/mojom/BUILD.gn
 +++ b/services/network/public/mojom/BUILD.gn
@@ -120,6 +306,25 @@ diff --git a/services/network/public/mojom/BUILD.gn b/services/network/public/mo
 +  if (enable_reporting) {
      enabled_features += [ "enable_reporting" ]
    }
+ 
+diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
+--- a/services/network/public/mojom/network_context.mojom
++++ b/services/network/public/mojom/network_context.mojom
+@@ -972,6 +972,7 @@ interface NetworkContext {
+   // provided |network_isolation_key|.
+   //
+   // Spec: https://w3c.github.io/reporting/#concept-reports
++  [EnableIf=enable_reporting]
+   QueueReport(string type,
+               string group,
+               url.mojom.Url url,
+@@ -985,6 +986,7 @@ interface NetworkContext {
+   // Note that this queued report will never be delivered if no reporting
+   // endpoint matching is registered for with the provided
+   // |network_isolation_key|.
++  [EnableIf=enable_reporting]
+   QueueSignedExchangeReport(SignedExchangeReport report,
+                             NetworkIsolationKey network_isolation_key);
  
 diff --git a/third_party/blink/renderer/core/frame/local_frame.cc b/third_party/blink/renderer/core/frame/local_frame.cc
 --- a/third_party/blink/renderer/core/frame/local_frame.cc
