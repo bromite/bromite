@@ -18,7 +18,7 @@ One patch has been modified:
 ## Getting Chromium
 
 Building requires a [properly set up
-environment](https://chromium.googlesource.com/chromium/src/+/refs/tags/94.0.4606.109/docs/android_build_instructions.md#System-requirements). The
+environment](https://chromium.googlesource.com/chromium/src/+/refs/tags/95.0.4638.78/docs/android_build_instructions.md#System-requirements). The
 Promethean [builder machine](https://builder.waq.be) has the proper
 dependencies installed.
 
@@ -35,7 +35,7 @@ sudo zfs clone tank/chromium@allen tank/chromium4allen
 If you are not using the builder or wish to
 start from scratch, follow the instructions to [install depot_tools]
 and [get the code] but stop before the [Install additional build
-dependencies](https://chromium.googlesource.com/chromium/src/+/refs/tags/94.0.4606.109/docs/android_build_instructions.md#Install-additional-build-dependencies)
+dependencies](https://chromium.googlesource.com/chromium/src/+/refs/tags/95.0.4638.78/docs/android_build_instructions.md#Install-additional-build-dependencies)
 section. If you're building on the builder box, skip that particular
 instruction. Apply the patches before continuing.
 
@@ -52,13 +52,13 @@ cd /tank/chromium4allen/src
 
 ## Prepare Chromium
 
-The patches are intended to be applied to the `94.0.4606.109` tag of
+The patches are intended to be applied to the `95.0.4638.78` tag of
 the Chromium repo. Before continuing, make sure you are on that tag in
 the Chromium source repo:
 
 ```
 git fetch origin
-git checkout -B promethean-94.0.4606.109 94.0.4606.109
+git checkout -B promethean-95.0.4638.78 95.0.4638.78
 gclient sync --with_branch_heads --with_tags
 gclient runhooks
 ```
@@ -88,7 +88,7 @@ done
 ```
 
 All patches should apply cleanly. If they did not, make sure you have
-checked out the proper Chromium tag (94.0.4606.109).
+checked out the proper Chromium tag (95.0.4638.78).
 
 ## Setting the build arguments
 
