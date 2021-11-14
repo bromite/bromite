@@ -61,7 +61,11 @@ No
 
 -- or --
 
-Yes, this is the crash dump:
+Yes, I have attached here on GitHub the crash report dump that I downloaded from `chrome://crashes`.
+
+-- or --
+
+Yes, this is a copy/paste of the crash dump:
 ```
 <paste here logcat dump individuated with 'adb logcat | grep chromium'>
 ```
