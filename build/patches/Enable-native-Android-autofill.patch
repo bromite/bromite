@@ -11,19 +11,20 @@ This patch uses the WebView code to activate native Android autofill.
 See also: https://github.com/bromite/bromite/issues/547
 ---
  chrome/android/BUILD.gn                       |  1 +
- .../settings/PasswordSettings.java            | 58 ++++++++++++++++++-
- .../chromium/chrome/browser/tab/TabImpl.java  | 43 ++++++++++++++
- .../browser/tab/TabViewAndroidDelegate.java   | 14 +++++
- chrome/browser/BUILD.gn                       |  8 +++
- chrome/browser/android/tab_android.cc         | 26 +++++++++
+ .../settings/PasswordSettings.java            | 81 ++++++++++++++++++-
+ .../chromium/chrome/browser/tab/TabImpl.java  | 51 ++++++++++++
+ .../browser/tab/TabViewAndroidDelegate.java   | 14 ++++
+ chrome/browser/BUILD.gn                       |  8 ++
+ chrome/browser/android/tab_android.cc         | 26 ++++++
  chrome/browser/android/tab_android.h          |  2 +
- .../strings/android_chrome_strings.grd        |  3 +
+ .../strings/android_chrome_strings.grd        |  6 ++
  chrome/browser/ui/tab_helpers.cc              |  6 +-
- .../autofill/core/common/autofill_prefs.cc    |  5 ++
- .../autofill/core/common/autofill_prefs.h     |  1 +
- .../embedder_support/view/ContentView.java    | 48 +++++++++++++++
- .../chromium/ui/base/ViewAndroidDelegate.java |  8 +++
- 13 files changed, 221 insertions(+), 2 deletions(-)
+ .../renderer/password_autofill_agent.cc       |  5 +-
+ .../autofill/core/common/autofill_prefs.cc    |  8 ++
+ .../autofill/core/common/autofill_prefs.h     |  2 +
+ .../embedder_support/view/ContentView.java    | 48 +++++++++++
+ .../chromium/ui/base/ViewAndroidDelegate.java |  8 ++
+ 14 files changed, 263 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
 --- a/chrome/android/BUILD.gn
@@ -59,26 +60,28 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/password_manage
      // Keys for name/password dictionaries.
      public static final String PASSWORD_LIST_URL = "url";
      public static final String PASSWORD_LIST_NAME = "name";
-@@ -75,6 +81,10 @@ public class PasswordSettings extends PreferenceFragmentCompat
+@@ -75,6 +81,11 @@ public class PasswordSettings extends PreferenceFragmentCompat
      public static final String PREF_TRUSTED_VAULT_OPT_IN = "trusted_vault_opt_in";
      public static final String PREF_KEY_MANAGE_ACCOUNT_LINK = "manage_account_link";
      public static final String PREF_KEY_SECURITY_KEY_LINK = "security_key_link";
 +    public static final String PREF_ANDROID_AUTOFILL_SWITCH = "android_autofill_switch";
++    public static final String PREF_ANDROID_AUTOFILL_INCOGNITO_SWITCH = "android_autofill_incognito_switch";
 +
 +    private SnackbarManager mSnackbarManager;
 +    private Snackbar mSnackbar;
  
      // A PasswordEntryViewer receives a boolean value with this key. If set true, the the entry was
  
-@@ -110,6 +120,7 @@ public class PasswordSettings extends PreferenceFragmentCompat
+@@ -110,6 +121,8 @@ public class PasswordSettings extends PreferenceFragmentCompat
      private Preference mLinkPref;
      private Preference mSecurityKey;
      private ChromeSwitchPreference mSavePasswordsSwitch;
 +    private ChromeSwitchPreference mEnableAndroidAutofillSwitch;
++    private ChromeSwitchPreference mEnableAndroidAutofillIncognitoSwitch;
      private ChromeSwitchPreference mAutoSignInSwitch;
      private ChromeBasePreference mCheckPasswords;
      private ChromeBasePreference mTrustedVaultOptIn;
-@@ -274,6 +285,7 @@ public class PasswordSettings extends PreferenceFragmentCompat
+@@ -274,6 +287,7 @@ public class PasswordSettings extends PreferenceFragmentCompat
          getPreferenceScreen().removeAll();
          if (mSearchQuery == null) {
              createSavePasswordsSwitch();
@@ -86,7 +89,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/password_manage
              createAutoSignInCheckbox();
              if (mPasswordCheck != null) {
                  createCheckPasswords();
-@@ -517,6 +529,50 @@ public class PasswordSettings extends PreferenceFragmentCompat
+@@ -517,6 +531,71 @@ public class PasswordSettings extends PreferenceFragmentCompat
                  getPrefService().getBoolean(Pref.CREDENTIALS_ENABLE_SERVICE));
      }
  
@@ -124,6 +127,27 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/password_manage
 +
 +        mEnableAndroidAutofillSwitch.setOnPreferenceChangeListener((preference, newValue) -> {
 +            getPrefService().setBoolean(Pref.AUTOFILL_ANDROID_ENABLED, (boolean) newValue);
++            if (!mSnackbarManager.isShowing())
++                mSnackbarManager.showSnackbar(mSnackbar);
++            return true;
++        });
++
++        mEnableAndroidAutofillIncognitoSwitch = new ChromeSwitchPreference(getStyledContext(), null);
++        mEnableAndroidAutofillIncognitoSwitch.setKey(PREF_ANDROID_AUTOFILL_INCOGNITO_SWITCH);
++        mEnableAndroidAutofillIncognitoSwitch.setTitle(R.string.enable_android_autofill_incognito);
++        mEnableAndroidAutofillIncognitoSwitch.setOrder(ORDER_SWITCH);
++        mEnableAndroidAutofillIncognitoSwitch.setSummaryOn(R.string.text_on);
++        mEnableAndroidAutofillIncognitoSwitch.setSummaryOff(R.string.text_off);
++
++        try (StrictModeContext ignored = StrictModeContext.allowDiskReads()) {
++            getPreferenceScreen().addPreference(mEnableAndroidAutofillIncognitoSwitch);
++        }
++
++        mEnableAndroidAutofillIncognitoSwitch.setChecked(
++                getPrefService().getBoolean(Pref.AUTOFILL_ANDROID_INCOGNITO_ENABLED));
++
++        mEnableAndroidAutofillIncognitoSwitch.setOnPreferenceChangeListener((preference, newValue) -> {
++            getPrefService().setBoolean(Pref.AUTOFILL_ANDROID_INCOGNITO_ENABLED, (boolean) newValue);
 +            if (!mSnackbarManager.isShowing())
 +                mSnackbarManager.showSnackbar(mSnackbar);
 +            return true;
@@ -197,27 +221,35 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.jav
      /**
       * Initializes the {@link WebContents}. Completes the browser content components initialization
       * around a native WebContents pointer.
-@@ -1407,6 +1436,19 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+@@ -1407,6 +1436,27 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
                              mDelegateFactory.createContextMenuPopulatorFactory(this), this));
  
              mWebContents.notifyRendererPreferenceUpdate();
-+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-+                    UserPrefs.get(Profile.getLastUsedRegularProfile())
-+                             .getBoolean(Pref.AUTOFILL_ANDROID_ENABLED) == true) {
-+                SelectionPopupController selectionController =
-+                        SelectionPopupController.fromWebContents(mWebContents);
++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
++                boolean autofillEnabled = false;
++                if (isIncognito()) {
++                    autofillEnabled = UserPrefs.get(Profile.getLastUsedRegularProfile())
++                                               .getBoolean(Pref.AUTOFILL_ANDROID_INCOGNITO_ENABLED);
++                } else {
++                    autofillEnabled = UserPrefs.get(Profile.getLastUsedRegularProfile())
++                                               .getBoolean(Pref.AUTOFILL_ANDROID_ENABLED);
++                }
 +
-+                mAutofillProvider = new AutofillProvider(getContext(), cv, webContents, "bromite");
-+                TabImplJni.get().initializeAutofillIfNecessary(mNativeTabAndroid);
-+                mAutofillProvider.setWebContents(webContents);
-+                cv.setWebContents(webContents);
-+                selectionController.setNonSelectionActionModeCallback(
-+                        new AutofillActionModeCallback(mThemedApplicationContext, mAutofillProvider));
++                if (autofillEnabled) {
++                    SelectionPopupController selectionController =
++                            SelectionPopupController.fromWebContents(mWebContents);
++                    mAutofillProvider = new AutofillProvider(getContext(), cv, webContents, "bromite");
++                    TabImplJni.get().initializeAutofillIfNecessary(mNativeTabAndroid);
++                    mAutofillProvider.setWebContents(webContents);
++                    cv.setWebContents(webContents);
++                    selectionController.setNonSelectionActionModeCallback(
++                            new AutofillActionModeCallback(mThemedApplicationContext, mAutofillProvider));
++                }
 +            }
              TabHelpers.initWebContentsHelpers(this);
              notifyContentChanged();
          } finally {
-@@ -1769,5 +1811,6 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+@@ -1769,5 +1819,6 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
          void setActiveNavigationEntryTitleForUrl(long nativeTabAndroid, String url, String title);
          void loadOriginalImage(long nativeTabAndroid);
          boolean handleNonNavigationAboutURL(GURL url);
@@ -326,12 +358,15 @@ diff --git a/chrome/browser/android/tab_android.h b/chrome/browser/android/tab_a
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -555,6 +555,9 @@ CHAR_LIMIT guidelines:
+@@ -555,6 +555,12 @@ CHAR_LIMIT guidelines:
        <message name="IDS_PASSWORD_SETTINGS_SAVE_PASSWORDS" desc="Title for the checkbox toggling whether passwords are saved or not. [CHAR_LIMIT=32]">
          Save passwords
        </message>
 +      <message name="IDS_ENABLE_ANDROID_AUTOFILL" desc="Title for the checkbox toggling whether enable Android native autofill or not. [CHAR_LIMIT=32]">
 +        Enable native Android autofill
++      </message>
++      <message name="IDS_ENABLE_ANDROID_AUTOFILL_INCOGNITO" desc="Title for the checkbox toggling whether enable Android native autofill or not in incognito mode. [CHAR_LIMIT=32]">
++        Enable native Android autofill in incognito
 +      </message>
        <message name="IDS_PASSWORDS_AUTO_SIGNIN_TITLE" desc="Title for checkbox to enable automatically signing the user in to websites">
          Auto Sign-in
@@ -359,36 +394,55 @@ diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
    chrome_browser_net::NetErrorTabHelper::CreateForWebContents(web_contents);
    ChromePasswordManagerClient::CreateForWebContentsWithAutofillClient(
        web_contents,
+diff --git a/components/autofill/content/renderer/password_autofill_agent.cc b/components/autofill/content/renderer/password_autofill_agent.cc
+--- a/components/autofill/content/renderer/password_autofill_agent.cc
++++ b/components/autofill/content/renderer/password_autofill_agent.cc
+@@ -727,7 +727,10 @@ void PasswordAutofillAgent::UpdateStateForTextChange(
+ 
+ void PasswordAutofillAgent::TrackAutofilledElement(
+     const blink::WebFormControlElement& element) {
+-  autofill_agent_->TrackAutofilledElement(element);
++  // fix for https://github.com/bromite/bromite/issues/1570
++  AutofillAgent* agent = autofill_agent_.get();
++  if (agent)
++    agent->TrackAutofilledElement(element);
+ }
+ 
+ bool PasswordAutofillAgent::FillSuggestion(
 diff --git a/components/autofill/core/common/autofill_prefs.cc b/components/autofill/core/common/autofill_prefs.cc
 --- a/components/autofill/core/common/autofill_prefs.cc
 +++ b/components/autofill/core/common/autofill_prefs.cc
-@@ -128,6 +128,9 @@ const char kAutofillWalletImportStorageCheckboxState[] =
+@@ -128,6 +128,10 @@ const char kAutofillWalletImportStorageCheckboxState[] =
  const char kAutocompleteLastVersionRetentionPolicy[] =
      "autocomplete.retention_policy_last_version";
  
 +// Boolean that is true to enable native Android Autofill
 +const char kAutofillAndroidEnabled[] = "autofill.android_autofill_enabled";
++const char kAutofillAndroidIncognitoEnabled[] = "autofill.android_autofill_incognito_enabled";
 +
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
    // Synced prefs. Used for cross-device choices, e.g., credit card Autofill.
    registry->RegisterBooleanPref(
-@@ -160,6 +163,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+@@ -160,6 +164,10 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
    registry->RegisterBooleanPref(
        prefs::kAutofillCreditCardFidoAuthOfferCheckboxState, true);
  #endif
 +  registry->RegisterBooleanPref(
 +      prefs::kAutofillAndroidEnabled, true);
++  registry->RegisterBooleanPref(
++      prefs::kAutofillAndroidIncognitoEnabled, false);
    registry->RegisterIntegerPref(
        prefs::kAutofillCreditCardSigninPromoImpressionCount, 0);
    registry->RegisterBooleanPref(prefs::kAutofillWalletImportEnabled, true);
 diff --git a/components/autofill/core/common/autofill_prefs.h b/components/autofill/core/common/autofill_prefs.h
 --- a/components/autofill/core/common/autofill_prefs.h
 +++ b/components/autofill/core/common/autofill_prefs.h
-@@ -47,6 +47,7 @@ extern const char kAutofillUploadEventsLastResetTimestamp[];
+@@ -47,6 +47,8 @@ extern const char kAutofillUploadEventsLastResetTimestamp[];
  extern const char kAutofillWalletImportEnabled[];
  extern const char kAutofillWalletImportStorageCheckboxState[];
  extern const char kAutocompleteLastVersionRetentionPolicy[];
 +extern const char kAutofillAndroidEnabled[];
++extern const char kAutofillAndroidIncognitoEnabled[];
  
  namespace sync_transport_opt_in {
  enum Flags {
