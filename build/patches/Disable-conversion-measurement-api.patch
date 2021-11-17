@@ -13,25 +13,24 @@ being sent and being saved to disk, although it is currently in uncalled code.
  .../flags/android/chrome_feature_list.cc        |  2 +-
  .../embedder_support/origin_trials/features.cc  |  3 ++-
  .../render_view_context_menu_base.cc            |  3 ---
- .../aggregatable_report_sender.cc               | 17 ++++++++---------
  .../browser/android/navigation_handle_proxy.cc  | 10 ----------
- .../attribution_reporting/attribution_host.cc   |  9 ---------
- .../attribution_reporting/attribution_host.h    |  3 ---
- .../attribution_host_utils.cc                   |  6 ++++++
- .../attribution_report_network_sender.cc        | 15 ++++++++-------
- .../attribution_storage_sql.cc                  |  2 +-
- .../navigation_controller_android.cc            | 16 ----------------
+ content/browser/conversions/conversion_host.cc  |  8 --------
+ content/browser/conversions/conversion_host.h   |  3 ---
+ .../conversions/conversion_host_utils.cc        |  6 ++++++
+ .../conversion_network_sender_impl.cc           | 17 ++++++++++-------
+ .../conversions/conversion_storage_sql.cc       |  2 +-
+ .../navigation_controller_android.cc            | 15 ---------------
  content/browser/storage_partition_impl.cc       |  7 +------
  .../browser/AttributionReporterImpl.java        |  4 ----
  content/public/browser/navigation_controller.cc |  1 -
  third_party/blink/common/features.cc            |  2 +-
- .../platform/runtime_enabled_features.json5     |  9 ++++++++-
- 18 files changed, 37 insertions(+), 89 deletions(-)
+ .../platform/runtime_enabled_features.json5     | 13 +++++++++----
+ 17 files changed, 32 insertions(+), 81 deletions(-)
 
 diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/AndroidManifest.xml
 --- a/chrome/android/java/AndroidManifest.xml
 +++ b/chrome/android/java/AndroidManifest.xml
-@@ -1300,14 +1300,6 @@ by a child template that "extends" this file.
+@@ -1276,14 +1276,6 @@ by a child template that "extends" this file.
                    android:readPermission="android.permission.GLOBAL_SEARCH" />
        </provider>
  
@@ -68,7 +67,7 @@ diff --git a/chrome/browser/attribution_reporting/android/internal/java/src/org/
 diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browser/flags/android/chrome_feature_list.cc
 --- a/chrome/browser/flags/android/chrome_feature_list.cc
 +++ b/chrome/browser/flags/android/chrome_feature_list.cc
-@@ -452,7 +452,7 @@ const base::Feature kAppMenuMobileSiteOption{"AppMenuMobileSiteOption",
+@@ -416,7 +416,7 @@ const base::Feature kAppMenuMobileSiteOption{"AppMenuMobileSiteOption",
                                               base::FEATURE_DISABLED_BY_DEFAULT};
  
  const base::Feature kAppToWebAttribution{"AppToWebAttribution",
@@ -94,7 +93,7 @@ diff --git a/components/embedder_support/origin_trials/features.cc b/components/
 diff --git a/components/renderer_context_menu/render_view_context_menu_base.cc b/components/renderer_context_menu/render_view_context_menu_base.cc
 --- a/components/renderer_context_menu/render_view_context_menu_base.cc
 +++ b/components/renderer_context_menu/render_view_context_menu_base.cc
-@@ -486,9 +486,6 @@ void RenderViewContextMenuBase::OpenURLWithExtraHeaders(
+@@ -484,9 +484,6 @@ void RenderViewContextMenuBase::OpenURLWithExtraHeaders(
  
    open_url_params.source_site_instance = site_instance_;
  
@@ -104,54 +103,17 @@ diff --git a/components/renderer_context_menu/render_view_context_menu_base.cc b
    source_web_contents_->OpenURL(open_url_params);
  }
  
-diff --git a/content/browser/aggregation_service/aggregatable_report_sender.cc b/content/browser/aggregation_service/aggregatable_report_sender.cc
---- a/content/browser/aggregation_service/aggregatable_report_sender.cc
-+++ b/content/browser/aggregation_service/aggregatable_report_sender.cc
-@@ -137,19 +137,18 @@ void AggregatableReportSender::SendReport(const GURL& url,
-   // Allow bodies of non-2xx responses to be returned.
-   simple_url_loader_ptr->SetAllowHttpErrorResults(true);
- 
--  // Unretained is safe because the URLLoader is owned by `this` and will be
--  // deleted before `this`.
--  simple_url_loader_ptr->DownloadHeadersOnly(
--      url_loader_factory_.get(),
--      base::BindOnce(&AggregatableReportSender::OnReportSent,
--                     base::Unretained(this), std::move(it),
--                     std::move(callback)));
-+  // this is never called on Bromite but nothing would be sent if it were
-+  OnReportSent(std::move(it), std::move(callback), nullptr);
- }
- 
- void AggregatableReportSender::OnReportSent(
-     UrlLoaderList::iterator it,
-     ReportSentCallback callback,
--    scoped_refptr<net::HttpResponseHeaders> headers) {
-+    scoped_refptr<net::HttpResponseHeaders> headers) { // disable in Bromite
-+  if ((true)) {
-+    std::move(callback).Run(RequestStatus::kOk);
-+    return;
-+  }
-   RequestStatus status;
- 
-   absl::optional<int> http_response_code;
-@@ -189,4 +188,4 @@ void AggregatableReportSender::OnReportSent(
-   std::move(callback).Run(status);
- }
- 
--}  // namespace content
-\ No newline at end of file
-+}  // namespace content
 diff --git a/content/browser/android/navigation_handle_proxy.cc b/content/browser/android/navigation_handle_proxy.cc
 --- a/content/browser/android/navigation_handle_proxy.cc
 +++ b/content/browser/android/navigation_handle_proxy.cc
-@@ -31,16 +31,6 @@ NavigationHandleProxy::NavigationHandleProxy(
+@@ -30,16 +30,6 @@ NavigationHandleProxy::NavigationHandleProxy(
    base::android::ScopedJavaLocalRef<jobject> impression_byte_buffer = nullptr;
  
    // Scoped to out-live the java call as this uses a DirectByteBuffer.
 -  std::vector<uint8_t> byte_vector;
 -  if (cpp_navigation_handle_->GetImpression()) {
 -    blink::mojom::ImpressionPtr impression =
--        AttributionHost::MojoImpressionFromImpression(
+-        ConversionHost::MojoImpressionFromImpression(
 -            *cpp_navigation_handle_->GetImpression());
 -    byte_vector = blink::mojom::Impression::Serialize(&impression);
 -    impression_byte_buffer = base::android::ScopedJavaLocalRef<jobject>(
@@ -161,42 +123,41 @@ diff --git a/content/browser/android/navigation_handle_proxy.cc b/content/browse
    java_navigation_handle_ = Java_NavigationHandle_Constructor(
        env, reinterpret_cast<jlong>(this),
        url::GURLAndroid::FromNativeGURL(env, cpp_navigation_handle_->GetURL()),
-diff --git a/content/browser/attribution_reporting/attribution_host.cc b/content/browser/attribution_reporting/attribution_host.cc
---- a/content/browser/attribution_reporting/attribution_host.cc
-+++ b/content/browser/attribution_reporting/attribution_host.cc
-@@ -444,15 +444,6 @@ void AttributionHost::BindReceiver(
+diff --git a/content/browser/conversions/conversion_host.cc b/content/browser/conversions/conversion_host.cc
+--- a/content/browser/conversions/conversion_host.cc
++++ b/content/browser/conversions/conversion_host.cc
+@@ -400,14 +400,6 @@ void ConversionHost::BindReceiver(
    conversion_host->receivers_.Bind(rfh, std::move(receiver));
  }
  
 -// static
--blink::mojom::ImpressionPtr AttributionHost::MojoImpressionFromImpression(
+-blink::mojom::ImpressionPtr ConversionHost::MojoImpressionFromImpression(
 -    const blink::Impression& impression) {
 -  return blink::mojom::Impression::New(
 -      impression.conversion_destination, impression.reporting_origin,
--      impression.impression_data, impression.expiry, impression.priority,
--      impression.attribution_src_token);
+-      impression.impression_data, impression.expiry, impression.priority);
 -}
 -
- WEB_CONTENTS_USER_DATA_KEY_IMPL(AttributionHost);
- 
- }  // namespace content
-diff --git a/content/browser/attribution_reporting/attribution_host.h b/content/browser/attribution_reporting/attribution_host.h
---- a/content/browser/attribution_reporting/attribution_host.h
-+++ b/content/browser/attribution_reporting/attribution_host.h
-@@ -57,9 +57,6 @@ class CONTENT_EXPORT AttributionHost
+ // static
+ void ConversionHost::SetReceiverImplForTesting(ConversionHost* impl) {
+   g_receiver_for_testing = impl;
+diff --git a/content/browser/conversions/conversion_host.h b/content/browser/conversions/conversion_host.h
+--- a/content/browser/conversions/conversion_host.h
++++ b/content/browser/conversions/conversion_host.h
+@@ -58,9 +58,6 @@ class CONTENT_EXPORT ConversionHost
        const url::Origin& impression_origin,
        const blink::Impression& impression);
  
 -  static blink::mojom::ImpressionPtr MojoImpressionFromImpression(
--      const blink::Impression& impression);
+-      const blink::Impression& impression) WARN_UNUSED_RESULT;
 -
-  private:
-   friend class AttributionHostTestPeer;
-   friend class WebContentsUserData<AttributionHost>;
-diff --git a/content/browser/attribution_reporting/attribution_host_utils.cc b/content/browser/attribution_reporting/attribution_host_utils.cc
---- a/content/browser/attribution_reporting/attribution_host_utils.cc
-+++ b/content/browser/attribution_reporting/attribution_host_utils.cc
-@@ -20,6 +20,8 @@
+   // Overrides the target object to bind |receiver| to in BindReceiver().
+   static void SetReceiverImplForTesting(ConversionHost* impl);
+ 
+diff --git a/content/browser/conversions/conversion_host_utils.cc b/content/browser/conversions/conversion_host_utils.cc
+--- a/content/browser/conversions/conversion_host_utils.cc
++++ b/content/browser/conversions/conversion_host_utils.cc
+@@ -18,6 +18,8 @@
  #include "url/gurl.h"
  #include "url/origin.h"
  
@@ -204,8 +165,8 @@ diff --git a/content/browser/attribution_reporting/attribution_host_utils.cc b/c
 +
  namespace content {
  
- namespace attribution_host_utils {
-@@ -68,6 +70,10 @@ absl::optional<blink::Impression> ParseImpressionFromApp(
+ namespace conversion_host_utils {
+@@ -77,6 +79,10 @@ absl::optional<blink::Impression> ParseImpressionFromApp(
    // Java API should have rejected these already.
    DCHECK(!source_event_id.empty() && !destination.empty());
  
@@ -216,54 +177,56 @@ diff --git a/content/browser/attribution_reporting/attribution_host_utils.cc b/c
    blink::Impression impression;
    if (!base::StringToUint64(source_event_id, &impression.impression_data))
      return absl::nullopt;
-diff --git a/content/browser/attribution_reporting/attribution_report_network_sender.cc b/content/browser/attribution_reporting/attribution_report_network_sender.cc
---- a/content/browser/attribution_reporting/attribution_report_network_sender.cc
-+++ b/content/browser/attribution_reporting/attribution_report_network_sender.cc
-@@ -118,13 +118,8 @@ void AttributionReportNetworkSender::SendReport(
-                    network::SimpleURLLoader::RETRY_ON_NAME_NOT_RESOLVED;
-   simple_url_loader_ptr->SetRetryOptions(/*max_retries=*/1, retry_mode);
+diff --git a/content/browser/conversions/conversion_network_sender_impl.cc b/content/browser/conversions/conversion_network_sender_impl.cc
+--- a/content/browser/conversions/conversion_network_sender_impl.cc
++++ b/content/browser/conversions/conversion_network_sender_impl.cc
+@@ -144,13 +144,9 @@ void ConversionNetworkSenderImpl::SendReport(ConversionReport report,
+ 
+   LogMetricsOnReportSend(report);
  
 -  // Unretained is safe because the URLLoader is owned by |this| and will be
 -  // deleted before |this|.
 -  simple_url_loader_ptr->DownloadHeadersOnly(
 -      url_loader_factory_.get(),
--      base::BindOnce(&AttributionReportNetworkSender::OnReportSent,
+-      base::BindOnce(&ConversionNetworkSenderImpl::OnReportSent,
 -                     base::Unretained(this), std::move(it), std::move(report),
--                     is_debug_report, std::move(sent_callback)));
-+  // this is never called on Bromite but nothing would be sent if it were
-+  OnReportSent(std::move(it), report, is_debug_report, std::move(sent_callback), nullptr);
+-                     std::move(sent_callback)));
++  // this code is never called but if it were, nothing would be sent
++  OnReportSent(std::move(it), std::move(report), std::move(sent_callback),
++    nullptr);
  }
  
- void AttributionReportNetworkSender::SetURLLoaderFactoryForTesting(
-@@ -138,6 +133,12 @@ void AttributionReportNetworkSender::OnReportSent(
-     bool is_debug_report,
+ void ConversionNetworkSenderImpl::SetURLLoaderFactoryForTesting(
+@@ -163,6 +159,13 @@ void ConversionNetworkSenderImpl::OnReportSent(
+     ConversionReport report,
      ReportSentCallback sent_callback,
      scoped_refptr<net::HttpResponseHeaders> headers) {
 +  if ((true)) {
 +    std::move(sent_callback)
-+        .Run(std::move(report),
-+           SendResult(SendResult::Status::kSent, headers ? headers->response_code() : 200));
++      .Run(SentReportInfo(std::move(report),
++                          SentReportInfo::Status::kSent,
++                          /*response_code*/200));
 +    return;
 +  }
    network::SimpleURLLoader* loader = it->get();
  
    // Consider a non-200 HTTP code as a non-internal error.
-diff --git a/content/browser/attribution_reporting/attribution_storage_sql.cc b/content/browser/attribution_reporting/attribution_storage_sql.cc
---- a/content/browser/attribution_reporting/attribution_storage_sql.cc
-+++ b/content/browser/attribution_reporting/attribution_storage_sql.cc
-@@ -372,7 +372,7 @@ void AttributionStorageSql::RunInMemoryForTesting() {
+diff --git a/content/browser/conversions/conversion_storage_sql.cc b/content/browser/conversions/conversion_storage_sql.cc
+--- a/content/browser/conversions/conversion_storage_sql.cc
++++ b/content/browser/conversions/conversion_storage_sql.cc
+@@ -227,7 +227,7 @@ void ConversionStorageSql::RunInMemoryForTesting() {
  }
  
  // static
--bool AttributionStorageSql::g_run_in_memory_ = false;
-+bool AttributionStorageSql::g_run_in_memory_ = true;
+-bool ConversionStorageSql::g_run_in_memory_ = false;
++bool ConversionStorageSql::g_run_in_memory_ = true; // use in-memory db
  
- AttributionStorageSql::AttributionStorageSql(
+ ConversionStorageSql::ConversionStorageSql(
      const base::FilePath& path_to_database,
 diff --git a/content/browser/renderer_host/navigation_controller_android.cc b/content/browser/renderer_host/navigation_controller_android.cc
 --- a/content/browser/renderer_host/navigation_controller_android.cc
 +++ b/content/browser/renderer_host/navigation_controller_android.cc
-@@ -319,22 +319,6 @@ void NavigationControllerAndroid::LoadUrl(
+@@ -316,21 +316,6 @@ void NavigationControllerAndroid::LoadUrl(
    if (input_start != 0)
      params.input_start = base::TimeTicks::FromUptimeMillis(input_start);
  
@@ -274,7 +237,7 @@ diff --git a/content/browser/renderer_host/navigation_controller_android.cc b/co
 -    params.initiator_origin = OriginFromAndroidPackageName(
 -        ConvertJavaStringToUTF8(env, source_package_name));
 -
--    params.impression = attribution_host_utils::ParseImpressionFromApp(
+-    params.impression = conversion_host_utils::ParseImpressionFromApp(
 -        ConvertJavaStringToUTF8(env, attribution_source_event_id),
 -        ConvertJavaStringToUTF8(env, attribution_destination),
 -        attribution_report_to
@@ -282,27 +245,26 @@ diff --git a/content/browser/renderer_host/navigation_controller_android.cc b/co
 -            : "",
 -        attribution_expiry);
 -  }
--
+ 
    params.override_user_agent = static_cast<NavigationController::UserAgentOverrideOption>(
      user_agent_override_option);
- 
 diff --git a/content/browser/storage_partition_impl.cc b/content/browser/storage_partition_impl.cc
 --- a/content/browser/storage_partition_impl.cc
 +++ b/content/browser/storage_partition_impl.cc
-@@ -1307,12 +1307,7 @@ void StoragePartitionImpl::Initialize(
+@@ -1338,12 +1338,7 @@ void StoragePartitionImpl::Initialize(
    bucket_context_ = base::MakeRefCounted<BucketContext>();
-   bucket_context_->Initialize(quota_manager_proxy);
+   bucket_context_->Initialize();
  
 -  // The Conversion Measurement API is not available in Incognito mode.
 -  if (!is_in_memory() &&
 -      base::FeatureList::IsEnabled(blink::features::kConversionMeasurement)) {
--    attribution_manager_ = std::make_unique<AttributionManagerImpl>(
+-    conversion_manager_ = std::make_unique<ConversionManagerImpl>(
 -        this, path, special_storage_policy_);
 -  }
 +  // The Conversion Measurement API is not available in Bromite.
  
-   if (base::FeatureList::IsEnabled(blink::features::kInterestGroupStorage)) {
-     interest_group_manager_ = std::make_unique<InterestGroupManagerImpl>(
+   if (base::FeatureList::IsEnabled(blink::features::kFledgeInterestGroups)) {
+     interest_group_manager_ = std::make_unique<InterestGroupManager>(
 diff --git a/content/public/android/java/src/org/chromium/content/browser/AttributionReporterImpl.java b/content/public/android/java/src/org/chromium/content/browser/AttributionReporterImpl.java
 --- a/content/public/android/java/src/org/chromium/content/browser/AttributionReporterImpl.java
 +++ b/content/public/android/java/src/org/chromium/content/browser/AttributionReporterImpl.java
@@ -315,12 +277,12 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/Attrib
      }
  
      /**
-@@ -33,8 +31,6 @@ public class AttributionReporterImpl extends AttributionReporter {
+@@ -32,8 +30,6 @@ public class AttributionReporterImpl extends AttributionReporter {
+     @Override
      public void reportAppImpression(BrowserContextHandle browserContext, String sourcePackageName,
-             String sourceEventId, String destination, String reportTo, long expiry,
-             long eventTime) {
--        AttributionReporterImplJni.get().reportAppImpression(browserContext, sourcePackageName,
--                sourceEventId, destination, reportTo, expiry, eventTime);
+             String sourceEventId, String destination, String reportTo, long expiry) {
+-        AttributionReporterImplJni.get().reportAppImpression(
+-                browserContext, sourcePackageName, sourceEventId, destination, reportTo, expiry);
      }
  
      @NativeMethods
@@ -338,15 +300,15 @@ diff --git a/content/public/browser/navigation_controller.cc b/content/public/br
 diff --git a/third_party/blink/common/features.cc b/third_party/blink/common/features.cc
 --- a/third_party/blink/common/features.cc
 +++ b/third_party/blink/common/features.cc
-@@ -42,7 +42,7 @@ const base::Feature kCSSContainerQueries{"CSSContainerQueries",
+@@ -32,7 +32,7 @@ const base::Feature kCSSContainerQueries{"CSSContainerQueries",
  
  // Controls whether the Conversion Measurement API infrastructure is enabled.
  const base::Feature kConversionMeasurement{"ConversionMeasurement",
 -                                           base::FEATURE_ENABLED_BY_DEFAULT};
 +                                           base::FEATURE_DISABLED_BY_DEFAULT};
  
- // Controls whether LCP calculations should exclude low-entropy images. If
- // enabled, then the associated parameter sets the cutoff, expressed as the
+ const base::Feature kGMSCoreEmoji{"GMSCoreEmoji",
+                                   base::FEATURE_DISABLED_BY_DEFAULT};
 diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
 --- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
 +++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
@@ -362,16 +324,24 @@ diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 
 +      name: "DisabledForBromite",
 +    },
      {
-       name: "AbortSignalThrowIfAborted",
-       status: "stable",
-@@ -496,7 +503,7 @@
+       name: "Accelerated2dCanvas",
+       settable_from_internals: true,
+@@ -463,13 +470,11 @@
      },
      {
        name: "ConversionMeasurement",
+-      origin_trial_feature_name: "ConversionMeasurement",
+-      origin_trial_allows_third_party: true,
+-      status: "experimental",
++      depends_on: ["DisabledForBromite"],
+     },
+     {
+       name: "ConversionMeasurementEventSources",
 -      status: "test",
 +      depends_on: ["DisabledForBromite"],
      },
      {
        name: "CooperativeScheduling"
---
-2.25.1
+-- 
+2.20.1
+
