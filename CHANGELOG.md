@@ -1,3 +1,14 @@
+# 95.0.4638.79
+* improvements for field trials disable patch (thanks to @uazo)
+* remove privacy sandbox UI leftover (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1560)
+* disable conversion measurement API (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1531)
+* remove all code related to FLoC (thanks to @uazo)
+* remove all code related to ENABLE_REPORTING (thanks to @uazo)
+* enable ad-tagging feature
+* SystemWebView: ignore StrictMode warning (thanks to @jylitalbit, https://github.com/bromite/bromite/pull/1567)
+* improvements for field trials fetch patch (thanks to @uazo)
+* disable accessibility service by default (thanks to @uazo, https://github.com/bromite/bromite/pull/1559)
+
 # 95.0.4638.78
 * disable third-party origin trials (fixes https://github.com/bromite/bromite/issues/1530)
 * dropped patch for async DNS flag
