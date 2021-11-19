@@ -119,6 +119,46 @@ directory.
 
 (Original Bromite README follows)
 
+## Merging upstream changes
+
+Periodically the Bromite project will add new patches for
+release. There is a specific process to add these to this repo which
+should be followed to ensure a clean and maintainable Git history.
+
+1. Make sure the upstream remote is established.
+
+If you do not have an upstream remote, add it with:
+
+    git remote add upstream https://github.com/bromite/bromite.git
+
+2. Retrieve the upstream changes
+
+    git fetch upstream
+
+3. Find the latest Bromite release tag
+
+    git describe --tags --abbrev=0 upstream/master
+
+This will give you output like `94.0.4606.94` which we'll use as an example going forward.
+
+4. Create a new branch based on this tag
+
+    git checkout -b upstream-94.0.4606.94 94.0.4606.94
+
+5. Rebase this branch on the current master
+
+    git rebase origin/master
+
+If the rebase complete cleanly, you're done! Push the branch and open
+a PR to master.
+
+If you run into conflicts, there is more work to do. We want to keep
+the upstream commits faithful to their original source. This means
+collecting any conflicts and putting them into a separate commit. The
+procedure is largely the same but start out by adding a commit with
+the conflicts pre-resolved. Then rebase onto `origin/master` and -- if
+the rebase succeeds cleanly -- push the new branch.
+
 # Bromite - Take back your browser
 
 <img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> <img src="https://www.bromite.org/license.svg" alt="GNU GPL v3" title="GNU VPL v3" />
