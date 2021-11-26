@@ -4,48 +4,97 @@ Subject: Disable HEAD requests for single-word Omnibar searches
 
 Patch from https://github.com/Eloston/ungoogled-chromium/issues/814#issuecomment-526873727
 ---
- .../ui/omnibox/chrome_omnibox_navigation_observer.cc      | 8 ++++----
- .../ui/omnibox/chrome_omnibox_navigation_observer.h       | 2 +-
- 2 files changed, 5 insertions(+), 5 deletions(-)
+ .../chrome_omnibox_navigation_observer.cc     | 61 -------------------
+ .../chrome_omnibox_navigation_observer.h      |  2 +-
+ 2 files changed, 1 insertion(+), 62 deletions(-)
 
 diff --git a/chrome/browser/ui/omnibox/chrome_omnibox_navigation_observer.cc b/chrome/browser/ui/omnibox/chrome_omnibox_navigation_observer.cc
 --- a/chrome/browser/ui/omnibox/chrome_omnibox_navigation_observer.cc
 +++ b/chrome/browser/ui/omnibox/chrome_omnibox_navigation_observer.cc
-@@ -86,8 +86,8 @@ ChromeOmniboxNavigationObserver::ChromeOmniboxNavigationObserver(
-       shortcuts_backend_(ShortcutsBackendFactory::GetForProfile(profile)),
-       load_state_(LOAD_NOT_SEEN),
-       fetch_state_(FETCH_NOT_COMPLETE) {
--  if (alternate_nav_match_.destination_url.is_valid())
--    CreateLoader(alternate_nav_match_.destination_url);
-+//  if (alternate_nav_match_.destination_url.is_valid())
-+//    CreateLoader(alternate_nav_match_.destination_url);
+@@ -108,60 +108,6 @@ NAVIGATION_HANDLE_USER_DATA_KEY_IMPL(NavigationUserData);
  
-   // We need to start by listening to AllSources, since we don't know which tab
-   // the navigation might occur in.
-@@ -291,7 +291,7 @@ void ChromeOmniboxNavigationObserver::OnAllLoadingFinished() {
-   delete this;
+ class ChromeOmniboxNavigationObserver::AlternativeNavigationURLLoader {
+  public:
+-  AlternativeNavigationURLLoader(
+-      const GURL& destination_url,
+-      scoped_refptr<ChromeOmniboxNavigationObserver> navigation_observer,
+-      base::OnceCallback<void(bool)> on_complete,
+-      network::mojom::URLLoaderFactory* loader_factory)
+-      : destination_url_(destination_url),
+-        navigation_observer_(std::move(navigation_observer)),
+-        on_complete_(std::move(on_complete)) {
+-    net::NetworkTrafficAnnotationTag traffic_annotation =
+-        net::DefineNetworkTrafficAnnotation("omnibox_navigation_observer", R"(
+-        semantics {
+-          sender: "Omnibox"
+-          description:
+-            "Certain omnibox inputs, e.g. single words, may either be search "
+-            "queries or attempts to navigate to intranet hostnames. When "
+-            "such a hostname is not in the user's history, a background "
+-            "request is made to see if it is navigable.  If so, the browser "
+-            "will display a prompt on the search results page asking if the "
+-            "user wished to navigate instead of searching."
+-          trigger:
+-            "User attempts to search for a string that is plausibly a "
+-            "navigable hostname but is not in the local history."
+-          data:
+-            "None. However, the hostname itself is a string the user "
+-            "searched for, and thus can expose data about the user's "
+-            "searches."
+-          destination: WEBSITE
+-        }
+-        policy {
+-          cookies_allowed: YES
+-          cookies_store: "user"
+-          setting: "This feature cannot be disabled in settings."
+-          policy_exception_justification:
+-            "By disabling DefaultSearchProviderEnabled, one can disable "
+-            "default search, and once users can't search, they can't hit "
+-            "this. More fine-grained policies are requested to be "
+-            "implemented (crbug.com/81226)."
+-        })");
+-    auto request = std::make_unique<network::ResourceRequest>();
+-    request->url = destination_url;
+-    request->method = "HEAD";
+-    request->load_flags = net::LOAD_DO_NOT_SAVE_COOKIES;
+-    loader_ = network::SimpleURLLoader::Create(std::move(request),
+-                                               traffic_annotation);
+-    loader_->SetAllowHttpErrorResults(true);
+-    loader_->SetOnRedirectCallback(base::BindRepeating(
+-        &AlternativeNavigationURLLoader::OnRedirect, base::Unretained(this)));
+-
+-    loader_->DownloadToString(
+-        loader_factory,
+-        base::BindOnce(&AlternativeNavigationURLLoader::OnURLLoadComplete,
+-                       base::Unretained(this)),
+-        1u /* max_body_size */);
+-  }
+ 
+   void OnRedirect(const net::RedirectInfo& redirect_info,
+                   const network::mojom::URLResponseHead& response_head,
+@@ -251,13 +197,6 @@ ChromeOmniboxNavigationObserver::ChromeOmniboxNavigationObserver(
+       profile_(profile),
+       show_infobar_(std::move(show_infobar)) {
+   NavigationUserData::CreateForNavigationHandle(navigation, this);
+-  if (alternative_nav_match_.destination_url.is_valid()) {
+-    loader_ = std::make_unique<AlternativeNavigationURLLoader>(
+-        alternative_nav_match.destination_url, this,
+-        base::BindOnce(
+-            &ChromeOmniboxNavigationObserver::OnAlternativeLoaderDone, this),
+-        GetURLLoaderFactory(loader_factory, profile));
+-  }
  }
  
--void ChromeOmniboxNavigationObserver::CreateLoader(
-+/*void ChromeOmniboxNavigationObserver::CreateLoader(
-     const GURL& destination_url) {
-   net::NetworkTrafficAnnotationTag traffic_annotation =
-       net::DefineNetworkTrafficAnnotation("omnibox_navigation_observer", R"(
-@@ -336,4 +336,4 @@ void ChromeOmniboxNavigationObserver::CreateLoader(
-   loader_->SetAllowHttpErrorResults(true);
-   loader_->SetOnRedirectCallback(base::BindRepeating(
-       &ChromeOmniboxNavigationObserver::OnURLRedirect, base::Unretained(this)));
--}
-+}*/
+ ChromeOmniboxNavigationObserver::~ChromeOmniboxNavigationObserver() {
 diff --git a/chrome/browser/ui/omnibox/chrome_omnibox_navigation_observer.h b/chrome/browser/ui/omnibox/chrome_omnibox_navigation_observer.h
 --- a/chrome/browser/ui/omnibox/chrome_omnibox_navigation_observer.h
 +++ b/chrome/browser/ui/omnibox/chrome_omnibox_navigation_observer.h
-@@ -130,7 +130,7 @@ class ChromeOmniboxNavigationObserver : public OmniboxNavigationObserver,
+@@ -89,7 +89,7 @@ class ChromeOmniboxNavigationObserver
  
-   // Creates a URL loader for |destination_url| and stores it in |loader_|.
-   // Does not start the loader.
--  void CreateLoader(const GURL& destination_url);
-+  //void CreateLoader(const GURL& destination_url);
+   class AlternativeNavigationURLLoader;
+ 
+-  void ShowAlternativeNavInfoBar();
++  //void ShowAlternativeNavInfoBar();
  
    const std::u16string text_;
    const AutocompleteMatch match_;
