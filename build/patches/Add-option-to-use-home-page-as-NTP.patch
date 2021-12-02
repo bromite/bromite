@@ -1,18 +1,21 @@
 From: csagan5 <32685696+csagan5@users.noreply.github.com>
-Date: Mon, 18 Mar 2019 21:47:12 +0100
+Date: Sat, 20 Nov 2021 15:36:54 +0000
 Subject: Add option to use home page as NTP
 
-Use about:blank as default homepage
+And allow use about:blank as default homepage
 ---
- .../java/res/xml/homepage_preferences.xml     |  5 +++
- .../browser/homepage/HomepageManager.java     | 22 +++++++++-
- .../homepage/settings/HomepageSettings.java   | 11 +++++
- .../chrome/browser/tabmodel/TabCreator.java   | 40 ++++++++++++++++++-
- .../strings/android_chrome_strings.grd        |  3 ++
- chrome/browser/ui/browser_ui_prefs.cc         |  2 +
- chrome/common/pref_names.cc                   |  4 ++
- chrome/common/pref_names.h                    |  1 +
- 8 files changed, 84 insertions(+), 4 deletions(-)
+ .../java/res/xml/homepage_preferences.xml        |  5 +++++
+ .../chrome/browser/homepage/HomepageManager.java | 16 ++++++++++++++++
+ .../homepage/settings/HomepageSettings.java      | 12 ++++++++++++
+ .../chrome/browser/metrics/LaunchMetrics.java    |  1 -
+ .../browser/tabmodel/ChromeTabCreator.java       |  7 +++++++
+ .../preferences/ChromePreferenceKeys.java        |  1 +
+ .../preferences/LegacyChromePreferenceKeys.java  |  1 +
+ .../android/strings/android_chrome_strings.grd   |  3 +++
+ chrome/browser/ui/browser_ui_prefs.cc            |  2 ++
+ chrome/common/pref_names.cc                      |  4 ++++
+ chrome/common/pref_names.h                       |  1 +
+ 11 files changed, 52 insertions(+), 1 deletion(-)
 
 diff --git a/chrome/android/java/res/xml/homepage_preferences.xml b/chrome/android/java/res/xml/homepage_preferences.xml
 --- a/chrome/android/java/res/xml/homepage_preferences.xml
@@ -21,7 +24,7 @@ diff --git a/chrome/android/java/res/xml/homepage_preferences.xml b/chrome/andro
          android:summaryOn="@string/text_on"
          android:summaryOff="@string/text_off" />
  
-+    <org.chromium.chrome.browser.settings.ChromeSwitchPreference
++    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
 +        android:key="ntp_is_homepage_switch"
 +        android:summaryOn="@string/options_ntp_is_homepage_label"
 +        android:summaryOff="@string/options_ntp_is_homepage_label" />
@@ -32,35 +35,8 @@ diff --git a/chrome/android/java/res/xml/homepage_preferences.xml b/chrome/andro
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/homepage/HomepageManager.java b/chrome/android/java/src/org/chromium/chrome/browser/homepage/HomepageManager.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/homepage/HomepageManager.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/homepage/HomepageManager.java
-@@ -30,6 +30,7 @@ import org.chromium.components.embedder_support.util.UrlUtilities;
-  */
- public class HomepageManager implements HomepagePolicyManager.HomepagePolicyStateListener,
-                                         PartnerBrowserCustomizations.PartnerHomepageListener {
-+    public static final String PREF_NTP_IS_HOMEPAGE = "newtabpage_is_homepage";
-     /**
-      * An interface to use for getting homepage related updates.
-      */
-@@ -117,7 +118,8 @@ public class HomepageManager implements HomepagePolicyManager.HomepagePolicyStat
-      */
-     public static boolean shouldCloseAppWithZeroTabs() {
-         return HomepageManager.isHomepageEnabled()
--                && !UrlUtilities.isNTPUrl(HomepageManager.getHomepageUri());
-+                && !UrlUtilities.isNTPUrl(HomepageManager.getHomepageUri())
-+                && (HomepageManager.getHomepageUri() != UrlConstants.CHROME_BLANK_URL);
-     }
- 
-     /**
-@@ -146,7 +148,7 @@ public class HomepageManager implements HomepagePolicyManager.HomepagePolicyStat
-      *         if the homepage button is force enabled via flag.
-      */
-     public static String getDefaultHomepageUri() {
--        return UrlConstants.NTP_NON_NATIVE_URL;
-+        return UrlConstants.CHROME_BLANK_URL;
-     }
- 
-     /**
-@@ -201,6 +203,14 @@ public class HomepageManager implements HomepagePolicyManager.HomepagePolicyStat
-         return mSharedPreferencesManager.readBoolean(ChromePreferenceKeys.HOMEPAGE_ENABLED, true);
+@@ -209,6 +209,22 @@ public class HomepageManager implements HomepagePolicyManager.HomepagePolicyStat
+         notifyHomepageUpdated();
      }
  
 +    /**
@@ -68,21 +44,14 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/homepage/Homepa
 +     *
 +     */
 +    public boolean getPrefNTPIsHomepageEnabled() {
-+        return mSharedPreferencesManager.readBoolean(PREF_NTP_IS_HOMEPAGE, false);
++        return mSharedPreferencesManager.readBoolean(ChromePreferenceKeys.HOMEPAGE_NTP_IS_HOMEPAGE, false);
 +    }
 +
-     /**
-      * Sets the user preference for whether the homepage is enabled.
-      */
-@@ -209,6 +219,14 @@ public class HomepageManager implements HomepagePolicyManager.HomepagePolicyStat
-         notifyHomepageUpdated();
-     }
- 
 +    /**
 +     * Sets the user preference for whether the new tab page is the homepage or not.
 +     */
 +    public void setPrefNTPIsHomepageEnabled(boolean enabled) {
-+        mSharedPreferencesManager.writeBoolean(PREF_NTP_IS_HOMEPAGE, enabled);
++        mSharedPreferencesManager.writeBoolean(ChromePreferenceKeys.HOMEPAGE_NTP_IS_HOMEPAGE, enabled);
 +        notifyHomepageUpdated();
 +    }
 +
@@ -92,7 +61,15 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/homepage/Homepa
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/homepage/settings/HomepageSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/homepage/settings/HomepageSettings.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/homepage/settings/HomepageSettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/homepage/settings/HomepageSettings.java
-@@ -32,6 +32,8 @@ public class HomepageSettings extends PreferenceFragmentCompat {
+@@ -22,6 +22,7 @@ import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
+ import org.chromium.components.browser_ui.settings.SettingsUtils;
+ import org.chromium.components.embedder_support.util.UrlUtilities;
+ import org.chromium.components.url_formatter.UrlFormatter;
++import org.chromium.components.embedder_support.util.UrlConstants;
+ 
+ /**
+  * Fragment that allows the user to configure homepage related preferences.
+@@ -32,6 +33,8 @@ public class HomepageSettings extends PreferenceFragmentCompat {
      @VisibleForTesting
      public static final String PREF_HOMEPAGE_RADIO_GROUP = "homepage_radio_group";
  
@@ -101,7 +78,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/homepage/settin
      /**
       * Delegate used to mark that the homepage is being managed.
       * Created for {@link org.chromium.chrome.browser.settings.HomepagePreferences}
-@@ -72,6 +74,15 @@ public class HomepageSettings extends PreferenceFragmentCompat {
+@@ -72,6 +75,15 @@ public class HomepageSettings extends PreferenceFragmentCompat {
          });
          mRadioButtons.setupPreferenceValues(createPreferenceValuesForRadioGroup());
  
@@ -117,66 +94,67 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/homepage/settin
          RecordUserAction.record("Settings.Homepage.Opened");
      }
  
-diff --git a/chrome/browser/tabmodel/android/java/src/org/chromium/chrome/browser/tabmodel/TabCreator.java b/chrome/browser/tabmodel/android/java/src/org/chromium/chrome/browser/tabmodel/TabCreator.java
---- a/chrome/browser/tabmodel/android/java/src/org/chromium/chrome/browser/tabmodel/TabCreator.java
-+++ b/chrome/browser/tabmodel/android/java/src/org/chromium/chrome/browser/tabmodel/TabCreator.java
-@@ -89,14 +89,50 @@ public abstract class TabCreator {
-     }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/metrics/LaunchMetrics.java b/chrome/android/java/src/org/chromium/chrome/browser/metrics/LaunchMetrics.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/metrics/LaunchMetrics.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/metrics/LaunchMetrics.java
+@@ -103,7 +103,6 @@ public class LaunchMetrics {
+             boolean showHomeButton, boolean homepageIsNtp, String homepageUrl) {
+         if (homepageUrl == null) {
+             homepageUrl = "";
+-            assert !showHomeButton : "Homepage should be disabled for a null URL";
+         }
+         LaunchMetricsJni.get().recordHomePageLaunchMetrics(
+                 showHomeButton, homepageIsNtp, homepageUrl);
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/ChromeTabCreator.java b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/ChromeTabCreator.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/ChromeTabCreator.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/ChromeTabCreator.java
+@@ -20,6 +20,7 @@ import org.chromium.chrome.browser.ServiceTabLauncher;
+ import org.chromium.chrome.browser.app.tab_activity_glue.ReparentingDelegateFactory;
+ import org.chromium.chrome.browser.app.tab_activity_glue.ReparentingTask;
+ import org.chromium.chrome.browser.compositor.CompositorViewHolder;
++import org.chromium.chrome.browser.homepage.HomepageManager;
+ import org.chromium.chrome.browser.init.StartupTabPreloader;
+ import org.chromium.chrome.browser.ntp.NewTabPageLaunchOrigin;
+ import org.chromium.chrome.browser.ntp.NewTabPageUtils;
+@@ -327,6 +328,12 @@ public class ChromeTabCreator extends TabCreator {
+      * @return the created tab.
+      */
+     public Tab launchUrl(String url, @TabLaunchType int type, Intent intent, long intentTimestamp) {
++        if (!mIncognito && url.equals(UrlConstants.NTP_URL)) {
++            if (HomepageManager.getInstance().getPrefNTPIsHomepageEnabled()) {
++                url = HomepageManager.getInstance().getHomepageUri();
++            }
++        }
++
+         LoadUrlParams loadUrlParams = new LoadUrlParams(url);
+         loadUrlParams.setIntentReceivedTimestamp(intentTimestamp);
+         return createNewTab(loadUrlParams, type, null, intent);
+diff --git a/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java b/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java
+--- a/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java
++++ b/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java
+@@ -550,6 +550,7 @@ public final class ChromePreferenceKeys {
+     public static final String HOMEPAGE_ENABLED = "homepage";
+     public static final String HOMEPAGE_USE_CHROME_NTP = "Chrome.Homepage.UseNTP";
+     public static final String HOMEPAGE_USE_DEFAULT_URI = "homepage_partner_enabled";
++    public static final String HOMEPAGE_NTP_IS_HOMEPAGE = "newtabpage_is_homepage";
  
      /**
--     * Creates a new tab and loads the NTP.
-+     * Creates a new tab and loads the NTP or the homepage, depending on user preferences.
-      */
-     public final void launchNTP() {
-         try {
-+            String newTabURL = UrlConstants.NTP_URL;
-+            if (getPrefNTPIsHomepageEnabled()) {
-+                newTabURL = getHomepageUri();
-+            }
-             TraceEvent.begin("TabCreator.launchNTP");
--            launchUrl(UrlConstants.NTP_URL, TabLaunchType.FROM_CHROME_UI);
-+            launchUrl(newTabURL, TabLaunchType.FROM_CHROME_UI);
-         } finally {
-             TraceEvent.end("TabCreator.launchNTP");
-         }
-     }
-+
-+    /* following functions are copied from HomepageManager to avoid a circular dependency */
-+
-+    private boolean getPrefNTPIsHomepageEnabled() {
-+        return mSharedPreferencesManager.readBoolean(PREF_NTP_IS_HOMEPAGE, false);
-+    }
-+
-+    private String getHomepageUri() {
-+        boolean isHomePageEnabled = mSharedPreferencesManager.readBoolean(ChromePreferenceKeys.HOMEPAGE_ENABLED, true);
-+        if (!isHomePageEnabled) {
-+            return "";
-+        }
-+        if (getPrefHomepageUseChromeNTP() || getPrefHomepageUseDefaultUri()) {
-+             //NOTE: ignores partner customizations
-+             return UrlConstants.NTP_NON_NATIVE_URL;
-+        }
-+        return getPrefHomepageCustomUri();
-+    }
-+
-+    private boolean getPrefHomepageUseChromeNTP() {
-+        return mSharedPreferencesManager.readBoolean(
-+                ChromePreferenceKeys.HOMEPAGE_USE_CHROME_NTP, false);
-+    }
-+
-+    private boolean getPrefHomepageUseDefaultUri() {
-+        return mSharedPreferencesManager.readBoolean(
-+                ChromePreferenceKeys.HOMEPAGE_USE_DEFAULT_URI, true);
-+    }
-+
-+    private String getPrefHomepageCustomUri() {
-+        return mSharedPreferencesManager.readString(ChromePreferenceKeys.HOMEPAGE_CUSTOM_URI, "");
-+    }
- }
+      * Key used to save homepage location set by enterprise policy
+diff --git a/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/LegacyChromePreferenceKeys.java b/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/LegacyChromePreferenceKeys.java
+--- a/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/LegacyChromePreferenceKeys.java
++++ b/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/LegacyChromePreferenceKeys.java
+@@ -105,6 +105,7 @@ public class LegacyChromePreferenceKeys {
+                 ChromePreferenceKeys.HOMEPAGE_CUSTOM_URI,
+                 ChromePreferenceKeys.HOMEPAGE_ENABLED,
+                 ChromePreferenceKeys.HOMEPAGE_USE_DEFAULT_URI,
++                ChromePreferenceKeys.HOMEPAGE_NTP_IS_HOMEPAGE,
+                 ChromePreferenceKeys.INCOGNITO_SHORTCUT_ADDED,
+                 ChromePreferenceKeys.LATEST_UNSUPPORTED_VERSION,
+                 ChromePreferenceKeys.LOCALE_MANAGER_AUTO_SWITCH,
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -1047,6 +1047,9 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -1050,6 +1050,9 @@ Your Google account may have other forms of browsing history like searches and a
        <message name="IDS_CLEAR_BROWSING_DATA_TAB_PERIOD_HOUR" desc="The option to delete browsing data from the last hour.">
          Last hour
        </message>
