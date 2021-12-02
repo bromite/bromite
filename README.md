@@ -181,10 +181,14 @@ the conflicts pre-resolved. Then rebase onto `origin/master` and -- if
 the rebase succeeds cleanly -- push the new branch.
 
 # Bromite - Take back your browser
-
-<img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> <img src="https://www.bromite.org/license.svg" alt="GNU GPL v3" title="GNU VPL v3" />
-
-<img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
+<a href="https://github.com/bromite/bromite/releases/latest">
+  <img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> </a>
+<a href="https://github.com/bromite/bromite/blob/master/LICENSE">
+  <img src="https://www.bromite.org/license.svg" alt="GNU GPL v3" title="GNU VPL v3" />
+</a> <br>
+<a href="https://www.bromite.org">
+  <img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
+</a>
 
 Bromite is a [Chromium](https://www.chromium.org/Home) fork with support for ad blocking and enhanced privacy.
 
