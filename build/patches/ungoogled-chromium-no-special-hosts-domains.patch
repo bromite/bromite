@@ -1,244 +1,20 @@
 From: csagan5 <32685696+csagan5@users.noreply.github.com>
 Date: Mon, 12 Feb 2018 21:36:33 +0100
-Subject: ungoogled-chromium: no special hosts/domains
+Subject: ungoogled-chromium: Disable Google host detection
 
 Disables various detections of Google hosts and functionality specific to them
-Disable domain reliability detection
 ---
- .../domain_reliability/service_factory.cc     |  24 +--
- components/domain_reliability/BUILD.gn        |  42 ++--
- .../domain_reliability/bake_in_configs.py     |   2 +-
- .../domain_reliability/context_manager.cc     |  22 +-
- .../domain_reliability/google_configs.cc      |  10 +-
- .../domain_reliability/google_configs.h       |   8 +-
- components/domain_reliability/uploader.cc     |   2 +-
- components/google/core/common/google_util.cc  | 199 ++----------------
+ components/google/core/common/google_util.cc  | 207 +-----------------
  .../browser/page_load_metrics_util.cc         |   4 +-
  .../common/page_load_metrics_util.cc          |  33 +--
  components/search_engines/template_url.cc     |   6 +-
  net/base/url_util.cc                          |  21 --
- 12 files changed, 44 insertions(+), 329 deletions(-)
+ 5 files changed, 8 insertions(+), 263 deletions(-)
 
-diff --git a/chrome/browser/domain_reliability/service_factory.cc b/chrome/browser/domain_reliability/service_factory.cc
---- a/chrome/browser/domain_reliability/service_factory.cc
-+++ b/chrome/browser/domain_reliability/service_factory.cc
-@@ -11,34 +11,12 @@
- 
- namespace domain_reliability {
- 
--namespace {
--
--// If Domain Reliability is enabled in the absence of a flag or field trial.
--const bool kDefaultEnabled = true;
--
--// The name and value of the field trial to turn Domain Reliability on.
--const char kFieldTrialName[] = "DomRel-Enable";
--const char kFieldTrialValueEnable[] = "enable";
--
--}  // namespace
--
- // Identifies Chrome as the source of Domain Reliability uploads it sends.
- const char DomainReliabilityServiceFactory::kUploadReporterString[] = "chrome";
- 
- // static
- bool DomainReliabilityServiceFactory::ShouldCreateService() {
--  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
--  if (command_line->HasSwitch(switches::kDisableDomainReliability))
--    return false;
--  if (command_line->HasSwitch(switches::kEnableDomainReliability))
--    return true;
--  if (!ChromeMetricsServiceAccessor::IsMetricsAndCrashReportingEnabled())
--    return false;
--  if (base::FieldTrialList::TrialExists(kFieldTrialName)) {
--    std::string value = base::FieldTrialList::FindFullName(kFieldTrialName);
--    return (value == kFieldTrialValueEnable);
--  }
--  return kDefaultEnabled;
-+  return false;
- }
- 
- }  // namespace domain_reliability
-diff --git a/components/domain_reliability/BUILD.gn b/components/domain_reliability/BUILD.gn
---- a/components/domain_reliability/BUILD.gn
-+++ b/components/domain_reliability/BUILD.gn
-@@ -7,26 +7,6 @@ action("bake_in_configs") {
-   script = "bake_in_configs.py"
- 
-   inputs = [
--    "baked_in_configs/c_android_clients_google_com.json",
--    "baked_in_configs/c_bigcache_googleapis_com.json",
--    "baked_in_configs/c_doc-0-0-sj_sj_googleusercontent_com.json",
--    "baked_in_configs/c_docs_google_com.json",
--    "baked_in_configs/c_drive_google_com.json",
--    "baked_in_configs/c_googlesyndication_com.json",
--    "baked_in_configs/c_pack_google_com.json",
--    "baked_in_configs/c_play_google_com.json",
--    "baked_in_configs/c_youtube_com.json",
--    "baked_in_configs/clients2_google_com.json",
--    "baked_in_configs/docs_google_com.json",
--    "baked_in_configs/gcp_gvt2_com.json",
--    "baked_in_configs/gcp_gvt6_com.json",
--    "baked_in_configs/google-analytics_com.json",
--    "baked_in_configs/googlevideo_com.json",
--    "baked_in_configs/gvt1_com.json",
--    "baked_in_configs/gvt2_com.json",
--    "baked_in_configs/gvt6_com.json",
--    "baked_in_configs/ssl_gstatic_com.json",
--    "baked_in_configs/www_google_com.json",
-   ]
- 
-   output_file = "$target_gen_dir/baked_in_configs.cc"
-@@ -34,13 +14,21 @@ action("bake_in_configs") {
- 
-   # The JSON file list is too long for the command line on Windows, so put
-   # them in a response file.
--  response_file_contents = rebase_path(inputs, root_build_dir)
--  args = [
--    "--file-list",
--    "{{response_file_name}}",
--    "--output",
--    rebase_path(output_file, root_build_dir),
--  ]
-+  if (is_win) {
-+      args = [
-+        "--file-list",
-+        "nul",
-+        "--output",
-+        rebase_path(output_file, root_build_dir),
-+      ]
-+  } else {
-+        args = [
-+        "--file-list",
-+        "/dev/null",
-+        "--output",
-+        rebase_path(output_file, root_build_dir),
-+      ]
-+  }
- }
- 
- component("domain_reliability") {
-diff --git a/components/domain_reliability/bake_in_configs.py b/components/domain_reliability/bake_in_configs.py
---- a/components/domain_reliability/bake_in_configs.py
-+++ b/components/domain_reliability/bake_in_configs.py
-@@ -490,7 +490,7 @@ def origin_is_whitelisted(origin):
-     domain = origin[8:-1]
-   else:
-     return False
--  return any(domain == e or domain.endswith('.' + e)  for e in DOMAIN_WHITELIST)
-+  return False
- 
- 
- def quote_and_wrap_text(text, width=79, prefix='  "', suffix='"'):
-diff --git a/components/domain_reliability/context_manager.cc b/components/domain_reliability/context_manager.cc
---- a/components/domain_reliability/context_manager.cc
-+++ b/components/domain_reliability/context_manager.cc
-@@ -41,26 +41,8 @@ void DomainReliabilityContextManager::RouteBeacon(
-   DomainReliabilityContext* superdomain_context =
-       GetSuperdomainContext(beacon_host);
- 
--  // Try to get a Google config which may match the host itself, or the host's
--  // parent domain.
--  std::unique_ptr<const DomainReliabilityConfig> google_config =
--      MaybeGetGoogleConfig(beacon_host);
--
--  if (!google_config) {
--    if (superdomain_context)
--      superdomain_context->OnBeacon(std::move(beacon));
--    return;
--  }
--
--  context_to_use = superdomain_context;
--  bool google_config_is_exact = (google_config->origin.host() == beacon_host);
--
--  // An exact match takes priority over an existing superdomain context, if any
--  // exists.
--  if (google_config_is_exact || !context_to_use)
--    context_to_use = AddContextForConfig(std::move(google_config));
--
--  context_to_use->OnBeacon(std::move(beacon));
-+  if (superdomain_context)
-+    superdomain_context->OnBeacon(std::move(beacon));
- }
- 
- void DomainReliabilityContextManager::ClearBeacons(
-diff --git a/components/domain_reliability/google_configs.cc b/components/domain_reliability/google_configs.cc
---- a/components/domain_reliability/google_configs.cc
-+++ b/components/domain_reliability/google_configs.cc
-@@ -9,7 +9,7 @@
- #include "base/strings/string_util.h"
- #include "net/base/url_util.h"
- 
--namespace domain_reliability {
-+namespace domain_reliability_disabled {
- 
- namespace {
- 
-@@ -28,7 +28,7 @@ struct GoogleConfigParams {
-   bool duplicate_for_www;
- };
- 
--const GoogleConfigParams kGoogleConfigs[] = {
-+/*const GoogleConfigParams kGoogleConfigs[] = {
-     // Origins with subdomains and same-origin collectors. Currently, all
-     // origins with same-origin collectors also run collectors on their www
-     // subdomain. (e.g., both foo.com and www.foo.com.)
-@@ -549,11 +549,11 @@ std::unique_ptr<const DomainReliabilityConfig> CreateGoogleConfig(
-   config->failure_sample_rate = 1.00;
-   config->path_prefixes.clear();
-   return config;
--}
-+}*/
- 
- }  // namespace
- 
--std::unique_ptr<const DomainReliabilityConfig> MaybeGetGoogleConfig(
-+/*std::unique_ptr<const DomainReliabilityConfig> MaybeGetGoogleConfig(
-     const std::string& hostname) {
-   bool is_www_subdomain =
-       base::StartsWith(hostname, "www.", base::CompareCase::SENSITIVE);
-@@ -603,6 +603,6 @@ GetAllGoogleConfigsForTesting() {
-       configs_out.push_back(CreateGoogleConfig(params, true));
-   }
-   return configs_out;
--}
-+} */
- 
- }  // namespace domain_reliability
-diff --git a/components/domain_reliability/google_configs.h b/components/domain_reliability/google_configs.h
---- a/components/domain_reliability/google_configs.h
-+++ b/components/domain_reliability/google_configs.h
-@@ -26,11 +26,11 @@ namespace domain_reliability {
- // the www subdomain. A superdomain match occurs if removing the first label of
- // |hostname| yields a string equal to a Google config's hostname and that
- // config specifies that it includes subdomains.
--std::unique_ptr<const DomainReliabilityConfig> DOMAIN_RELIABILITY_EXPORT
--MaybeGetGoogleConfig(const std::string& hostname);
-+//std::unique_ptr<const DomainReliabilityConfig> DOMAIN_RELIABILITY_EXPORT
-+//MaybeGetGoogleConfig(const std::string& hostname);
- 
--std::vector<std::unique_ptr<const DomainReliabilityConfig>>
--    DOMAIN_RELIABILITY_EXPORT GetAllGoogleConfigsForTesting();
-+//std::vector<std::unique_ptr<const DomainReliabilityConfig>>
-+//    DOMAIN_RELIABILITY_EXPORT GetAllGoogleConfigsForTesting();
- 
- }  // namespace domain_reliability
- 
-diff --git a/components/domain_reliability/uploader.cc b/components/domain_reliability/uploader.cc
---- a/components/domain_reliability/uploader.cc
-+++ b/components/domain_reliability/uploader.cc
-@@ -80,7 +80,7 @@ class DomainReliabilityUploaderImpl : public DomainReliabilityUploader,
-     if (discard_uploads_)
-       discarded_upload_count_++;
- 
--    if (discard_uploads_ || shutdown_) {
-+    if ((true)) {
-       DVLOG(1) << "Discarding report instead of uploading.";
-       UploadResult result;
-       result.status = UploadResult::SUCCESS;
 diff --git a/components/google/core/common/google_util.cc b/components/google/core/common/google_util.cc
 --- a/components/google/core/common/google_util.cc
 +++ b/components/google/core/common/google_util.cc
-@@ -27,132 +27,10 @@
+@@ -29,118 +29,6 @@
  
  namespace google_util {
  
@@ -357,25 +133,10 @@ diff --git a/components/google/core/common/google_util.cc b/components/google/co
  // Global functions -----------------------------------------------------------
  
  const char kGoogleHomepageURL[] = "https://www.google.com/";
- 
--bool HasGoogleSearchQueryParam(base::StringPiece str) {
--  url::Component query(0, static_cast<int>(str.length())), key, value;
--  while (url::ExtractQueryKeyValue(str.data(), &query, &key, &value)) {
--    base::StringPiece key_str = str.substr(key.begin, key.len);
--    if (key_str == "q" || key_str == "as_q" || key_str == "imgurl")
--      return true;
--  }
--  return false;
--}
--
- std::string GetGoogleLocale(const std::string& application_locale) {
-   // Google does not recognize "nb" for Norwegian Bokmal; it uses "no".
-   return (application_locale == "nb") ? "no" : application_locale;
-@@ -165,25 +43,7 @@ GURL AppendGoogleLocaleParam(const GURL& url,
- }
+@@ -168,24 +56,7 @@ GURL AppendGoogleLocaleParam(const GURL& url,
  
  std::string GetGoogleCountryCode(const GURL& google_homepage_url) {
--  base::StringPiece google_hostname = google_homepage_url.host_piece();
+   base::StringPiece google_hostname = google_homepage_url.host_piece();
 -  // TODO(igorcov): This needs a fix for case when the host has a trailing dot,
 -  // like "google.com./". https://crbug.com/720295.
 -  const size_t last_dot = google_hostname.find_last_of('.');
@@ -398,7 +159,7 @@ diff --git a/components/google/core/common/google_util.cc b/components/google/co
  }
  
  GURL GetGoogleSearchURL(const GURL& google_homepage_url) {
-@@ -222,65 +82,30 @@ bool StartsWithCommandLineGoogleBaseURL(const GURL& url) {
+@@ -224,9 +95,7 @@ bool StartsWithCommandLineGoogleBaseURL(const GURL& url) {
  
  bool IsGoogleHostname(base::StringPiece host,
                        SubdomainPermission subdomain_permission) {
@@ -409,14 +170,10 @@ diff --git a/components/google/core/common/google_util.cc b/components/google/co
  }
  
  bool IsGoogleDomainUrl(const GURL& url,
-                        SubdomainPermission subdomain_permission,
-                        PortPermission port_permission) {
--  return IsValidURL(url, port_permission) &&
--         IsCanonicalHostGoogleHostname(url.host_piece(), subdomain_permission);
-+  return false;
+@@ -237,86 +106,20 @@ bool IsGoogleDomainUrl(const GURL& url,
  }
  
--bool IsGoogleHomePageUrl(const GURL& url) {
+ bool IsGoogleHomePageUrl(const GURL& url) {
 -  // First check to see if this has a Google domain.
 -  if (!IsGoogleDomainUrl(url, DISALLOW_SUBDOMAIN,
 -                         DISALLOW_NON_STANDARD_PORTS) &&
@@ -428,11 +185,10 @@ diff --git a/components/google/core/common/google_util.cc b/components/google/co
 -  base::StringPiece path(url.path_piece());
 -  return IsPathHomePageBase(path) ||
 -         base::StartsWith(path, "/ig", base::CompareCase::INSENSITIVE_ASCII);
-+bool IsGoogleHomePageUrl(const GURL& url) { // disabled in Bromite
 +  return false;
  }
  
--bool IsGoogleSearchUrl(const GURL& url) {
+ bool IsGoogleSearchUrl(const GURL& url) {
 -  // First check to see if this has a Google domain.
 -  if (!IsGoogleDomainUrl(url, DISALLOW_SUBDOMAIN,
 -                         DISALLOW_NON_STANDARD_PORTS) &&
@@ -450,35 +206,64 @@ diff --git a/components/google/core/common/google_util.cc b/components/google/co
 -  // the path type.
 -  return HasGoogleSearchQueryParam(url.ref_piece()) ||
 -         (!is_home_page_base && HasGoogleSearchQueryParam(url.query_piece()));
-+bool IsGoogleSearchUrl(const GURL& url) { // disabled in Bromite
 +  return false;
  }
  
--bool IsYoutubeDomainUrl(const GURL& url,
--                        SubdomainPermission subdomain_permission,
--                        PortPermission port_permission) {
+ bool IsYoutubeDomainUrl(const GURL& url,
+                         SubdomainPermission subdomain_permission,
+                         PortPermission port_permission) {
 -  return IsValidURL(url, port_permission) &&
 -         IsCanonicalHostYoutubeHostname(url.host_piece(), subdomain_permission);
-+bool IsYoutubeDomainUrl(const GURL& url, SubdomainPermission subdomain_permission, PortPermission port_permission) { // disabled in Bromite
 +  return false;
  }
  
--bool IsGoogleAssociatedDomainUrl(const GURL& url) {
+ bool IsGoogleAssociatedDomainUrl(const GURL& url) {
 -  if (IsGoogleDomainUrl(url, ALLOW_SUBDOMAIN, ALLOW_NON_STANDARD_PORTS))
 -    return true;
 -
 -  if (IsYoutubeDomainUrl(url, ALLOW_SUBDOMAIN, ALLOW_NON_STANDARD_PORTS))
 -    return true;
-+bool IsGoogleAssociatedDomainUrl(const GURL& url) { // disabled on Bromite
-+  if ((true))
-+    return false;
+-
+-  // Some domains don't have international TLD extensions, so testing for them
+-  // is very straightforward.
+-  static const char* kSuffixesToSetHeadersFor[] = {
+-      ".android.com",
+-      ".doubleclick.com",
+-      ".doubleclick.net",
+-      ".ggpht.com",
+-      ".googleadservices.com",
+-      ".googleapis.com",
+-      ".googlesyndication.com",
+-      ".googleusercontent.com",
+-      ".googlevideo.com",
+-      ".gstatic.com",
+-      ".litepages.googlezip.net",
+-      ".ytimg.com",
+-  };
+-  const std::string host = url.host();
+-  for (size_t i = 0; i < base::size(kSuffixesToSetHeadersFor); ++i) {
+-    if (base::EndsWith(host, kSuffixesToSetHeadersFor[i],
+-                       base::CompareCase::INSENSITIVE_ASCII)) {
+-      return true;
+-    }
+-  }
+-
+-  // Exact hostnames in lowercase to set headers for.
+-  static const char* kHostsToSetHeadersFor[] = {
+-      "googleweblight.com",
+-  };
+-  for (size_t i = 0; i < base::size(kHostsToSetHeadersFor); ++i) {
+-    if (base::LowerCaseEqualsASCII(host, kHostsToSetHeadersFor[i]))
+-      return true;
+-  }
+-
+   return false;
+ }
  
-   // Some domains don't have international TLD extensions, so testing for them
-   // is very straightforward.
 diff --git a/components/page_load_metrics/browser/page_load_metrics_util.cc b/components/page_load_metrics/browser/page_load_metrics_util.cc
 --- a/components/page_load_metrics/browser/page_load_metrics_util.cc
 +++ b/components/page_load_metrics/browser/page_load_metrics_util.cc
-@@ -210,9 +210,7 @@ bool DidObserveLoadingBehaviorInAnyFrame(
+@@ -196,9 +196,7 @@ bool DidObserveLoadingBehaviorInAnyFrame(
  }
  
  bool IsGoogleSearchHostname(const GURL& url) {
@@ -492,7 +277,7 @@ diff --git a/components/page_load_metrics/browser/page_load_metrics_util.cc b/co
 diff --git a/components/page_load_metrics/common/page_load_metrics_util.cc b/components/page_load_metrics/common/page_load_metrics_util.cc
 --- a/components/page_load_metrics/common/page_load_metrics_util.cc
 +++ b/components/page_load_metrics/common/page_load_metrics_util.cc
-@@ -24,38 +24,7 @@ const int kExtraBufferTimerDelayMillis = 50;
+@@ -36,38 +36,7 @@ const char* kBufferTimerDelayParamName = "BufferTimerDelayMillis";
  }  // namespace
  
  absl::optional<std::string> GetGoogleHostnamePrefix(const GURL& url) {
@@ -535,7 +320,7 @@ diff --git a/components/page_load_metrics/common/page_load_metrics_util.cc b/com
 diff --git a/components/search_engines/template_url.cc b/components/search_engines/template_url.cc
 --- a/components/search_engines/template_url.cc
 +++ b/components/search_engines/template_url.cc
-@@ -532,11 +532,7 @@ std::u16string TemplateURLRef::SearchTermToString16(
+@@ -527,11 +527,7 @@ std::u16string TemplateURLRef::SearchTermToString16(
  bool TemplateURLRef::HasGoogleBaseURLs(
      const SearchTermsData& search_terms_data) const {
    ParseIfNecessary(search_terms_data);
@@ -551,7 +336,7 @@ diff --git a/components/search_engines/template_url.cc b/components/search_engin
 diff --git a/net/base/url_util.cc b/net/base/url_util.cc
 --- a/net/base/url_util.cc
 +++ b/net/base/url_util.cc
-@@ -455,27 +455,6 @@ bool HasGoogleHost(const GURL& url) {
+@@ -442,27 +442,6 @@ bool HasGoogleHost(const GURL& url) {
  }
  
  bool IsGoogleHost(base::StringPiece host) {
@@ -579,5 +364,6 @@ diff --git a/net/base/url_util.cc b/net/base/url_util.cc
    return false;
  }
  
---
-2.25.1
+-- 
+2.20.1
+
