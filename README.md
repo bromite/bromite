@@ -298,6 +298,7 @@ Flags which have been retired from upstream Chromium but are still available in 
 * `#num-raster-threads`
 * `#enable-image-reader`, enabled by default
 * `#enable-tab-groups` and `#enable-tab-groups-ui-improvements`
+* `#offline-indicator-v2`
 
 New flags:
 
