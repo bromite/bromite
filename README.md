@@ -10,7 +10,7 @@
 
 Bromite is a [Chromium](https://www.chromium.org/Home) fork with support for ad blocking and enhanced privacy.
 
-Bromite is only available for Android Lollipop (v5.0, API level 21) and above.
+Bromite is only available for Android Marshmallow (v6.0, API level 23) and above.
 
 <img src="https://fdroid.bromite.org/fdroid/bromite_bromite_gh_downloads.svg" alt="Downloads on Github" title="Downloads on Github" />
 
@@ -145,7 +145,7 @@ All built versions are available as [releases](https://github.com/bromite/bromit
 
 Each tag corresponds to a Chromium Stable release tag.
 
-Bromite is currently built for ARM, ARM64 and x86 and for the Android SDK versions 19 and 21; [Bromite SystemWebView](https://www.bromite.org/system_web_view) is provided as well (SDK21+).
+Bromite is currently built for ARM, ARM64 and x86 and for the Android SDK version 23+; [Bromite SystemWebView](https://www.bromite.org/system_web_view) is provided as well (SDK23+).
 For every Bromite build you can always find a matching [vanilla Chromium](https://www.bromite.org/chromium) build which is used for example to verify which issues are specific to Bromite or not.
 
 You will automatically receive notifications about new updates (and be able to install them) via the auto updater functionality (enabled by default), see [related wiki page](https://github.com/bromite/bromite/wiki/AutomaticUpdates).
