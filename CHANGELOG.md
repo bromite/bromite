@@ -1,3 +1,11 @@
+# 96.0.4664.54
+* restored offline-indicator-v2 flag (fixes https://github.com/bromite/bromite/issues/1588)
+* re-introduced option to use home page as NTP (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1519)
+* ask user before closing all tabs (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1561)
+* fix crash on always incognito on tablet (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1611)
+* dropped patch to not upload crash data
+* fix autofill pop-up not appearing (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1534)
+
 # 95.0.4638.79
 * improvements for field trials disable patch (thanks to @uazo)
 * remove privacy sandbox UI leftover (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1560)

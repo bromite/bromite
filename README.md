@@ -1,12 +1,16 @@
 # Bromite - Take back your browser
-
-<img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> <img src="https://www.bromite.org/license.svg" alt="GNU GPL v3" title="GNU VPL v3" />
-
-<img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
+<a href="https://github.com/bromite/bromite/releases/latest">
+  <img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> </a>
+<a href="https://github.com/bromite/bromite/blob/master/LICENSE">
+  <img src="https://www.bromite.org/license.svg" alt="GNU GPL v3" title="GNU VPL v3" />
+</a> <br>
+<a href="https://www.bromite.org">
+  <img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
+</a>
 
 Bromite is a [Chromium](https://www.chromium.org/Home) fork with support for ad blocking and enhanced privacy.
 
-Bromite is only available for Android Lollipop (v5.0, API level 21) and above.
+Bromite is only available for Android Marshmallow (v6.0, API level 23) and above.
 
 <img src="https://fdroid.bromite.org/fdroid/bromite_bromite_gh_downloads.svg" alt="Downloads on Github" title="Downloads on Github" />
 
@@ -112,6 +116,7 @@ Flags which have been retired from upstream Chromium but are still available in 
 * `#num-raster-threads`
 * `#enable-image-reader`, enabled by default
 * `#enable-tab-groups` and `#enable-tab-groups-ui-improvements`
+* `#offline-indicator-v2`
 
 New flags:
 
@@ -140,7 +145,7 @@ All built versions are available as [releases](https://github.com/bromite/bromit
 
 Each tag corresponds to a Chromium Stable release tag.
 
-Bromite is currently built for ARM, ARM64 and x86 and for the Android SDK versions 19 and 21; [Bromite SystemWebView](https://www.bromite.org/system_web_view) is provided as well (SDK21+).
+Bromite is currently built for ARM, ARM64 and x86 and for the Android SDK version 23+; [Bromite SystemWebView](https://www.bromite.org/system_web_view) is provided as well (SDK23+).
 For every Bromite build you can always find a matching [vanilla Chromium](https://www.bromite.org/chromium) build which is used for example to verify which issues are specific to Bromite or not.
 
 You will automatically receive notifications about new updates (and be able to install them) via the auto updater functionality (enabled by default), see [related wiki page](https://github.com/bromite/bromite/wiki/AutomaticUpdates).
