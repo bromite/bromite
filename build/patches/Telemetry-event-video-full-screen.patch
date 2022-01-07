@@ -1,0 +1,188 @@
+From: Yifeng <wuyifeng@nd.com.cn>
+Date: Wed, 29 Dec 2021 05:40:00 +0000
+Subject: AP9-3128 Implement telemetry events for AP9 and AP9 Premium Chromium App
+
+KPI: When users are watching video within the Chromium Browser are they viewing the video in full screen mode?
+Event/Trigger: Chromium Video Player Full Screen Mode
+Event Display Name: Chromium Video Player Full Screen Mode
+Event Description: Video Player in Chromium set to full screen mode
+Property Type: Event
+Property Name: Video Player in Chromium Full Screen Mode
+Property Value: Full screen mode selected in browser video player
+Event Tags: AP9, Panel Telemetry, Applications, Chromium
+Jira Ticket: https://prometheanworld.atlassian.net/browse/AP9-3128
+
+---
+ third_party/android_deps/build.gradle |  5 +++++
+ chrome/android/java/AndroidManifest.xml | 4 ++++
+ chrome/android/BUILD.gn | 2 ++
+ chrome/android/java/src/org/chromium/chrome/browser/base/SplitMonochromeApplication.java | 24 ++++++++++++++++++++++++
+ chrome/android/java/src/org/chromium/chrome/browser/fullscreen/FullscreenHtmlApiHandler.java | 9 +++++++++
+ third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy | 15 +++++++++++++++
+ 6 files changed, 58 insertions(+), 0 deletion(-)
+
+diff --git a/third_party/android_deps/build.gradle b/third_party/android_deps/build.gradle
+--- a/third_party/android_deps/build.gradle
++++ b/third_party/android_deps/build.gradle
+@@ -18,8 +18,10 @@
+ apply plugin: 'org.owasp.dependencycheck'
+
+ repositories {
+     google()
+     mavenCentral()
++    maven { url 'https://artifactory.prometheanjira.com/artifactory/promethean-release' }
++    jcenter()
+ }
+
+ dependencyCheck {
+@@ -117,7 +119,10 @@
+     compile 'com.google.guava:guava:30.1-android'
+
+     // Needed by androidx.
+     compile 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.4.3'
+
++    // promethean telemetry
++    compile 'com.prometheanworld:telemetry:0.3.2'
++
+     // buildCompile targets have supports_android = false.
+     buildCompile 'com.google.guava:guava:30.1-jre'
+diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/AndroidManifest.xml
+--- a/chrome/android/java/AndroidManifest.xml
++++ b/chrome/android/java/AndroidManifest.xml
+@@ -1284,6 +1284,10 @@ by a child template that "extends" this file.
+           tools:ignore="ExportedContentProvider">
+       </provider>
+
++      <meta-data
++          android:name="com.prometheanworld.telemetry.product_name"
++          android:value="@string/app_name" />
++
+       {% block base_application_definitions %}
+       {% endblock %}
+       {% block extra_application_definitions_for_test %}
+diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
+--- a/chrome/android/BUILD.gn
++++ b/chrome/android/BUILD.gn
+@@ -172,6 +172,7 @@ android_resources("chrome_base_module_resources") {
+     "java/res_chromium_base/mipmap-xxxhdpi/app_icon.png",
+     "java/res_chromium_base/values/channel_constants.xml",
+   ]
++  resource_overlay = true
+ }
+
+ android_resources("chrome_app_java_resources") {
+@@ -2455,6 +2456,7 @@ android_library("base_module_java") {
+     "java/src/org/chromium/chrome/browser/tracing/TracingNotificationService.java",
+   ]
+   deps = [
++    "//third_party/android_deps:com_prometheanworld_telemetry_java",
+     ":chrome_base_module_resources",
+     "//base:base_java",
+     "//chrome/browser/download/android:file_provider_java",
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/base/SplitMonochromeApplication.java b/chrome/android/java/src/org/chromium/chrome/browser/base/SplitMonochromeApplication.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/base/SplitMonochromeApplication.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/base/SplitMonochromeApplication.java
+@@ -5,6 +5,10 @@
+ package org.chromium.chrome.browser.base;
+
++import android.app.ActivityManager;
+ import android.content.Context;
++import android.os.Process;
++
++import com.prometheanworld.telemetry.TelemetryInitializer;
+
+ import org.chromium.android_webview.nonembedded.WebViewApkApplication;
+ import org.chromium.base.library_loader.LibraryProcessType;
+@@ -39,6 +43,14 @@ public class SplitMonochromeApplication extends SplitChromeApplication {
+         initializeMonochromeProcessCommon(getPackageName());
+     }
+
++    @Override
++    public void onCreate() {
++       super.onCreate();
++       if (isMainProcess(this)) {
++           new TelemetryInitializer().create(this);
++       }
++    }
++
+     @Override
+     protected Impl createNonBrowserApplication() {
+         return new NonBrowserMonochromeApplication();
+@@ -62,4 +74,20 @@ public class SplitMonochromeApplication extends SplitChromeApplication {
+     public boolean isWebViewProcess() {
+         return WebViewApkApplication.isWebViewProcess();
+     }
++
++    public static boolean isMainProcess(Context context) {
++       boolean isMain = false;
++       try {
++            ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
++           for (ActivityManager.RunningAppProcessInfo process : am.getRunningAppProcesses()) {
++                if (process.pid == Process.myPid() && process.processName.equals(context.getPackageName())) {
++                   isMain = true;
++                   break;
++               }
++            }
++       } catch (Throwable e) {
++            e.printStackTrace();
++       }
++       return isMain;
++    }
+ }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/fullscreen/FullscreenHtmlApiHandler.java b/chrome/android/java/src/org/chromium/chrome/browser/fullscreen/FullscreenHtmlApiHandler.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/fullscreen/FullscreenHtmlApiHandler.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/fullscreen/FullscreenHtmlApiHandler.java
+@@ -20,6 +20,8 @@
+ import androidx.annotation.Nullable;
+ import androidx.core.util.ObjectsCompat;
+
++import com.prometheanworld.telemetry.Telemetry;
++
+ import org.chromium.base.ActivityState;
+ import org.chromium.base.ApplicationStatus;
+ import org.chromium.base.ApplicationStatus.ActivityStateListener;
+@@ -47,5 +49,6 @@
+ import org.chromium.content_public.browser.SelectionPopupController;
+ import org.chromium.content_public.browser.WebContents;
+ import org.chromium.ui.widget.Toast;
++import org.json.JSONObject;
+
+ import java.lang.ref.WeakReference;
+@@ -495,4 +498,10 @@
+         mWebContentsInFullscreen = webContents;
+         mContentViewInFullscreen = contentView;
+         mTabInFullscreen = tab;
++
++        try {
++            JSONObject eventData = new JSONObject();
++            eventData.put("Video Player in Chromium Full Screen Mode", "Full screen mode selected in browser video player");
++            Telemetry.send("Chromium Video Player Full Screen Mode", eventData);
++        } catch (Throwable e) { }
+     }
+diff --git a/third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy b/third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy
+--- a/third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy
++++ b/third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy
+@@ -864,6 +864,21 @@ class BuildConfigGenerator extends DefaultTask {
+                 sb.append('  # this for other purposes, change buildCompileNoDeps in build.gradle.\n')
+                 sb.append('  visibility = [ "//build/android/unused_resources:*" ]\n')
+                 break
++            case 'com_prometheanworld_telemetry':
++            case 'com_prometheanworld_activpanel':
++            case 'com_mixpanel_android_mixpanel_android':
++                sb.append('  extract_native_libraries = true\n')
++                sb.append('  enable_bytecode_checks = false\n')
++                break
++            case 'net_pubnative_advertising_id_client':
++                sb.append('  resource_overlay = true\n')
++                sb.append('  enable_bytecode_checks = false\n')
++                break
++            case 'org_jetbrains_kotlinx_kotlinx_coroutines_android':
++            case 'org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm':
++                sb.append('  jar_excluded_patterns = [ "META-INF/proguard/*" ]\n')
++                sb.append('  enable_bytecode_checks = false\n')
++                break
+             case 'org_jetbrains_kotlinx_kotlinx_coroutines_android':
+                 sb.append('requires_android = true')
+                 break
+--
+2.17.1

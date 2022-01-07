@@ -90,6 +90,27 @@ done
 All patches should apply cleanly. If they did not, make sure you have
 checked out the proper Chromium tag (95.0.4638.78).
 
+## Getting the third dependencies
+
+If you have added the third dependencies to `third_party/android_deps/build.gradle`,
+you need to run `third_party/android_deps/fetch_all.py` to regenerate libs.
+
+```
+python3 third_party/android_deps/fetch_all.py --android-deps-dir third_party/android_deps/ --ignore-vulnerabilities --ignore-licenses
+```
+
+### How to add third dependencies
+
+First, you need to add the configurations to `third_party/android_deps/build.gradle`,
+like `compile 'com.prometheanworld:telemetry:0.3.2'`.
+Also, if other configurations (such as `resource_overlay = true`, `enable_bytecode_checks = false`) are needed,
+you need to add these configurations to `third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy`.
+
+Secondly, if you want to use these libs on `chrome/android`, you need to add these to `chrome/android/BUILD.gn`.
+If you don't know where to add, maybe you can run the build, the error message will tell you.
+
+Finally, if you don't know how to begin with, maybe `Telemetry-event-video-full-screen.patch` will help you.
+
 ## Setting the build arguments
 
 The arguments in `bromite/build/GN_ARGS` must be used as the Chromium
