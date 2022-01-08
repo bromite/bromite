@@ -15,10 +15,10 @@ If instead of a bug report you want to ask a question then please use the GitHub
 
 ### Bromite version
 
-Version: `89.0...`
-Arch: `arm` or `arm64` or `x86`
-Android version: (example: `9.0`)
-Device model: (example: `SM-G960UZKABST`)
+Version: `89.0...` <!-- specify here a single Bromite version -->
+Arch: `arm` or `arm64` or `x86` <!-- 'or' means you must specify only 1 architecture -->
+Android version: (example: `9.0`) <!-- specify a single Android version -->
+Device model: (example: `SM-G960UZKABST`) <!-- specify a single device model -->
 
 ### Flags
 
