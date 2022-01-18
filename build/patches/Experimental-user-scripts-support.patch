@@ -72,7 +72,7 @@ See also: components/user_scripts/README.md
  .../user-script-ui/user-scripts-ui.js         |   9 +
  .../browser/ui/user_scripts_ui.cc             | 148 ++++
  .../user_scripts/browser/ui/user_scripts_ui.h |  39 +
- .../browser/user_script_loader.cc             | 721 ++++++++++++++++
+ .../browser/user_script_loader.cc             | 714 ++++++++++++++++
  .../user_scripts/browser/user_script_loader.h | 170 ++++
  .../browser/user_script_pref_info.cc          |  34 +
  .../browser/user_script_pref_info.h           |  72 ++
@@ -95,7 +95,7 @@ See also: components/user_scripts/README.md
  components/user_scripts/common/url_pattern.h  | 302 +++++++
  .../user_scripts/common/url_pattern_set.cc    | 335 ++++++++
  .../user_scripts/common/url_pattern_set.h     | 161 ++++
- components/user_scripts/common/user_script.cc | 317 +++++++
+ components/user_scripts/common/user_script.cc | 325 +++++++
  components/user_scripts/common/user_script.h  | 403 +++++++++
  .../common/user_scripts_features.cc           |  32 +
  .../common/user_scripts_features.h            |  34 +
@@ -121,7 +121,7 @@ See also: components/user_scripts/README.md
  .../user_scripts/renderer/scripts_run_info.h  |  70 ++
  .../renderer/user_script_injector.cc          | 228 +++++
  .../renderer/user_script_injector.h           |  87 ++
- .../user_scripts/renderer/user_script_set.cc  | 259 ++++++
+ .../user_scripts/renderer/user_script_set.cc  | 262 ++++++
  .../user_scripts/renderer/user_script_set.h   | 102 +++
  .../renderer/user_script_set_manager.cc       |  77 ++
  .../renderer/user_script_set_manager.h        |  62 ++
@@ -133,7 +133,7 @@ See also: components/user_scripts/README.md
  .../renderer/web_ui_injection_host.h          |  28 +
  .../strings/userscripts_strings.grdp          |  55 ++
  tools/gritsettings/resource_ids.spec          |   6 +
- 111 files changed, 9580 insertions(+), 2 deletions(-)
+ 111 files changed, 9584 insertions(+), 2 deletions(-)
  create mode 100644 components/user_scripts/README.md
  create mode 100755 components/user_scripts/android/BUILD.gn
  create mode 100644 components/user_scripts/android/java/res/layout/accept_script_item.xml
@@ -2833,7 +2833,7 @@ diff --git a/components/user_scripts/browser/user_script_loader.cc b/components/
 new file mode 100755
 --- /dev/null
 +++ b/components/user_scripts/browser/user_script_loader.cc
-@@ -0,0 +1,721 @@
+@@ -0,0 +1,714 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -2895,6 +2895,7 @@ new file mode 100755
 +#include "file_task_runner.h"
 +#include "user_script_prefs.h"
 +#include "user_script_pref_info.h"
++#include "../common/host_id.h"
 +
 +using content::BrowserThread;
 +using content::BrowserContext;
@@ -2923,16 +2924,6 @@ new file mode 100755
 +// internal use
 +static const base::StringPiece kParserError("// @error");
 +static const base::StringPiece kForceDisabled("// @disabled");
-+
-+bool invalidChar(unsigned char c)
-+{
-+  return !(c>=0 && c <128);
-+}
-+
-+void stripUnicode(std::string& str)
-+{
-+  str.erase(remove_if(str.begin(),str.end(), invalidChar), str.end());
-+}
 +
 +// Helper function to parse greasesmonkey headers
 +bool GetDeclarationValue(const base::StringPiece& line,
@@ -3101,13 +3092,12 @@ new file mode 100755
 +      return false;
 +    }
 +
++    script->set_name(user_script_path.BaseName().value());
 +    script->set_match_origin_as_fallback(MatchOriginAsFallbackBehavior::kNever);
 +
-+    // remove unicode chars and set content into File
-+    stripUnicode(content);
 +    std::unique_ptr<UserScript::File> file(new UserScript::File());
 +    file->set_content(content);
-+    file->set_url(GURL(/*script_key*/ "script.js")); // name doesn't matter
++    file->set_url(GURL(base::StrCat({"https://userscripts/file/", script->name(), ".js"})));
 +
 +    // create SHA256 of file
 +    char raw[crypto::kSHA256Length] = {0};
@@ -3157,6 +3147,9 @@ new file mode 100755
 +  base::FilePath full_name;
 +  while (full_name = dir_enum.Next(), !full_name.empty()) {
 +    std::unique_ptr<UserScript> userscript(new UserScript());
++    userscript->set_id(UserScript::GenerateUserScriptID());
++    userscript->set_host_id(HostID(HostID::HostType::EXTENSIONS,
++      "_" + base::NumberToString(userscript->id())));
 +
 +    std::u16string error;
 +    bool found_metadata;
@@ -6425,7 +6418,7 @@ diff --git a/components/user_scripts/common/user_script.cc b/components/user_scr
 new file mode 100755
 --- /dev/null
 +++ b/components/user_scripts/common/user_script.cc
-@@ -0,0 +1,317 @@
+@@ -0,0 +1,325 @@
 +// Copyright 2013 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -6533,6 +6526,12 @@ new file mode 100755
 +}
 +
 +bool UserScript::MatchesURL(const GURL& url) const {
++  // exclude schemas not valid
++  URLPattern pattern(kValidUserScriptSchemes);
++  pattern.Parse(url.spec());
++  if (!pattern.IsValidScheme(pattern.scheme()))
++    return false;
++
 +  if (!url_set_.is_empty()) {
 +    if (!url_set_.MatchesURL(url)) {
 +      if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts))
@@ -6594,6 +6593,7 @@ new file mode 100755
 +  // Write the simple types to the pickle.
 +  pickle->WriteInt(run_location());
 +  pickle->WriteInt(user_script_id_);
++  pickle->WriteString(name_);
 +  pickle->WriteBool(emulate_greasemonkey());
 +  pickle->WriteBool(match_all_frames());
 +  pickle->WriteInt(static_cast<int>(match_origin_as_fallback()));
@@ -6649,6 +6649,7 @@ new file mode 100755
 +  run_location_ = static_cast<RunLocation>(run_location);
 +
 +  CHECK(iter->ReadInt(&user_script_id_));
++  CHECK(iter->ReadString(&name_));
 +  CHECK(iter->ReadBool(&emulate_greasemonkey_));
 +  CHECK(iter->ReadBool(&match_all_frames_));
 +  int match_origin_as_fallback_int = 0;
@@ -9713,7 +9714,7 @@ diff --git a/components/user_scripts/renderer/user_script_set.cc b/components/us
 new file mode 100755
 --- /dev/null
 +++ b/components/user_scripts/renderer/user_script_set.cc
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,262 @@
 +// Copyright 2014 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -9896,8 +9897,9 @@ new file mode 100755
 +  bool is_subframe = web_frame->Parent();
 +  if (!script->MatchesDocument(effective_document_url, is_subframe)) {
 +    if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts))
-+      LOG(INFO) << "UserScripts: No Match name=" << script->name() << " " <<
-+                                         "url=" << effective_document_url.spec();
++      LOG(INFO) << "UserScripts: Match name=" << script->name() <<
++                                      " id=" << script->host_id().id() <<
++                                      " url=" << effective_document_url.spec();
 +    return injection;
 +  }
 +
@@ -9919,11 +9921,13 @@ new file mode 100755
 +    if (base::FeatureList::IsEnabled(features::kEnableLoggingUserScripts)) {
 +      if (script->run_location() != run_location)
 +        LOG(INFO) << "UserScripts: run location for name=" << script->name() <<
-+                                        "current " << run_location << " " <<
-+                                        "need " << script->run_location();
++                                      " id=" << script->host_id().id() <<
++                                      " current " << run_location <<
++                                      " need " << script->run_location();
 +      else
-+        LOG(INFO) << "UserScripts: Match but no run name=" << script->name() << " " <<
-+                                        "url=" << effective_document_url.spec();
++        LOG(INFO) << "UserScripts: Match but no run name=" << script->name() <<
++                                      " id=" << script->host_id().id() <<
++                                      " url=" << effective_document_url.spec();
 +    }
 +  }
 +  return injection;
@@ -10495,8 +10499,8 @@ new file mode 100755
 +namespace {
 +
 +// The default secure CSP to be used in order to prevent remote scripts.
++// use "script-src 'self' 'unsafe-eval'; object-src 'self';" to enable eval
 +const char kDefaultSecureCSP[] = "script-src 'self'; object-src 'self';";
-+
 +}
 +
 +WebUIInjectionHost::WebUIInjectionHost(const HostID& host_id)
