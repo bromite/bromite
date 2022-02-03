@@ -49,9 +49,9 @@ ld.lld: error: undefined symbol: notifier::NotifierOptions::NotifierOptions()
  .../chrome/browser/ntp/RecentTabsManager.java |  72 +------
  .../browser/ntp/RecentTabsRowAdapter.java     |   6 -
  .../browser/omaha/RequestGenerator.java       |   3 -
- .../PasswordManagerLauncher.java              |   9 -
+ .../PasswordManagerLauncher.java              |   9 +-
  .../settings/PasswordEntryViewer.java         |   5 +-
- .../settings/PasswordSettings.java            |  29 +--
+ .../settings/PasswordSettings.java            |  32 +---
  .../privacy/settings/PrivacySettings.java     |  30 ---
  .../chrome/browser/settings/MainSettings.java | 135 +------------
  .../browser/settings/SettingsActivity.java    |   5 +-
@@ -67,12 +67,13 @@ ld.lld: error: undefined symbol: notifier::NotifierOptions::NotifierOptions()
  ...onfirmImportSyncDataDialogCoordinator.java |   6 +-
  .../signin/ConfirmSyncDataStateMachine.java   |   7 -
  .../ui/signin/SignOutDialogFragment.java      |  12 --
+ .../WebSigninAccountPickerDelegate.java       |  18 --
  .../ui/signin/fre/SigninFirstRunMediator.java |  24 +--
  .../strings/android_chrome_strings.grd        |  15 --
  .../signin/SystemAccountManagerDelegate.java  |  30 +--
  .../net/HttpNegotiateAuthenticator.java       |  88 +--------
  .../chromoting/base/OAuthTokenFetcher.java    |   2 -
- 53 files changed, 50 insertions(+), 1244 deletions(-)
+ 54 files changed, 51 insertions(+), 1264 deletions(-)
 
 diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
 --- a/chrome/android/BUILD.gn
@@ -1853,7 +1854,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/password_manage
  import org.chromium.content_public.browser.WebContents;
  import org.chromium.ui.base.WindowAndroid;
  
-@@ -28,14 +27,6 @@ public class PasswordManagerLauncher {
+@@ -28,14 +27,8 @@ public class PasswordManagerLauncher {
       */
      public static void showPasswordSettings(
              Activity activity, @ManagePasswordsReferrer int referrer) {
@@ -1863,8 +1864,9 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/password_manage
 -            PasswordScriptsFetcherBridge.prewarmCache();
 -        }
 -        CredentialManagerLauncher credentialManagerLauncher = null;
--        PasswordManagerHelper.showPasswordSettings(activity, referrer, new SettingsLauncherImpl(),
+         PasswordManagerHelper.showPasswordSettings(activity, referrer, new SettingsLauncherImpl(),
 -                CredentialManagerLauncherFactory.getInstance().createLauncher(), syncService);
++                null, null);
      }
  
      @CalledByNative
@@ -1955,7 +1957,17 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/password_manage
              // Return true to notify the click was handled.
              return true;
          });
-@@ -608,15 +592,6 @@ public class PasswordSettings extends PreferenceFragmentCompat
+@@ -574,9 +558,6 @@ public class PasswordSettings extends PreferenceFragmentCompat
+     }
+ 
+     private void displayManageAccountLink() {
+-        if (!PasswordManagerHelper.isSyncingPasswordsWithNoCustomPassphrase(SyncService.get())) {
+-            return;
+-        }
+         if (mSearchQuery != null && !mNoPasswords) {
+             return; // Don't add the Manage Account link if there is a search going on.
+         }
+@@ -608,15 +589,6 @@ public class PasswordSettings extends PreferenceFragmentCompat
          return UserPrefs.get(Profile.getLastUsedRegularProfile());
      }
  
@@ -2657,6 +2669,61 @@ diff --git a/chrome/browser/ui/android/signin/java/src/org/chromium/chrome/brows
              SignOutDialogListener targetFragment = (SignOutDialogListener) getTargetFragment();
              targetFragment.onSignOutClicked(mWipeUserData != null && mWipeUserData.isChecked());
          }
+diff --git a/chrome/browser/ui/android/signin/java/src/org/chromium/chrome/browser/ui/signin/account_picker/WebSigninAccountPickerDelegate.java b/chrome/browser/ui/android/signin/java/src/org/chromium/chrome/browser/ui/signin/account_picker/WebSigninAccountPickerDelegate.java
+--- a/chrome/browser/ui/android/signin/java/src/org/chromium/chrome/browser/ui/signin/account_picker/WebSigninAccountPickerDelegate.java
++++ b/chrome/browser/ui/android/signin/java/src/org/chromium/chrome/browser/ui/signin/account_picker/WebSigninAccountPickerDelegate.java
+@@ -11,7 +11,6 @@ import org.chromium.base.Callback;
+ import org.chromium.base.ThreadUtils;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.signin.services.IdentityServicesProvider;
+-import org.chromium.chrome.browser.signin.services.SigninManager;
+ import org.chromium.chrome.browser.signin.services.WebSigninBridge;
+ import org.chromium.chrome.browser.tab.Tab;
+ import org.chromium.chrome.browser.ui.signin.account_picker.AccountPickerBottomSheetCoordinator.EntryPoint;
+@@ -28,7 +27,6 @@ public class WebSigninAccountPickerDelegate implements AccountPickerDelegate {
+     private final Tab mCurrentTab;
+     private final WebSigninBridge.Factory mWebSigninBridgeFactory;
+     private final String mContinueUrl;
+-    private final SigninManager mSigninManager;
+     private final IdentityManager mIdentityManager;
+     private @Nullable WebSigninBridge mWebSigninBridge;
+ 
+@@ -43,8 +41,6 @@ public class WebSigninAccountPickerDelegate implements AccountPickerDelegate {
+         mCurrentTab = currentTab;
+         mWebSigninBridgeFactory = webSigninBridgeFactory;
+         mContinueUrl = continueUrl;
+-        mSigninManager = IdentityServicesProvider.get().getSigninManager(
+-                Profile.getLastUsedRegularProfile());
+         mIdentityManager = IdentityServicesProvider.get().getIdentityManager(
+                 Profile.getLastUsedRegularProfile());
+     }
+@@ -63,26 +59,12 @@ public class WebSigninAccountPickerDelegate implements AccountPickerDelegate {
+             // first before signing in again.
+             destroyWebSigninBridge();
+             // TODO(https://crbug.com/1133752): Revise sign-out reason
+-            mSigninManager.signOut(SignoutReason.ABORT_SIGNIN);
+         }
+         AccountInfoServiceProvider.get().getAccountInfoByEmail(accountEmail).then(accountInfo -> {
+             mWebSigninBridge =
+                     mWebSigninBridgeFactory.create(Profile.getLastUsedRegularProfile(), accountInfo,
+                             createWebSigninBridgeListener(
+                                     mCurrentTab, mContinueUrl, onSignInErrorCallback));
+-            mSigninManager.signin(AccountUtils.createAccountFromName(accountEmail),
+-                    new SigninManager.SignInCallback() {
+-                        @Override
+-                        public void onSignInComplete() {
+-                            // After the sign-in is finished in Chrome, we still need to wait for
+-                            // WebSigninBridge to be called to redirect to the continue url.
+-                        }
+-
+-                        @Override
+-                        public void onSignInAborted() {
+-                            WebSigninAccountPickerDelegate.this.destroyWebSigninBridge();
+-                        }
+-                    });
+         });
+     }
+ 
 diff --git a/chrome/browser/ui/android/signin/java/src/org/chromium/chrome/browser/ui/signin/fre/SigninFirstRunMediator.java b/chrome/browser/ui/android/signin/java/src/org/chromium/chrome/browser/ui/signin/fre/SigninFirstRunMediator.java
 --- a/chrome/browser/ui/android/signin/java/src/org/chromium/chrome/browser/ui/signin/fre/SigninFirstRunMediator.java
 +++ b/chrome/browser/ui/android/signin/java/src/org/chromium/chrome/browser/ui/signin/fre/SigninFirstRunMediator.java

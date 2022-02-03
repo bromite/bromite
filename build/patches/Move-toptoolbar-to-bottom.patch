@@ -23,7 +23,7 @@ The patch also includes tablet mode.
  .../overlays/strip/StripLayoutHelper.java     |  2 +-
  .../strip/StripLayoutHelperManager.java       | 33 ++++++++++--
  .../scene_layer/StaticTabSceneLayer.java      |  8 ++-
- .../scene_layer/TabListSceneLayer.java        | 19 ++++++-
+ .../scene_layer/TabListSceneLayer.java        | 14 ++++++
  .../scene_layer/TabStripSceneLayer.java       | 15 +++++-
  .../scene_layer/ToolbarSwipeSceneLayer.java   | 10 +++-
  .../browser/findinpage/FindToolbarTablet.java | 11 ++--
@@ -44,7 +44,7 @@ The patch also includes tablet mode.
  chrome/browser/flag_descriptions.h            |  3 ++
  .../flags/android/cached_feature_flags.cc     | 18 +++++++
  .../flags/android/chrome_feature_list.cc      |  2 +
- .../browser/flags/CachedFeatureFlags.java     | 18 +++++++
+ .../browser/flags/CachedFeatureFlags.java     | 19 +++++++
  .../browser/flags/ChromeFeatureList.java      |  2 +
  .../omnibox/LocationBarCoordinator.java       |  9 +++-
  .../browser/omnibox/UrlBarCoordinator.java    | 11 +++-
@@ -64,7 +64,7 @@ The patch also includes tablet mode.
  .../top/TopToolbarOverlayCoordinator.java     |  7 +++
  .../top/TopToolbarOverlayProperties.java      |  8 ++-
  .../toolbar/top/TopToolbarSceneLayer.java     | 11 +++-
- 59 files changed, 609 insertions(+), 49 deletions(-)
+ 59 files changed, 606 insertions(+), 48 deletions(-)
 
 diff --git a/cc/base/features.cc b/cc/base/features.cc
 --- a/cc/base/features.cc
@@ -713,11 +713,10 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/scen
          // TODO(crbug.com/1070281): Use Supplier to get viewport and forward it to native, then
          // updateLayer can become obsolete.
          TabListSceneLayerJni.get().updateLayer(mNativePtr, TabListSceneLayer.this, tabListBgColor,
-@@ -131,6 +140,12 @@ public class TabListSceneLayer extends SceneLayer {
+@@ -131,6 +140,11 @@ public class TabListSceneLayer extends SceneLayer {
                  contentOffset = browserControls.getContentOffset();
              }
  
-+            int contentOffset = browserControls.getContentOffset();
 +            if (CachedFeatureFlags.isEnabled(ChromeFeatureList.MOVE_TOP_TOOLBAR_TO_BOTTOM)) {
 +                toolbarYOffset = 0;
 +                contentOffset = 0;
@@ -726,17 +725,6 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/scen
              // TODO(dtrainor, clholgat): remove "* dpToPx" once the native part fully supports dp.
              TabListSceneLayerJni.get().putTabLayer(mNativePtr, TabListSceneLayer.this, t.getId(),
                      relatedTabIds, mUseAdditionalIds, R.id.control_container,
-@@ -155,7 +170,9 @@ public class TabListSceneLayer extends SceneLayer {
-                     t.getBrightness(), t.showToolbar(), defaultThemeColor,
-                     t.getToolbarBackgroundColor(), closeButtonColor, t.anonymizeToolbar(),
-                     t.isTitleNeeded(), urlBarBackgroundId, t.getTextBoxBackgroundColor(),
--                    t.getToolbarAlpha(), toolbarYOffset, contentOffset, t.getSideBorderScale(),
-+                    t.getToolbarAlpha(), toolbarYOffset,
-+                    /*contentOffset*/browserControls.getContentOffset(),
-+                    t.getSideBorderScale(),
-                     t.insetBorderVertical());
-         }
-         TabListSceneLayerJni.get().finishBuildingFrame(mNativePtr, TabListSceneLayer.this);
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/scene_layer/TabStripSceneLayer.java b/chrome/android/java/src/org/chromium/chrome/browser/compositor/scene_layer/TabStripSceneLayer.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/compositor/scene_layer/TabStripSceneLayer.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/compositor/scene_layer/TabStripSceneLayer.java
@@ -1378,7 +1366,15 @@ diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browse
 diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
 --- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
 +++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
-@@ -202,6 +202,23 @@ public class CachedFeatureFlags {
+@@ -104,6 +104,7 @@ public class CachedFeatureFlags {
+                     .put(ChromeFeatureList.FEED_LOADING_PLACEHOLDER, false)
+                     .put(ChromeFeatureList.GRID_TAB_SWITCHER_FOR_TABLETS, false)
+                     .put(ChromeFeatureList.TAB_GROUPS_FOR_TABLETS, false)
++                    .put(ChromeFeatureList.MOVE_TOP_TOOLBAR_TO_BOTTOM, false)
+                     .build();
+ 
+     /**
+@@ -202,6 +203,23 @@ public class CachedFeatureFlags {
          SharedPreferencesManager.getInstance().writeBoolean(preferenceName, isEnabledInNative);
      }
  
@@ -1402,7 +1398,7 @@ diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/f
      /**
       * Forces a feature to be enabled or disabled for testing.
       *
-@@ -495,6 +512,7 @@ public class CachedFeatureFlags {
+@@ -495,6 +513,7 @@ public class CachedFeatureFlags {
  
      @NativeMethods
      interface Natives {
