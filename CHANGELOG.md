@@ -1,3 +1,6 @@
+# 96.0.4664.104
+* separate patches for package name
+
 # 96.0.4664.54
 * restored offline-indicator-v2 flag (fixes https://github.com/bromite/bromite/issues/1588)
 * re-introduced option to use home page as NTP (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1519)
