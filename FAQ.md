@@ -79,3 +79,9 @@ Yes, since version 94.0.4606.109 the native Android autofill can be used; this d
 ## Does Bromite support casting media content?
 
 No; this would require Play Store binary blobs.
+
+## Can you add this search engine as default?
+No.
+Bromite does not make any choice related to default search engines, the Chromium default is used.
+Various Android browsers get some fee to ship their apps with a specific default search engine, Bromite does not get any fee from anyone.
+Changing the default search engine would lead to an endless series of requests to change it based on personal preferences, thus no change is made to the default.
