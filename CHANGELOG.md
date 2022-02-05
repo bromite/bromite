@@ -1,3 +1,6 @@
+# 96.0.4664.183
+* updated zh_CN translations (thanks to @zhmars)
+
 # 96.0.4664.104
 * separate patches for package name
 
