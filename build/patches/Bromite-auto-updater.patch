@@ -6,26 +6,30 @@ Enable checking for new versions, with notifications and proxy support
 ---
  .../java/templates/BuildConfig.template       |   2 +
  build/config/android/rules.gni                |   3 +
- chrome/android/chrome_java_sources.gni        |   1 +
+ chrome/android/chrome_java_sources.gni        |   3 +
  .../java/res/xml/about_chrome_preferences.xml |   5 +
  .../about_settings/AboutChromeSettings.java   |  28 ++-
  .../chrome/browser/omaha/OmahaBase.java       |  47 +++-
- .../chrome/browser/omaha/UpdateConfigs.java   |   6 +-
- .../browser/omaha/UpdateStatusProvider.java   |  33 ++-
+ .../chrome/browser/omaha/UpdateConfigs.java   |  30 ++-
+ .../browser/omaha/UpdateMenuItemHelper.java   |  69 +++++-
+ .../browser/omaha/UpdateStatusProvider.java   | 169 ++++++++++++---
  .../browser/omaha/VersionNumberGetter.java    |   3 +-
  .../inline/BromiteInlineUpdateController.java | 204 ++++++++++++++++++
- .../inline/InlineUpdateControllerFactory.java |   8 +-
+ .../omaha/inline/InlineUpdateController.java  |  45 ++++
+ .../inline/InlineUpdateControllerFactory.java |  21 ++
  chrome/browser/endpoint_fetcher/BUILD.gn      |   2 +
  .../endpoint_fetcher/endpoint_fetcher.cc      | 129 +++++++++++
  .../endpoint_fetcher/endpoint_fetcher.h       |  23 +-
  .../endpoint_fetcher/EndpointFetcher.java     |  11 +
  .../EndpointHeaderResponse.java               |  31 +++
- chrome/browser/flag-metadata.json             |   2 +-
- chrome/browser/flag_descriptions.cc           |   5 +-
- .../flags/android/chrome_feature_list.cc      |   2 +-
- .../strings/android_chrome_strings.grd        |   8 +-
- 20 files changed, 516 insertions(+), 37 deletions(-)
+ .../flags/android/chrome_feature_list.cc      |   6 +-
+ .../flags/android/chrome_feature_list.h       |   1 +
+ .../browser/flags/ChromeFeatureList.java      |   1 +
+ .../strings/android_chrome_strings.grd        |  20 +-
+ 22 files changed, 811 insertions(+), 42 deletions(-)
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/BromiteInlineUpdateController.java
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateController.java
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java
  create mode 100644 chrome/browser/endpoint_fetcher/java/src/org/chromium/chrome/browser/endpoint_fetcher/EndpointHeaderResponse.java
 
 diff --git a/build/android/java/templates/BuildConfig.template b/build/android/java/templates/BuildConfig.template
@@ -41,7 +45,7 @@ diff --git a/build/android/java/templates/BuildConfig.template b/build/android/j
 diff --git a/build/config/android/rules.gni b/build/config/android/rules.gni
 --- a/build/config/android/rules.gni
 +++ b/build/config/android/rules.gni
-@@ -1970,6 +1970,9 @@ if (enable_java_templates) {
+@@ -1975,6 +1975,9 @@ if (enable_java_templates) {
            ]
          }
        }
@@ -54,12 +58,14 @@ diff --git a/build/config/android/rules.gni b/build/config/android/rules.gni
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
-@@ -892,6 +892,7 @@ chrome_java_sources = [
-   "java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateController.java",
-   "java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java",
-   "java/src/org/chromium/chrome/browser/omaha/inline/NoopInlineUpdateController.java",
+@@ -878,6 +878,9 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/omaha/UpdateConfigs.java",
+   "java/src/org/chromium/chrome/browser/omaha/UpdateMenuItemHelper.java",
+   "java/src/org/chromium/chrome/browser/omaha/UpdateStatusProvider.java",
++  "java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateController.java",
++  "java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java",
 +  "java/src/org/chromium/chrome/browser/omaha/inline/BromiteInlineUpdateController.java",
-   "java/src/org/chromium/chrome/browser/omaha/inline/PlayInlineUpdateController.java",
+   "java/src/org/chromium/chrome/browser/omaha/VersionNumberGetter.java",
    "java/src/org/chromium/chrome/browser/omaha/metrics/HistogramUtils.java",
    "java/src/org/chromium/chrome/browser/omaha/metrics/TrackingProvider.java",
 diff --git a/chrome/android/java/res/xml/about_chrome_preferences.xml b/chrome/android/java/res/xml/about_chrome_preferences.xml
@@ -213,35 +219,208 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/OmahaBase
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateConfigs.java b/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateConfigs.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateConfigs.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateConfigs.java
-@@ -65,7 +65,7 @@ public class UpdateConfigs {
-     private static final String UPDATE_NOTIFICATION_EXPERIMENTAL_PARAM_NAME =
-             "update_notification_experimental_context";
+@@ -11,6 +11,7 @@ import androidx.annotation.IntDef;
+ import androidx.annotation.Nullable;
  
--    private static final long DEFAULT_UPDATE_NOTIFICATION_INTERVAL = 21 * DateUtils.DAY_IN_MILLIS;
+ import org.chromium.base.CommandLine;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.flags.ChromeSwitches;
+ import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateState;
+ import org.chromium.components.variations.VariationsAssociatedData;
+@@ -37,10 +38,12 @@ public class UpdateConfigs {
+     private static final String UPDATE_AVAILABLE_SWITCH_VALUE = "update_available";
+     private static final String UNSUPPORTED_OS_VERSION_SWITCH_VALUE = "unsupported_os_version";
+ 
 +    private static final long DEFAULT_UPDATE_NOTIFICATION_INTERVAL = 3 * DateUtils.DAY_IN_MILLIS;
      private static final long DEFAULT_UPDATE_ATTRIBUTION_WINDOW_MS = 2 * DateUtils.DAY_IN_MILLIS;
  
      /** Possible update flow configurations. */
-@@ -300,7 +300,7 @@ public class UpdateConfigs {
-      * @return the current inline update flow configuration.
-      */
-     @UpdateFlowConfiguration
--    static int getConfiguration() {
-+    public static int getConfiguration() {
-         if (!ChromeFeatureList.isEnabled(ChromeFeatureList.INLINE_UPDATE_FLOW)) {
-             // Always use the the old flow if the inline update flow feature is not enabled.
-             return UpdateFlowConfiguration.INTENT_ONLY;
-@@ -328,4 +328,4 @@ public class UpdateConfigs {
-         if (configuration == null) return "";
-         return configuration.toLowerCase(Locale.US);
+-    @IntDef({UpdateFlowConfiguration.NEVER_SHOW, UpdateFlowConfiguration.INTENT_ONLY})
++    @IntDef({UpdateFlowConfiguration.NEVER_SHOW, UpdateFlowConfiguration.INTENT_ONLY,
++            UpdateFlowConfiguration.INLINE_ONLY})
+     @Retention(RetentionPolicy.SOURCE)
+     public @interface UpdateFlowConfiguration {
+         /** Turns off all update indicators. */
+@@ -50,6 +53,12 @@ public class UpdateConfigs {
+          * Requires Omaha to say an update is available, and only ever Intents out to Play Store.
+          */
+         int INTENT_ONLY = 2;
++
++        /**
++         * Requires both Omaha and Play Store to say an update is available. Only ever uses the
++         * inline update flow.
++         */
++        int INLINE_ONLY = 3;
+     }
+ 
+     /**
+@@ -124,6 +133,13 @@ public class UpdateConfigs {
+         return DEFAULT_UPDATE_ATTRIBUTION_WINDOW_MS;
+     }
+ 
++    /**
++     * @return A time interval for scheduling update notification. Unit: mills.
++     */
++    public static long getUpdateNotificationInterval() {
++        return DEFAULT_UPDATE_NOTIFICATION_INTERVAL;
++    }
++
+     /**
+      * Gets a String VariationsAssociatedData parameter. Also checks for a command-line switch
+      * with the same name, for easy local testing.
+@@ -139,4 +155,14 @@ public class UpdateConfigs {
+         }
+         return value;
      }
 -}
 \ No newline at end of file
++
++    @UpdateFlowConfiguration
++    public static int getConfiguration() {
++        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.INLINE_UPDATE_FLOW)) {
++            // Always use the the old flow if the inline update flow feature is not enabled.
++            return UpdateFlowConfiguration.INLINE_ONLY;
++        }
++
++        return UpdateFlowConfiguration.NEVER_SHOW;
++    }
 +}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMenuItemHelper.java b/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMenuItemHelper.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMenuItemHelper.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMenuItemHelper.java
+@@ -22,6 +22,7 @@ import org.chromium.base.metrics.RecordHistogram;
+ import org.chromium.base.task.PostTask;
+ import org.chromium.base.task.TaskTraits;
+ import org.chromium.chrome.R;
++import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateInteractionSource;
+ import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateState;
+ import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateStatus;
+ import org.chromium.chrome.browser.preferences.Pref;
+@@ -157,7 +158,7 @@ public class UpdateMenuItemHelper {
+ 
+                 try {
+                     UpdateStatusProvider.getInstance().startIntentUpdate(
+-                            activity, false /* newTask */);
++                            activity, UpdateInteractionSource.FROM_MENU, false /* newTask */);
+                     recordItemClickedHistogram(ITEM_CLICKED_INTENT_LAUNCHED);
+                     getPrefService().setBoolean(Pref.CLICKED_UPDATE_MENU_ITEM, true);
+                 } catch (ActivityNotFoundException e) {
+@@ -165,8 +166,22 @@ public class UpdateMenuItemHelper {
+                     recordItemClickedHistogram(ITEM_CLICKED_INTENT_FAILED);
+                 }
+                 break;
++            case UpdateState.INLINE_UPDATE_AVAILABLE:
++                UpdateStatusProvider.getInstance().startInlineUpdate(
++                        UpdateInteractionSource.FROM_MENU, activity);
++                break;
++            case UpdateState.INLINE_UPDATE_READY:
++                UpdateStatusProvider.getInstance().finishInlineUpdate(
++                        UpdateInteractionSource.FROM_MENU);
++                break;
++            case UpdateState.INLINE_UPDATE_FAILED:
++                UpdateStatusProvider.getInstance().retryInlineUpdate(
++                        UpdateInteractionSource.FROM_MENU, activity);
++                break;
+             case UpdateState.UNSUPPORTED_OS_VERSION:
+             // Intentional fall through.
++            case UpdateState.INLINE_UPDATE_DOWNLOADING:
++            // Intentional fall through.
+             default:
+                 return;
+         }
+@@ -268,6 +283,58 @@ public class UpdateMenuItemHelper {
+                 mMenuUiState.itemState.icon = R.drawable.ic_error_24dp_filled;
+                 mMenuUiState.itemState.enabled = false;
+                 break;
++            case UpdateState.INLINE_UPDATE_AVAILABLE:
++                // The badge is hidden if the update menu item has been clicked until there is an
++                // even newer version of Chrome available.
++                showBadge |= !TextUtils.equals(
++                        getPrefService().getString(
++                                Pref.LATEST_VERSION_WHEN_CLICKED_UPDATE_MENU_ITEM),
++                        mStatus.latestUnsupportedVersion);
++
++                if (showBadge) {
++                    mMenuUiState.buttonState = new MenuButtonState();
++                    mMenuUiState.buttonState.menuContentDescription =
++                            R.string.accessibility_toolbar_btn_menu_update;
++                    mMenuUiState.buttonState.darkBadgeIcon = R.drawable.badge_update_dark;
++                    mMenuUiState.buttonState.lightBadgeIcon = R.drawable.badge_update_light;
++                }
++
++                mMenuUiState.itemState = new MenuItemState();
++                mMenuUiState.itemState.title = R.string.menu_update;
++                mMenuUiState.itemState.titleColorId = R.color.default_text_color_blue;
++                mMenuUiState.itemState.summary = UpdateConfigs.getCustomSummary();
++                if (TextUtils.isEmpty(mMenuUiState.itemState.summary)) {
++                    mMenuUiState.itemState.summary =
++                            resources.getString(R.string.menu_update_summary_default);
++                }
++                mMenuUiState.itemState.icon = R.drawable.ic_history_googblue_24dp;
++                mMenuUiState.itemState.iconTintId = R.color.default_icon_color_blue_light;
++                mMenuUiState.itemState.enabled = true;
++                break;
++            case UpdateState.INLINE_UPDATE_DOWNLOADING:
++                mMenuUiState.itemState = new MenuItemState();
++                mMenuUiState.itemState.title = R.string.menu_inline_update_downloading;
++                mMenuUiState.itemState.titleColorId = R.color.default_text_color_secondary;
++                break;
++            case UpdateState.INLINE_UPDATE_READY:
++                mMenuUiState.itemState = new MenuItemState();
++                mMenuUiState.itemState.title = R.string.menu_inline_update_ready;
++                mMenuUiState.itemState.titleColorId = R.color.default_text_color_blue;
++                mMenuUiState.itemState.summary =
++                        resources.getString(R.string.menu_inline_update_ready_summary);
++                mMenuUiState.itemState.icon = R.drawable.infobar_chrome;
++                mMenuUiState.itemState.iconTintId = R.color.default_icon_color_blue_light;
++                mMenuUiState.itemState.enabled = true;
++                break;
++            case UpdateState.INLINE_UPDATE_FAILED:
++                mMenuUiState.itemState = new MenuItemState();
++                mMenuUiState.itemState.title = R.string.menu_inline_update_failed;
++                mMenuUiState.itemState.titleColorId = R.color.default_text_color_blue;
++                mMenuUiState.itemState.summary = resources.getString(R.string.try_again);
++                mMenuUiState.itemState.icon = R.drawable.ic_history_googblue_24dp;
++                mMenuUiState.itemState.iconTintId = R.color.default_icon_color_blue_light;
++                mMenuUiState.itemState.enabled = true;
++                break;
+             case UpdateState.NONE:
+             // Intentional fall through.
+             default:
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateStatusProvider.java b/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateStatusProvider.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateStatusProvider.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateStatusProvider.java
-@@ -45,6 +45,12 @@ import java.io.File;
+@@ -4,6 +4,7 @@
+ 
+ package org.chromium.chrome.browser.omaha;
+ 
++import android.app.Activity;
+ import android.content.ActivityNotFoundException;
+ import android.content.Context;
+ import android.content.Intent;
+@@ -16,7 +17,11 @@ import android.text.TextUtils;
+ import androidx.annotation.IntDef;
+ import androidx.annotation.NonNull;
+ import androidx.annotation.Nullable;
++import androidx.annotation.VisibleForTesting;
+ 
++import org.chromium.base.ActivityState;
++import org.chromium.base.ApplicationStatus;
++import org.chromium.base.ApplicationStatus.ActivityStateListener;
+ import org.chromium.base.BuildInfo;
+ import org.chromium.base.Callback;
+ import org.chromium.base.ContextUtils;
+@@ -26,6 +31,9 @@ import org.chromium.base.metrics.RecordHistogram;
+ import org.chromium.base.task.AsyncTask;
+ import org.chromium.base.task.AsyncTask.Status;
+ import org.chromium.base.task.PostTask;
++import org.chromium.chrome.browser.app.ChromeActivity;
++import org.chromium.chrome.browser.omaha.inline.InlineUpdateController;
++import org.chromium.chrome.browser.omaha.inline.InlineUpdateControllerFactory;
+ import org.chromium.chrome.browser.omaha.metrics.UpdateSuccessMetrics;
+ import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
+ import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
+@@ -36,28 +44,50 @@ import java.io.File;
  import java.lang.annotation.Retention;
  import java.lang.annotation.RetentionPolicy;
  
@@ -254,17 +433,230 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
  /**
   * Provides the current update state for Chrome.  This update state is asynchronously determined and
   * can change as Chrome runs.
-@@ -339,8 +345,7 @@ public class UpdateStatusProvider implements ActivityStateListener {
-             case UpdateConfigs.UpdateFlowConfiguration.NEVER_SHOW:
-                 return UpdateState.NONE;
-             case UpdateConfigs.UpdateFlowConfiguration.INLINE_ONLY:
--                if (omahaState != UpdateState.UPDATE_AVAILABLE) return omahaState;
--                if (inlineState == UpdateState.NONE) return UpdateState.NONE;
+  *
+  * For manually testing this functionality, see {@link UpdateConfigs}.
+  */
+-public class UpdateStatusProvider {
++public class UpdateStatusProvider implements ActivityStateListener {
++    /**
++     * Possible sources of user interaction regarding updates.
++     * Treat this as append only as it is used by UMA.
++     */
++    @IntDef({UpdateInteractionSource.FROM_MENU, UpdateInteractionSource.FROM_INFOBAR,
++            UpdateInteractionSource.FROM_NOTIFICATION})
++    @Retention(RetentionPolicy.SOURCE)
++    public @interface UpdateInteractionSource {
++        int FROM_MENU = 0;
++        int FROM_INFOBAR = 1;
++        int FROM_NOTIFICATION = 2;
++
++        int NUM_ENTRIES = 3;
++    }
++
+     /**
+      * Possible update states.
+      * Treat this as append only as it is used by UMA.
+      */
+-    @IntDef({UpdateState.NONE, UpdateState.UPDATE_AVAILABLE, UpdateState.UNSUPPORTED_OS_VERSION})
++    @IntDef({UpdateState.NONE, UpdateState.UPDATE_AVAILABLE, UpdateState.UNSUPPORTED_OS_VERSION,
++            UpdateState.INLINE_UPDATE_AVAILABLE, UpdateState.INLINE_UPDATE_DOWNLOADING,
++            UpdateState.INLINE_UPDATE_READY, UpdateState.INLINE_UPDATE_FAILED})
+     @Retention(RetentionPolicy.SOURCE)
+     public @interface UpdateState {
+         int NONE = 0;
+         int UPDATE_AVAILABLE = 1;
+         int UNSUPPORTED_OS_VERSION = 2;
+-        // Inline updates are deprecated.
+-        // int INLINE_UPDATE_AVAILABLE = 3;
+-        // int INLINE_UPDATE_DOWNLOADING = 4;
+-        // int INLINE_UPDATE_READY = 5;
+-        // int INLINE_UPDATE_FAILED = 6;
++        int INLINE_UPDATE_AVAILABLE = 3;
++        int INLINE_UPDATE_DOWNLOADING = 4;
++        int INLINE_UPDATE_READY = 5;
++        int INLINE_UPDATE_FAILED = 6;
+ 
+         int NUM_ENTRIES = 7;
+     }
+@@ -93,6 +123,12 @@ public class UpdateStatusProvider {
+          */
+         private boolean mIsSimulated;
+ 
++        /**
++         * Whether or not we are currently trying to simulate an inline flow.  Used to allow
++         * overriding Omaha update state, which usually supersedes inline update states.
++         */
++        private boolean mIsInlineSimulated;
++
+         public UpdateStatus() {}
+ 
+         UpdateStatus(UpdateStatus other) {
+@@ -101,11 +137,13 @@ public class UpdateStatusProvider {
+             latestVersion = other.latestVersion;
+             latestUnsupportedVersion = other.latestUnsupportedVersion;
+             mIsSimulated = other.mIsSimulated;
++            mIsInlineSimulated = other.mIsInlineSimulated;
+         }
+     }
+ 
+     private final ObserverList<Callback<UpdateStatus>> mObservers = new ObserverList<>();
+ 
++    private final InlineUpdateController mInlineController;
+     private final UpdateQuery mOmahaQuery;
+     private final UpdateSuccessMetrics mMetrics;
+     private @Nullable UpdateStatus mStatus;
+@@ -173,19 +211,44 @@ public class UpdateStatusProvider {
+         pingObservers();
+     }
+ 
++    /**
++     * Starts the inline update process, if possible.
++     * @source         The source of the action (the UI that caused it).
++     * @param activity An {@link Activity} that will be used to interact with Play.
++     */
++    public void startInlineUpdate(@UpdateInteractionSource int source, Activity activity) {
++        if (mStatus == null || mStatus.updateState != UpdateState.INLINE_UPDATE_AVAILABLE) return;
++        mInlineController.startUpdate(activity);
++    }
++
++    /**
++     * Retries the inline update process, if possible.
++     * @param activity An {@link Activity} that will be used to interact with Play.
++     */
++    public void retryInlineUpdate(@UpdateInteractionSource int source, Activity activity) {
++        if (mStatus == null || mStatus.updateState != UpdateState.INLINE_UPDATE_AVAILABLE) return;
++        mInlineController.startUpdate(activity);
++    }
++
++    /** Finishes the inline update process, which may involve restarting the app. */
++    public void finishInlineUpdate(@UpdateInteractionSource int source) {
++        if (mStatus == null || mStatus.updateState != UpdateState.INLINE_UPDATE_READY) return;
++        mInlineController.completeUpdate();
++    }
++
+     /**
+      * Starts the intent update process, if possible
+      * @param context An {@link Context} that will be used to fire off the update intent.
++     * @param source  The source of the action (the UI that caused it).
+      * @param newTask Whether or not to make the intent a new task.
+      * @return        Whether or not the update intent was sent and had a valid handler.
+      */
+-    public boolean startIntentUpdate(Context context, boolean newTask) {
++    public boolean startIntentUpdate(
++            Context context, @UpdateInteractionSource int source, boolean newTask) {
+         if (mStatus == null || mStatus.updateState != UpdateState.UPDATE_AVAILABLE) return false;
+         if (TextUtils.isEmpty(mStatus.updateUrl)) return false;
+ 
+         try {
+-            mMetrics.startUpdate();
+-
+             Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(mStatus.updateUrl));
+             if (newTask) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+             context.startActivity(intent);
+@@ -196,9 +259,29 @@ public class UpdateStatusProvider {
+         return true;
+     }
+ 
++    // ApplicationStateListener implementation.
++    @Override
++    public void onActivityStateChange(Activity changedActivity, @ActivityState int newState) {
++        boolean hasActiveActivity = false;
++
++        for (Activity activity : ApplicationStatus.getRunningActivities()) {
++            if (activity == null || !(activity instanceof ChromeActivity)) continue;
++
++            hasActiveActivity |=
++                    ApplicationStatus.getStateForActivity(activity) == ActivityState.RESUMED;
++            if (hasActiveActivity) break;
++        }
++
++        mInlineController.setEnabled(hasActiveActivity);
++    }
++
+     private UpdateStatusProvider() {
++        mInlineController = InlineUpdateControllerFactory.create(this::resolveStatus);
+         mOmahaQuery = new UpdateQuery(this::resolveStatus);
+         mMetrics = new UpdateSuccessMetrics();
++
++        // Note that as a singleton this class never unregisters.
++        ApplicationStatus.registerStateListenerForAllActivities(this);
+     }
+ 
+     private void pingObservers() {
+@@ -206,27 +289,59 @@ public class UpdateStatusProvider {
+     }
+ 
+     private void resolveStatus() {
+-        if (mOmahaQuery.getStatus() != Status.FINISHED) {
++        if (mOmahaQuery.getStatus() != Status.FINISHED || mInlineController.getStatus() == null) {
+             return;
+         }
+ 
+         // We pull the Omaha result once as it will never change.
+         if (mStatus == null) mStatus = new UpdateStatus(mOmahaQuery.getResult());
+ 
+-        if (!mStatus.mIsSimulated) {
+-            mStatus.updateState = mOmahaQuery.getResult().updateState;
++        if (mStatus.mIsSimulated) {
++            if (mStatus.mIsInlineSimulated) {
++                @UpdateState
++                int inlineState = mInlineController.getStatus();
++
++                if (inlineState == UpdateState.NONE) {
++                    mStatus.updateState = mOmahaQuery.getResult().updateState;
++                } else {
++                    mStatus.updateState = inlineState;
++                }
++            }
++        } else {
++            @UpdateState
++            int omahaState = mOmahaQuery.getResult().updateState;
++            @UpdateState
++            int inlineState = mInlineController.getStatus();
++            mStatus.updateState = resolveOmahaAndInlineStatus(
++                    UpdateConfigs.getConfiguration(), omahaState, inlineState);
+         }
+ 
+         if (!mRecordedInitialStatus) {
+             RecordHistogram.recordEnumeratedHistogram(
+                     "GoogleUpdate.StartUp.State", mStatus.updateState, UpdateState.NUM_ENTRIES);
+-            mMetrics.analyzeFirstStatus();
+             mRecordedInitialStatus = true;
+         }
+ 
+         pingObservers();
+     }
+ 
++    @VisibleForTesting
++    static @UpdateState int resolveOmahaAndInlineStatus(
++            @UpdateConfigs.UpdateFlowConfiguration int configuration, @UpdateState int omahaState,
++            @UpdateState int inlineState) {
++        switch (configuration) {
++            case UpdateConfigs.UpdateFlowConfiguration.NEVER_SHOW:
++                return UpdateState.NONE;
++            case UpdateConfigs.UpdateFlowConfiguration.INLINE_ONLY:
 +                if (inlineState == UpdateState.NONE) return omahaState;
-                 return inlineState;
-             case UpdateConfigs.UpdateFlowConfiguration.BEST_EFFORT:
-                 if (omahaState != UpdateState.UPDATE_AVAILABLE) return omahaState;
-@@ -415,24 +420,12 @@ public class UpdateStatusProvider implements ActivityStateListener {
++                return inlineState;
++            case UpdateConfigs.UpdateFlowConfiguration.INTENT_ONLY: // Intentional fall through.
++            default:
++                // Fall back to use Omaha only and use the old flow.
++                return omahaState;
++        }
++    }
++
+     private static final class LazyHolder {
+         private static final UpdateStatusProvider INSTANCE = new UpdateStatusProvider();
+     }
+@@ -268,6 +383,8 @@ public class UpdateStatusProvider {
+             status.mIsSimulated = true;
+             status.updateState = forcedUpdateState;
+ 
++            status.mIsInlineSimulated = forcedUpdateState == UpdateState.INLINE_UPDATE_AVAILABLE;
++
+             // Push custom configurations for certain update states.
+             switch (forcedUpdateState) {
+                 case UpdateState.UPDATE_AVAILABLE:
+@@ -287,24 +404,12 @@ public class UpdateStatusProvider {
          private UpdateStatus getRealStatus(Context context) {
              UpdateStatus status = new UpdateStatus();
  
@@ -517,23 +909,82 @@ new file mode 100644
 +        PostTask.postTask(UiThreadTaskTraits.DEFAULT, mCallback);
 +    }
 +}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateController.java b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateController.java
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateController.java
+@@ -0,0 +1,45 @@
++// Copyright 2019 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.omaha.inline;
++
++import android.app.Activity;
++import android.content.Intent;
++
++import androidx.annotation.Nullable;
++
++import org.chromium.chrome.browser.omaha.UpdateStatusProvider;
++
++/**
++ * Helper for gluing interactions with the Play store's AppUpdateManager with Chrome.  This
++ * involves hooking up to Play as a listener for install state changes, should only happen if we are
++ * in the foreground.
++ */
++public interface InlineUpdateController {
++    /**
++     * Enables or disables the controller.
++     * @param enabled true iff the controller should be enabled.
++     */
++    void setEnabled(boolean enabled);
++
++    /**
++     * @return The current state of the inline update process.  May be {@code null} if the state
++     * hasn't been determined yet.
++     */
++    @Nullable
++    @UpdateStatusProvider.UpdateState
++    Integer getStatus();
++
++    /**
++     * Starts the update, if possible.  This will send an {@link Intent} out to play, which may
++     * cause Chrome to move to the background.
++     * @param activity The {@link Activity} to use to interact with Play.
++     */
++    void startUpdate(Activity activity);
++
++    /**
++     * Completes the Play installation process, if possible.  This may cause Chrome to restart.
++     */
++    void completeUpdate();
++}
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java
---- a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java
+new file mode 100644
+--- /dev/null
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java
-@@ -19,8 +19,10 @@ public class InlineUpdateControllerFactory {
-         @FakeAppUpdateManagerWrapper.Type
-         int mockInlineEndState = UpdateConfigs.getMockInlineScenarioEndState();
- 
--        // No test scenario was in place, and the inline flow has not been enabled, so use a
--        // controller with no functionality.
--        return new NoopInlineUpdateController(callback);
-+        if (ChromeFeatureList.isEnabled(ChromeFeatureList.INLINE_UPDATE_FLOW)) {
-+            return new BromiteInlineUpdateController(callback);
-+        } else {
-+            return new NoopInlineUpdateController(callback);
-+        }
-     }
- }
+@@ -0,0 +1,21 @@
++// Copyright 2019 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.omaha.inline;
++
++import org.chromium.base.ContextUtils;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
++import org.chromium.chrome.browser.omaha.UpdateConfigs;
++
++/**
++ * A factory that creates an {@link InlineUpdateController} instance.
++ */
++public class InlineUpdateControllerFactory {
++    /**
++     * @return A new {@link InlineUpdateController}.
++     */
++    public static InlineUpdateController create(Runnable callback) {
++        return new BromiteInlineUpdateController(callback);
++    }
++}
 diff --git a/chrome/browser/endpoint_fetcher/BUILD.gn b/chrome/browser/endpoint_fetcher/BUILD.gn
 --- a/chrome/browser/endpoint_fetcher/BUILD.gn
 +++ b/chrome/browser/endpoint_fetcher/BUILD.gn
@@ -615,7 +1066,7 @@ diff --git a/chrome/browser/endpoint_fetcher/endpoint_fetcher.cc b/chrome/browse
 +  simple_url_loader_ = network::SimpleURLLoader::Create(
 +      std::move(resource_request), annotation_tag_);
 +  simple_url_loader_->SetTimeoutDuration(
-+      base::TimeDelta::FromMilliseconds(timeout_ms_));
++      base::Milliseconds(timeout_ms_));
 +  simple_url_loader_->SetAllowHttpErrorResults(true);
 +
 +  if (!response_)
@@ -859,50 +1310,55 @@ new file mode 100644
 +        return new EndpointHeaderResponse(response, redirectUrl);
 +    }
 +}
-diff --git a/chrome/browser/flag-metadata.json b/chrome/browser/flag-metadata.json
---- a/chrome/browser/flag-metadata.json
-+++ b/chrome/browser/flag-metadata.json
-@@ -2079,7 +2079,7 @@
-   {
-     "name": "enable-inline-update-flow",
-     "owners": [ "nyquist", "dtrainor" ],
--    "expiry_milestone": 83
-+    "expiry_milestone": -1
-   },
-   {
-     "name": "enable-input-event-logging",
-diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
---- a/chrome/browser/flag_descriptions.cc
-+++ b/chrome/browser/flag_descriptions.cc
-@@ -3697,10 +3697,9 @@ const char kVoiceButtonInTopToolbarDescription[] =
-     "Enables showing the voice search button in the top toolbar. Enabling "
-     "Adaptive Button overrides this.";
- 
--const char kInlineUpdateFlowName[] = "Enable Google Play inline update flow";
-+const char kInlineUpdateFlowName[] = "Enable inline update flow";
- const char kInlineUpdateFlowDescription[] =
--    "When this flag is set, instead of taking the user to the Google Play "
--    "Store when an update is available, the user is presented with an inline "
-+    "When this flag is set, the user is presented with an inline "
-     "flow where they do not have to leave Chrome until the update is ready "
-     "to install.";
- 
 diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browser/flags/android/chrome_feature_list.cc
 --- a/chrome/browser/flags/android/chrome_feature_list.cc
 +++ b/chrome/browser/flags/android/chrome_feature_list.cc
-@@ -644,7 +644,7 @@ const base::Feature kIncognitoScreenshot{"IncognitoScreenshot",
-                                          base::FEATURE_DISABLED_BY_DEFAULT};
+@@ -246,6 +246,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
+     &kImmersiveUiMode,
+     &kIncognitoReauthenticationForAndroid,
+     &kIncognitoScreenshot,
++    &kInlineUpdateFlow,
+     &kInstanceSwitcher,
+     &kInstantStart,
+     &kKitKatSupported,
+@@ -649,7 +650,10 @@ const base::Feature kIncognitoReauthenticationForAndroid{
+     "IncognitoReauthenticationForAndroid", base::FEATURE_DISABLED_BY_DEFAULT};
  
- const base::Feature kInlineUpdateFlow{"InlineUpdateFlow",
--                                      base::FEATURE_DISABLED_BY_DEFAULT};
+ const base::Feature kIncognitoScreenshot{"IncognitoScreenshot",
+-                                         base::FEATURE_DISABLED_BY_DEFAULT};
++                                         base::FEATURE_ENABLED_BY_DEFAULT};
++
++const base::Feature kInlineUpdateFlow{"InlineUpdateFlow",
 +                                      base::FEATURE_ENABLED_BY_DEFAULT};
  
  const base::Feature kInstantStart{"InstantStart",
                                    base::FEATURE_DISABLED_BY_DEFAULT};
+diff --git a/chrome/browser/flags/android/chrome_feature_list.h b/chrome/browser/flags/android/chrome_feature_list.h
+--- a/chrome/browser/flags/android/chrome_feature_list.h
++++ b/chrome/browser/flags/android/chrome_feature_list.h
+@@ -102,6 +102,7 @@ extern const base::Feature kImmersiveUiMode;
+ extern const base::Feature kIncognitoReauthenticationForAndroid;
+ extern const base::Feature kIncognitoScreenshot;
+ extern const base::Feature kImprovedA2HS;
++extern const base::Feature kInlineUpdateFlow;
+ extern const base::Feature kInstanceSwitcher;
+ extern const base::Feature kInstantStart;
+ extern const base::Feature kKitKatSupported;
+diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
+--- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
++++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
+@@ -371,6 +371,7 @@ public abstract class ChromeFeatureList {
+     public static final String INCOGNITO_REAUTHENTICATION_FOR_ANDROID =
+             "IncognitoReauthenticationForAndroid";
+     public static final String INCOGNITO_SCREENSHOT = "IncognitoScreenshot";
++    public static final String INLINE_UPDATE_FLOW = "InlineUpdateFlow";
+     public static final String INSTALLABLE_AMBIENT_BADGE_INFOBAR = "InstallableAmbientBadgeInfoBar";
+     public static final String INSTANCE_SWITCHER = "InstanceSwitcher";
+     public static final String INSTANT_START = "InstantStart";
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -1704,6 +1704,12 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -1731,6 +1731,12 @@ Your Google account may have other forms of browsing history like searches and a
        <message name="IDS_DEPRECATION_WARNING" desc="Warning about Chrome updates no longer being supported">
          Chrome updates are no longer supported for this version of Android
        </message>
@@ -915,7 +1371,7 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
  
        <!-- Account management UI strings. -->
        <message name="IDS_ACCOUNT_MANAGEMENT_TITLE" desc="Header title for the account management screen. [CHAR_LIMIT=32]">
-@@ -3220,7 +3226,7 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+@@ -3228,7 +3234,7 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
  
        <!-- Main menu items -->
        <message name="IDS_MENU_UPDATE" desc="Menu item for updating chrome. [CHAR_LIMIT=24]">
@@ -924,6 +1380,24 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
        </message>
        <message name="IDS_MENU_UPDATE_SUMMARY_DEFAULT" desc="Summary string for update menu item explaining that a newer version of Chrome is available. [CHAR_LIMIT=30]">
          Newer version is available
--- 
-2.20.1
-
+@@ -3239,6 +3245,18 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+       <message name="IDS_MENU_UPDATE_UNSUPPORTED_SUMMARY_DEFAULT" desc="Summary string for update menu item explaining that the Android version on the device is unsupported. [CHAR_LIMIT=30]">
+         Android version is unsupported
+       </message>
++      <message name="IDS_MENU_INLINE_UPDATE_DOWNLOADING" desc="Menu item for when Chrome is in the process of updating. [CHAR_LIMIT=24]">
++        Downloading…
++      </message>
++      <message name="IDS_MENU_INLINE_UPDATE_FAILED" desc="Menu item for when Chrome failed to download an update. [CHAR_LIMIT=24]">
++        Couldn’t download
++      </message>
++      <message name="IDS_MENU_INLINE_UPDATE_READY" desc="Menu item text that is shown when Chrome has downloaded an update for itself and is ready to be restarted, which will apply the update. [CHAR_LIMIT=24]">
++        Update ready
++      </message>
++      <message name="IDS_MENU_INLINE_UPDATE_READY_SUMMARY" desc="Summary text that is shown when Chrome has downloaded an update for itself and is ready to be restarted, which will apply the update.  This lets the user know the update will restart. [CHAR_LIMIT=24]">
++        Restart Bromite
++      </message>
+       <message name="IDS_MENU_NEW_WINDOW" desc="Menu item for opening a new window. [CHAR_LIMIT=27]">
+         New window
+       </message>
+--
+2.25.1
