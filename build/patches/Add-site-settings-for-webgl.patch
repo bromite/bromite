@@ -22,7 +22,7 @@ part of the code was recovered from brave.
  .../strings/android/browser_ui_strings.grd    |   1 +
  .../browser_ui/strings/android/webgl.grdp     |  21 ++
  components/components_strings.grd             |   1 +
- .../core/browser/content_settings_registry.cc |  15 ++
+ .../core/browser/content_settings_registry.cc |  15 +
  .../core/browser/content_settings_utils.cc    |   2 +
  .../core/common/content_settings.cc           |   4 +-
  .../core/common/content_settings.h            |   1 +
@@ -34,17 +34,17 @@ part of the code was recovered from brave.
  .../renderer/content_settings_agent_impl.h    |   1 +
  .../platform/web_content_settings_client.h    |   2 +
  .../renderer/core/execution_context/build.gni |   2 +
- .../execution_context/execution_context.cc    |  29 +++
+ .../execution_context/execution_context.cc    |  29 ++
  .../execution_context/execution_context.h     |   5 +
- .../core/execution_context/session_cache.cc   | 117 +++++++++
+ .../core/execution_context/session_cache.cc   | 117 ++++++++
  .../core/execution_context/session_cache.h    |  36 +++
  .../webgl/webgl2_rendering_context_base.cc    |  36 ++-
  .../webgl/webgl2_rendering_context_base.h     |   3 +-
- .../webgl/webgl_rendering_context_base.cc     | 244 +++++++++++++++++-
+ .../webgl/webgl_rendering_context_base.cc     | 268 ++++++++++++++++--
  .../webgl/webgl_rendering_context_base.h      |   5 +-
  .../graphics/gpu/webgl_image_conversion.cc    |   6 +
  .../graphics/gpu/webgl_image_conversion.h     |  12 +-
- 31 files changed, 672 insertions(+), 27 deletions(-)
+ 31 files changed, 677 insertions(+), 46 deletions(-)
  create mode 100644 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/BromiteWebGLContentSetting.java
  create mode 100644 components/browser_ui/strings/android/webgl.grdp
  create mode 100644 third_party/blink/renderer/core/execution_context/session_cache.cc
@@ -170,14 +170,14 @@ new file mode 100644
 +import java.util.ArrayList;
 +
 +public class BromiteWebGLContentSetting extends BromiteCustomContentSetting {
-+    // CONTENT_SETTING_ALLOW   allow with anti-fingerprinting
++    // CONTENT_SETTING_ALLOW   allow with fingerprinting protection
 +    // CONTENT_SETTING_ASK     allow all
 +    // CONTENT_SETTING_BLOCK   block
 +
 +    public BromiteWebGLContentSetting() {
 +        super(/*contentSettingsType*/ ContentSettingsType.WEBGL,
 +              /*siteSettingsCategory*/ SiteSettingsCategory.Type.WEBGL,
-+              /*defaultValue*/ ContentSettingValues.ALLOW,
++              /*initialDefaultValue*/ ContentSettingValues.BLOCK,
 +              /*defaultDisabledValue*/ ContentSettingValues.BLOCK,
 +              /*allowException*/ true,
 +              /*preferenceKey*/ "webgl",
@@ -189,7 +189,7 @@ new file mode 100644
 +        return new ContentSettingsResources.ResourceItem(
 +            /*icon*/ R.drawable.web_asset, /*smallicon*/ 0,
 +            /*title*/ R.string.webgl_permission_title,
-+            /*defaultEnabledValue*/ getDefaultValue(),
++            /*defaultEnabledValue*/ getInitialDefaultValue(),
 +            /*defaultDisabledValue*/ getDefaultDisabledValue(),
 +            /*enabledSummary*/ R.string.website_settings_category_webgl_enabled_antifingerprint,
 +            /*disabledSummary*/ R.string.website_settings_category_webgl_disabled);
@@ -235,7 +235,7 @@ new file mode 100644
 +
 +    @Override
 +    public @Nullable Boolean considerException(SiteSettingsCategory category, @ContentSettingValues int value) {
-+        return value != getDefaultValue();
++        return value != ContentSettingValues.BLOCK;
 +    }
 +}
 diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsCategory.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/SiteSettingsCategory.java
@@ -291,13 +291,13 @@ new file mode 100644
 +  <message name="IDS_WEBGL_PERMISSION_TITLE" desc="Title of the permission to use webgl [CHAR-LIMIT=32]">
 +    Webgl
 +  </message>
-+  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_WEBGL_ENABLED_ANTIFINGERPRINT" desc="Summary text explaining that webgl is enabled with antifingerprinting.">
-+    Enabled with random data
++  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_WEBGL_ENABLED_ANTIFINGERPRINT" desc="Summary text explaining that webgl is enabled with fingerprinting protection.">
++    Enabled with fingerprinting protection
 +  </message>
 +  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_WEBGL_ENABLED" desc="Summary text explaining that webgl is full enabled.">
 +    Enabled
 +  </message>
-+  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_WEBGL_DISABLED" desc="Summary text explaining that webgl is disabled.">
++  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_WEBGL_DISABLED" desc="Summary text explaining that webgl is full disabled.">
 +    Disabled
 +  </message>
 +</grit-part>
@@ -320,11 +320,11 @@ diff --git a/components/content_settings/core/browser/content_settings_registry.
             ContentSettingsInfo::PERSISTENT,
             ContentSettingsInfo::EXCEPTIONS_ON_SECURE_AND_INSECURE_ORIGINS);
 +
-+  Register(ContentSettingsType::WEBGL, "webgl", CONTENT_SETTING_ASK,
++  Register(ContentSettingsType::WEBGL, "webgl", CONTENT_SETTING_BLOCK,
 +           WebsiteSettingsInfo::SYNCABLE,
 +           AllowlistedSchemes(),
 +           ValidSettings(CONTENT_SETTING_ALLOW,   // allow
-+                         CONTENT_SETTING_ASK,     // allow with anti-fingerprinting
++                         CONTENT_SETTING_ASK,     // allow with fingerprinting protection
 +                         CONTENT_SETTING_BLOCK),  // block
 +           WebsiteSettingsInfo::SINGLE_ORIGIN_WITH_EMBEDDED_EXCEPTIONS_SCOPE,
 +           WebsiteSettingsRegistry::PLATFORM_ANDROID,
@@ -854,16 +854,47 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
  unsigned WebGLRenderingContextBase::CurrentMaxGLContexts() {
    MutexLocker locker(WebGLContextLimitMutex());
    DCHECK(webgl_context_limits_initialized_);
-@@ -550,6 +561,8 @@ WebGLRenderingContextBase::CreateWebGraphicsContext3DProvider(
+@@ -464,25 +475,6 @@ static String ExtractWebGLContextCreationError(
+     const Platform::GraphicsInfo& info) {
+   StringBuilder builder;
+   builder.Append("Could not create a WebGL context");
+-  FormatWebGLStatusString(
+-      "VENDOR",
+-      info.vendor_id ? String::Format("0x%04x", info.vendor_id) : "0xffff",
+-      builder);
+-  FormatWebGLStatusString(
+-      "DEVICE",
+-      info.device_id ? String::Format("0x%04x", info.device_id) : "0xffff",
+-      builder);
+-  FormatWebGLStatusString("GL_VENDOR", info.vendor_info, builder);
+-  FormatWebGLStatusString("GL_RENDERER", info.renderer_info, builder);
+-  FormatWebGLStatusString("GL_VERSION", info.driver_version, builder);
+-  FormatWebGLStatusString("Sandboxed", info.sandboxed ? "yes" : "no", builder);
+-  FormatWebGLStatusString("Optimus", info.optimus ? "yes" : "no", builder);
+-  FormatWebGLStatusString("AMD switchable", info.amd_switchable ? "yes" : "no",
+-                          builder);
+-  FormatWebGLStatusString(
+-      "Reset notification strategy",
+-      String::Format("0x%04x", info.reset_notification_strategy).Utf8().c_str(),
+-      builder);
+   FormatWebGLStatusString("ErrorMessage", info.error_message.Utf8().c_str(),
+                           builder);
+   builder.Append('.');
+@@ -550,6 +542,13 @@ WebGLRenderingContextBase::CreateWebGraphicsContext3DProvider(
      const CanvasContextCreationAttributesCore& attributes,
      Platform::ContextType context_type,
      Platform::GraphicsInfo* graphics_info) {
 +  int setting = AllowWebglForHost(host);
-+  if (setting == 2) return nullptr;
++  if (setting == 2) {
++    host->HostDispatchEvent(WebGLContextEvent::Create(
++        event_type_names::kWebglcontextcreationerror,
++        "disabled by site settings policy."));
++    return nullptr;
++  }
    if ((context_type == Platform::kWebGL1ContextType &&
         !host->IsWebGL1Enabled()) ||
        (context_type == Platform::kWebGL2ContextType &&
-@@ -3028,6 +3041,8 @@ WebGLActiveInfo* WebGLRenderingContextBase::getActiveUniform(
+@@ -3028,6 +3027,8 @@ WebGLActiveInfo* WebGLRenderingContextBase::getActiveUniform(
  
  absl::optional<HeapVector<Member<WebGLShader>>>
  WebGLRenderingContextBase::getAttachedShaders(WebGLProgram* program) {
@@ -872,7 +903,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    if (!ValidateWebGLProgramOrShader("getAttachedShaders", program))
      return absl::nullopt;
  
-@@ -3075,6 +3090,8 @@ ScriptValue WebGLRenderingContextBase::getBufferParameter(
+@@ -3075,6 +3076,8 @@ ScriptValue WebGLRenderingContextBase::getBufferParameter(
      ScriptState* script_state,
      GLenum target,
      GLenum pname) {
@@ -881,7 +912,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    if (isContextLost() || !ValidateBufferTarget("getBufferParameter", target))
      return ScriptValue::CreateNull(script_state->GetIsolate());
  
-@@ -3182,6 +3199,12 @@ bool WebGLRenderingContextBase::TimerQueryExtensionsEnabled() {
+@@ -3182,6 +3185,12 @@ bool WebGLRenderingContextBase::TimerQueryExtensionsEnabled() {
  
  ScriptValue WebGLRenderingContextBase::getExtension(ScriptState* script_state,
                                                      const String& name) {
@@ -894,7 +925,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    WebGLExtension* extension = nullptr;
  
    if (name == WebGLDebugRendererInfo::ExtensionName()) {
-@@ -3218,6 +3241,8 @@ ScriptValue WebGLRenderingContextBase::getFramebufferAttachmentParameter(
+@@ -3218,6 +3227,8 @@ ScriptValue WebGLRenderingContextBase::getFramebufferAttachmentParameter(
      GLenum target,
      GLenum attachment,
      GLenum pname) {
@@ -903,7 +934,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    if (isContextLost() ||
        !ValidateFramebufferFuncParameters("getFramebufferAttachmentParameter",
                                           target, attachment))
-@@ -3342,6 +3367,24 @@ static const GLenum kIdentifiableGLParams[] = {
+@@ -3342,6 +3353,24 @@ static const GLenum kIdentifiableGLParams[] = {
      GL_RENDERBUFFER_SAMPLES,
  };
  
@@ -928,7 +959,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
  bool ShouldMeasureGLParam(GLenum pname) {
    return IdentifiabilityStudySettings::Get()->ShouldSample(
               blink::IdentifiableSurface::Type::kWebGLParameter) &&
-@@ -3350,6 +3393,35 @@ bool ShouldMeasureGLParam(GLenum pname) {
+@@ -3350,6 +3379,35 @@ bool ShouldMeasureGLParam(GLenum pname) {
                     pname) != std::end(kIdentifiableGLParams);
  }
  
@@ -964,7 +995,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
  }  // namespace
  
  void WebGLRenderingContextBase::RecordIdentifiableGLParameterDigest(
-@@ -3398,6 +3470,7 @@ void WebGLRenderingContextBase::RecordUKMCanvasDrawnToAtFirstDrawCall() {
+@@ -3398,6 +3456,7 @@ void WebGLRenderingContextBase::RecordUKMCanvasDrawnToAtFirstDrawCall() {
  
  ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
                                                      GLenum pname) {
@@ -972,7 +1003,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    if (isContextLost())
      return ScriptValue::CreateNull(script_state->GetIsolate());
    const int kIntZero = 0;
-@@ -3540,7 +3613,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -3540,7 +3599,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
          RecordIdentifiableGLParameterDigest(
              pname, IdentifiabilityBenignStringToken(String(
                         ContextGL()->GetString(GL_SHADING_LANGUAGE_VERSION))));
@@ -981,7 +1012,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
        return WebGLAny(
            script_state,
            "WebGL GLSL ES 1.0 (" +
-@@ -3608,7 +3681,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -3608,7 +3667,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
          RecordIdentifiableGLParameterDigest(
              pname, IdentifiabilityBenignStringToken(
                         String(ContextGL()->GetString(GL_VERSION))));
@@ -990,7 +1021,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
        return WebGLAny(
            script_state,
            "WebGL 1.0 (" + String(ContextGL()->GetString(GL_VERSION)) + ")");
-@@ -3624,6 +3697,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -3624,6 +3683,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -1004,7 +1035,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
          if (IdentifiabilityStudySettings::Get()->ShouldSample(
                  blink::IdentifiableSurface::Type::kWebGLParameter)) {
            RecordIdentifiableGLParameterDigest(
-@@ -3639,6 +3719,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -3639,6 +3705,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -1018,7 +1049,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
          if (IdentifiabilityStudySettings::Get()->ShouldSample(
                  blink::IdentifiableSurface::Type::kWebGLParameter)) {
            RecordIdentifiableGLParameterDigest(
-@@ -3793,6 +3880,8 @@ ScriptValue WebGLRenderingContextBase::getRenderbufferParameter(
+@@ -3793,6 +3866,8 @@ ScriptValue WebGLRenderingContextBase::getRenderbufferParameter(
      ScriptState* script_state,
      GLenum target,
      GLenum pname) {
@@ -1027,7 +1058,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    if (isContextLost())
      return ScriptValue::CreateNull(script_state->GetIsolate());
    if (target != GL_RENDERBUFFER) {
-@@ -3823,7 +3912,7 @@ ScriptValue WebGLRenderingContextBase::getRenderbufferParameter(
+@@ -3823,7 +3898,7 @@ ScriptValue WebGLRenderingContextBase::getRenderbufferParameter(
      case GL_RENDERBUFFER_ALPHA_SIZE:
      case GL_RENDERBUFFER_DEPTH_SIZE:
      case GL_RENDERBUFFER_STENCIL_SIZE:
@@ -1036,7 +1067,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
        if (IdentifiabilityStudySettings::Get()->ShouldSample(
                blink::IdentifiableSurface::Type::kWebGLParameter)) {
          RecordIdentifiableGLParameterDigest(pname, value);
-@@ -3877,6 +3966,8 @@ ScriptValue WebGLRenderingContextBase::getShaderParameter(
+@@ -3877,6 +3952,8 @@ ScriptValue WebGLRenderingContextBase::getShaderParameter(
  String WebGLRenderingContextBase::getShaderInfoLog(WebGLShader* shader) {
    if (!ValidateWebGLProgramOrShader("getShaderInfoLog", shader))
      return String();
@@ -1045,7 +1076,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    GLStringQuery query(ContextGL());
    return query.Run<GLStringQuery::ShaderInfoLog>(ObjectNonZero(shader));
  }
-@@ -3907,6 +3998,12 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
+@@ -3907,6 +3984,12 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
    GLint precision = 0;
    ContextGL()->GetShaderPrecisionFormat(shader_type, precision_type, range,
                                          &precision);
@@ -1058,7 +1089,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    auto* result = MakeGarbageCollected<WebGLShaderPrecisionFormat>(
        range[0], range[1], precision);
    if (IdentifiabilityStudySettings::Get()->ShouldSample(
-@@ -3917,6 +4014,8 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
+@@ -3917,6 +4000,8 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
  }
  
  String WebGLRenderingContextBase::getShaderSource(WebGLShader* shader) {
@@ -1067,7 +1098,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    if (!ValidateWebGLProgramOrShader("getShaderSource", shader))
      return String();
    return EnsureNotNull(shader->Source());
-@@ -3927,6 +4026,15 @@ WebGLRenderingContextBase::getSupportedExtensions() {
+@@ -3927,6 +4012,15 @@ WebGLRenderingContextBase::getSupportedExtensions() {
    if (isContextLost())
      return absl::nullopt;
  
@@ -1083,7 +1114,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    Vector<String> result;
  
    for (ExtensionTracker* tracker : extensions_) {
-@@ -3946,6 +4054,8 @@ ScriptValue WebGLRenderingContextBase::getTexParameter(
+@@ -3946,6 +4040,8 @@ ScriptValue WebGLRenderingContextBase::getTexParameter(
      ScriptState* script_state,
      GLenum target,
      GLenum pname) {
@@ -1092,7 +1123,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    if (isContextLost())
      return ScriptValue::CreateNull(script_state->GetIsolate());
    if (!ValidateTextureBinding("getTexParameter", target))
-@@ -3980,6 +4090,8 @@ ScriptValue WebGLRenderingContextBase::getUniform(
+@@ -3980,6 +4076,8 @@ ScriptValue WebGLRenderingContextBase::getUniform(
      ScriptState* script_state,
      WebGLProgram* program,
      const WebGLUniformLocation* uniform_location) {
@@ -1101,7 +1132,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    if (!ValidateWebGLProgramOrShader("getUniform", program))
      return ScriptValue::CreateNull(script_state->GetIsolate());
    DCHECK(uniform_location);
-@@ -4263,6 +4375,8 @@ ScriptValue WebGLRenderingContextBase::getVertexAttrib(
+@@ -4263,6 +4361,8 @@ ScriptValue WebGLRenderingContextBase::getVertexAttrib(
      ScriptState* script_state,
      GLuint index,
      GLenum pname) {
@@ -1110,7 +1141,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    if (isContextLost())
      return ScriptValue::CreateNull(script_state->GetIsolate());
    if (index >= max_vertex_attribs_) {
-@@ -4340,6 +4454,8 @@ ScriptValue WebGLRenderingContextBase::getVertexAttrib(
+@@ -4340,6 +4440,8 @@ ScriptValue WebGLRenderingContextBase::getVertexAttrib(
  
  int64_t WebGLRenderingContextBase::getVertexAttribOffset(GLuint index,
                                                           GLenum pname) {
@@ -1119,7 +1150,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    if (isContextLost())
      return 0;
    GLvoid* result = nullptr;
-@@ -4676,9 +4792,13 @@ void WebGLRenderingContextBase::readPixels(
+@@ -4676,9 +4778,13 @@ void WebGLRenderingContextBase::readPixels(
      GLenum format,
      GLenum type,
      MaybeShared<DOMArrayBufferView> pixels) {
@@ -1134,7 +1165,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
  void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
                                                   GLint y,
                                                   GLsizei width,
-@@ -4686,7 +4806,8 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -4686,7 +4792,8 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
                                                   GLenum format,
                                                   GLenum type,
                                                   DOMArrayBufferView* pixels,
@@ -1144,7 +1175,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    if (isContextLost())
      return;
    // Due to WebGL's same-origin restrictions, it is not possible to
-@@ -4750,7 +4871,58 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -4750,7 +4857,58 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
  
    {
      ScopedDrawingBufferBinder binder(GetDrawingBuffer(), framebuffer);
@@ -1204,7 +1235,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    }
  }
  
-@@ -7418,6 +7590,18 @@ ScriptValue WebGLRenderingContextBase::GetFloatParameter(
+@@ -7418,6 +7576,18 @@ ScriptValue WebGLRenderingContextBase::GetFloatParameter(
            blink::IdentifiableSurface::Type::kWebGLParameter)) {
      RecordIdentifiableGLParameterDigest(pname, value);
    }
@@ -1223,7 +1254,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    return WebGLAny(script_state, value);
  }
  
-@@ -7444,6 +7628,18 @@ ScriptValue WebGLRenderingContextBase::GetIntParameter(
+@@ -7444,6 +7614,18 @@ ScriptValue WebGLRenderingContextBase::GetIntParameter(
            blink::IdentifiableSurface::Type::kWebGLParameter)) {
      RecordIdentifiableGLParameterDigest(pname, value);
    }
@@ -1242,7 +1273,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    return WebGLAny(script_state, value);
  }
  
-@@ -7453,6 +7649,18 @@ ScriptValue WebGLRenderingContextBase::GetInt64Parameter(
+@@ -7453,6 +7635,18 @@ ScriptValue WebGLRenderingContextBase::GetInt64Parameter(
    GLint64 value = 0;
    if (!isContextLost())
      ContextGL()->GetInteger64v(pname, &value);
@@ -1261,7 +1292,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    return WebGLAny(script_state, value);
  }
  
-@@ -7492,6 +7700,18 @@ ScriptValue WebGLRenderingContextBase::GetWebGLFloatArrayParameter(
+@@ -7492,6 +7686,18 @@ ScriptValue WebGLRenderingContextBase::GetWebGLFloatArrayParameter(
      }
      RecordIdentifiableGLParameterDigest(pname, builder.GetToken());
    }
@@ -1280,7 +1311,7 @@ diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_ba
    return WebGLAny(script_state, DOMFloat32Array::Create(value, length));
  }
  
-@@ -7520,6 +7740,18 @@ ScriptValue WebGLRenderingContextBase::GetWebGLIntArrayParameter(
+@@ -7520,6 +7726,18 @@ ScriptValue WebGLRenderingContextBase::GetWebGLIntArrayParameter(
      }
      RecordIdentifiableGLParameterDigest(pname, builder.GetToken());
    }
@@ -1361,4 +1392,3 @@ diff --git a/third_party/blink/renderer/platform/graphics/gpu/webgl_image_conver
  }  // namespace blink
 -- 
 2.25.1
-

@@ -7,10 +7,10 @@ the ui relative to the site settings for use by the other patches
 ---
  .../browser_ui/site_settings/android/BUILD.gn |   4 +
  .../BromiteCustomContentSetting.java          | 125 ++++++++
- .../BromiteCustomContentSettingImpl.java      | 269 ++++++++++++++++++
+ .../BromiteCustomContentSettingImpl.java      | 271 ++++++++++++++++++
  .../ContentSettingsResources.java             |  24 +-
  .../site_settings/SingleCategorySettings.java |  28 +-
- .../site_settings/SingleWebsiteSettings.java  |  19 +-
+ .../site_settings/SingleWebsiteSettings.java  |  22 +-
  .../site_settings/SiteSettings.java           |   3 +-
  .../site_settings/SiteSettingsCategory.java   |   9 +-
  .../TriStateSiteSettingsPreference.java       |  13 +-
@@ -27,7 +27,7 @@ the ui relative to the site settings for use by the other patches
  .../android/page_info_controller_android.cc   |  18 ++
  components/page_info/page_info.cc             |  23 +-
  components/page_info/page_info_ui.cc          |  18 ++
- 22 files changed, 591 insertions(+), 22 deletions(-)
+ 22 files changed, 595 insertions(+), 23 deletions(-)
  create mode 100644 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/BromiteCustomContentSetting.java
  create mode 100644 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/BromiteCustomContentSettingImpl.java
 
@@ -85,7 +85,7 @@ new file mode 100644
 +
 +    private @ContentSettingsType int mContentSettingsType;
 +    private @SiteSettingsCategory.Type int mSiteSettingsCategory;
-+    private @ContentSettingValues Integer mDefaultValue;
++    private @ContentSettingValues Integer mInitialDefaultValue;
 +    private @ContentSettingValues Integer mDefaultDisabledValue;
 +    private boolean mAllowException;
 +    private String mPreferenceKey;
@@ -93,14 +93,14 @@ new file mode 100644
 +
 +    public BromiteCustomContentSetting(@ContentSettingsType int contentSettingsType,
 +                                       @SiteSettingsCategory.Type int siteSettingsCategory,
-+                                       @ContentSettingValues Integer defaultValue,
++                                       @ContentSettingValues Integer initialDefaultValue,
 +                                       @ContentSettingValues Integer defaultDisabledValue,
 +                                       boolean allowException,
 +                                       String preferenceKey,
 +                                       String profilePrefKey) {
 +        mContentSettingsType = contentSettingsType;
 +        mSiteSettingsCategory = siteSettingsCategory;
-+        mDefaultValue = defaultValue;
++        mInitialDefaultValue = initialDefaultValue;
 +        mDefaultDisabledValue = defaultDisabledValue;
 +        mAllowException = allowException;
 +        mPreferenceKey = preferenceKey;
@@ -115,8 +115,8 @@ new file mode 100644
 +        return mSiteSettingsCategory;
 +    }
 +
-+    public @ContentSettingValues Integer getDefaultValue() {
-+        return mDefaultValue;
++    protected @ContentSettingValues Integer getInitialDefaultValue() {
++        return mInitialDefaultValue;
 +    }
 +
 +    public @ContentSettingValues Integer getDefaultDisabledValue() {
@@ -148,7 +148,7 @@ new file mode 100644
 +    }
 +
 +    public boolean isOnBlockList(@ContentSettingValues Integer contentSetting) {
-+        return mDefaultValue != contentSetting;
++        return mDefaultDisabledValue == contentSetting;
 +    }
 +
 +    public abstract @Nullable Boolean considerException(SiteSettingsCategory category, @ContentSettingValues int value);
@@ -179,7 +179,7 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
 new file mode 100644
 --- /dev/null
 +++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/BromiteCustomContentSettingImpl.java
-@@ -0,0 +1,269 @@
+@@ -0,0 +1,271 @@
 +/*
 +    This file is part of Bromite.
 +
@@ -304,8 +304,10 @@ new file mode 100644
 +                continue;
 +            }
 +
++            int default_value = WebsitePreferenceBridge.getDefaultContentSetting(
++                                    browserContextHandle, cs.getContentSetting());
 +            if (SingleCategorySettings.BINARY_TOGGLE_KEY.equals(preference.getKey())) {
-+                int setting = ((boolean) newValue) == true ? cs.getDefaultValue() :
++                int setting = ((boolean) newValue) == true ? default_value :
 +                                                             cs.getDefaultDisabledValue();
 +
 +                WebsitePreferenceBridge.setDefaultContentSetting(browserContextHandle,
@@ -628,7 +630,7 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
              Preference preference = new ChromeSwitchPreference(getStyledContext());
              preference.setKey(getPreferenceKey(type));
  
-@@ -888,14 +890,21 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
+@@ -888,14 +890,22 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
  
      private void setupContentSettingsPreference(Preference preference,
              @ContentSettingValues @Nullable Integer value, boolean isEmbargoed) {
@@ -639,12 +641,14 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
 +        if (value == null && cs == null) return;
 +        if (value == null) {
 +            if (cs.showIntoInfoPage() == false) return;
-+            value = cs.getDefaultValue();
++            value = WebsitePreferenceBridge.getDefaultContentSetting(
++                        getSiteSettingsDelegate().getBrowserContextHandle(), content_type);
 +        }
          setUpPreferenceCommon(preference, value);
  
          ChromeSwitchPreference switchPreference = (ChromeSwitchPreference) preference;
-         switchPreference.setChecked(value == ContentSettingValues.ALLOW);
+-        switchPreference.setChecked(value == ContentSettingValues.ALLOW);
++        switchPreference.setChecked(value != ContentSettingValues.BLOCK);
          switchPreference.setSummary(isEmbargoed
                          ? getString(R.string.automatically_blocked)
 -                        : getString(ContentSettingsResources.getCategorySummary(value)));
@@ -652,7 +656,7 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
          switchPreference.setOnPreferenceChangeListener(this);
          @ContentSettingsType
          int contentType = getContentSettingsTypeFromPreferenceKey(preference.getKey());
-@@ -1114,7 +1123,7 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
+@@ -1114,7 +1124,7 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
              preference.setSummary(getDSECategorySummary(permission));
          } else {
              preference.setSummary(
@@ -1102,4 +1106,3 @@ diff --git a/components/page_info/page_info_ui.cc b/components/page_info/page_in
  
 -- 
 2.25.1
-
