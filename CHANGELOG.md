@@ -1,3 +1,12 @@
+# 97.0.4692.106
+* disable url-keyed metrics reporting service (thanks to @uazo)
+* disable mobile identity consistency by default
+* disable appending variations header
+* use Google Chrome branding for client hints
+* make HTTPS-only mode enabled by default
+* enable trivial auto var init (thanks to @BayLee4, fixes https://github.com/bromite/bromite/issues/1749)
+* enable use_cfi_cast
+
 # 96.0.4664.183
 * updated zh_CN translations (thanks to @zhmars)
 
