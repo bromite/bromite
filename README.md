@@ -35,7 +35,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 
 # Features
 
-* customizable adblock filters via user-provided URL (see https://www.bromite.org/custom-filters)
+* customizable adblock filters via user-provided URL (see [www.bromite.org/custom-filters](https://www.bromite.org/custom-filters))
 * automatically update adblock filters
 * remove click-tracking and AMP from search results
 * DNS-over-HTTPS support with any valid IETF DoH endpoint
@@ -174,7 +174,7 @@ You can download csagan5's public GnuPG key from here: [csagan5.asc](./csagan5.a
 
 # How to build
 
-The [Bromite main repository](https://github.com/bromite/bromite) contains tags for each corresponding Chromium release (see [chromium/src](https://chromium.googlesource.com/chromium/src.git) ).
+The [Bromite main repository](https://github.com/bromite/bromite) contains tags for each corresponding Chromium release (see [chromium/src](https://chromium.googlesource.com/chromium/src.git)).
 
 Please refer to [official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
 
