@@ -20,7 +20,7 @@ Projects which follow a strict approach on this are [Iridium](https://iridiumbro
 
 Yes, in order to play protected/encrypted media content the browser will use Android's DRM media framework to automatically negotiate access (same as Chromium).
 This means for example that requests to Android license servers will be performed (`www.googleapis.com`), see https://w3c.github.io/encrypted-media/#direct-individualization
-To disable this functionality you should disable protected content playback from Site settings -> Multimedia.
+To disable this functionality you should disable protected content playback from Site settings -> Protected Content.
 
 ## What is the SystemWebView?
 It is the core component of Android for all web page visualizations. For example when you access a new wifi network and need to activate it, that is using the SystemWebView. If you do not know what it is then you do not need to install it.
