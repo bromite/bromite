@@ -31,7 +31,7 @@ Ad-blocking was present and always enabled in the SystemWebView from version `72
 
 ## How to enable DNS-over-HTTPS?
 
-See [this wiki page](https://github.com/bromite/bromite/wiki/Enabling-DNS-over-HTTPS).
+See [this page](https://www.bromite.org/doh).
 
 ## Can you add HTTPS everywhere?
 No.
