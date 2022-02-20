@@ -14,7 +14,7 @@ Bromite is only available for Android Marshmallow (v6.0, API level 23) and above
 
 <img src="https://fdroid.bromite.org/fdroid/bromite_bromite_gh_downloads.svg" alt="Downloads on Github" title="Downloads on Github" />
 
-For the Frequently Asked Questions see [F.A.Q.](./FAQ.md).
+For the Frequently Asked Questions see [F.A.Q](./FAQ.md).
 
 For documentation see the [wiki](https://github.com/bromite/bromite/wiki).
 
@@ -36,10 +36,11 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 # Features
 
 * customizable adblock filters via user-provided URL (see https://www.bromite.org/custom-filters)
-* automatically updated adblock filters
+* automatically update adblock filters
 * remove click-tracking and AMP from search results
 * DNS-over-HTTPS support with any valid IETF DoH endpoint
 * always-incognito mode
+* timezone customization
 * disable all field trials permanently
 * disable smart search by default, allow web search from incognito mode
 * always-visible cookies, javascript and ads site settings
@@ -63,10 +64,10 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * make all favicon requests on-demand ([supercookie](https://supercookie.me/) mitigation)
 * enable all network isolation features (`PartitionConnectionsByNetworkIsolationKey`, `PartitionHttpServerPropertiesByNetworkIsolationKey`, `SplitHostCacheByNetworkIsolationKey`, `AppendFrameOriginToNetworkIsolationKey`, `SplitCacheByNetworkIsolationKey`, `UseRegistrableDomainInNetworkIsolationKey`, `PartitionSSLSessionsByNetworkIsolationKey`, `PartitionExpectCTStateByNetworkIsolationKey`, `PartitionDomainReliabilityByNetworkIsolationKey`)
 * ignore enterprise policies that disallow secure DNS
-* ask permission to play protected media
+* ask permission to play Protected Media by Default.
 * disable the DIAL repeating discovery
 * disable RTCGetCurrentBrowsingContextMedia by default
-* disable FLoC by default
+* disable FLoC
 * disable feeds
 * disable reporting of certificate errors
 * use pre-defined phone model for client hints and Javascript
@@ -93,7 +94,6 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * adding an URL as bookmark will clear its blocked status for the NTP tiles
 * history support in incognito mode
 * view source of pages
-* timezone customization
 * sticky desktop mode setting
 * disable video autoplay by default, reintroduce site settings
 * mobile/desktop user agent customization
@@ -174,7 +174,7 @@ You can download csagan5's public GnuPG key from here: [csagan5.asc](./csagan5.a
 
 # How to build
 
-The [Bromite main repository](https://github.com/bromite/bromite) contains tags for each corresponding Chromium release (see https://chromium.googlesource.com/chromium/src.git).
+The [Bromite main repository](https://github.com/bromite/bromite) contains tags for each corresponding Chromium release (see [chromium/src](https://chromium.googlesource.com/chromium/src.git) ).
 
 Please refer to [official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
 
@@ -184,7 +184,7 @@ The patches are to be applied second the order specified in the `bromite_patches
 
 ## How to build the filters
 
-See upstream documentation: https://github.com/chromium/chromium/blob/master/components/subresource_filter/FILTER_LIST_GENERATION.md
+See [upstream documentation](https://github.com/chromium/chromium/blob/master/components/subresource_filter/FILTER_LIST_GENERATION.md)
 
 Bromite uses an unindexed filter file, which is periodically published at https://github.com/bromite/filters
 
@@ -213,7 +213,7 @@ For any usage or development discussion please use GitHub Discussions: https://g
 * [uBlock Origin](https://github.com/uBlockOrigin)
 * [Peter Lowe's Ad and tracking server list](https://pgl.yoyo.org/adservers/)
 
-The URLs of the lists used are available at: https://github.com/bromite/filters/blob/master/lists.txt
+The URLs of the lists used are available [here](https://github.com/bromite/filters/blob/master/lists.txt).
 
 # License
 
