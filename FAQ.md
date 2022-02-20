@@ -78,7 +78,7 @@ Yes, since version 94.0.4606.109 the native Android autofill can be used; this d
 
 ## Does Bromite support casting media content?
 
-No; this would require Play Store binary blobs.
+No, this would require Play Store binary blobs.
 
 ## Can you add this search engine as default?
 No.
