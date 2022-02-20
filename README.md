@@ -141,7 +141,7 @@ Bromite's privacy features, including anti-fingerprinting mitigations (which are
 
 # Releases
 
-All built versions are available as [releases](https://github.com/bromite/bromite/releases); the [official website](https://www.bromite.org/) points to those releases and - when browsing via Android - it will automatically highlight the one apt for your device (or none otherwise).
+All built versions are available as [releases](https://github.com/bromite/bromite/releases); the [official website](https://www.bromite.org/) points to those releases and - when browsing via Android - it will automatically highlight the one compatible with your device (or none otherwise).
 
 Each tag corresponds to a Chromium Stable release tag.
 
