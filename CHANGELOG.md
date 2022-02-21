@@ -1,3 +1,13 @@
+# 98.0.4758.108
+* re-introduce flag for text fragments
+* re-introduce content feature flag to disable field trials
+* disable idle detection
+* disable critical client hints
+* disable supervised users
+* partial fix for incognito notification (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1503)
+* consider websockets 'unknown' address space as 'public' (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1693)
+* fix crash when accessing site settings of some sites (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1355)
+
 # 97.0.4692.106
 * disable url-keyed metrics reporting service (thanks to @uazo)
 * disable mobile identity consistency by default
