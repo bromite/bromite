@@ -8,25 +8,25 @@ Enable checking for new versions, with notifications and proxy support
  build/config/android/rules.gni                |   3 +
  chrome/android/chrome_java_sources.gni        |   3 +
  .../java/res/xml/about_chrome_preferences.xml |   5 +
- .../about_settings/AboutChromeSettings.java   |  28 ++-
- .../chrome/browser/omaha/OmahaBase.java       |  47 +++-
+ .../about_settings/AboutChromeSettings.java   |  28 +-
+ .../chrome/browser/omaha/OmahaBase.java       |  53 +++-
  .../chrome/browser/omaha/UpdateConfigs.java   |  30 ++-
- .../browser/omaha/UpdateMenuItemHelper.java   |  69 +++++-
- .../browser/omaha/UpdateStatusProvider.java   | 169 ++++++++++++---
+ .../browser/omaha/UpdateMenuItemHelper.java   |  74 +++++-
+ .../browser/omaha/UpdateStatusProvider.java   | 162 +++++++++---
  .../browser/omaha/VersionNumberGetter.java    |   3 +-
- .../inline/BromiteInlineUpdateController.java | 204 ++++++++++++++++++
- .../omaha/inline/InlineUpdateController.java  |  45 ++++
+ .../inline/BromiteInlineUpdateController.java | 242 ++++++++++++++++++
+ .../omaha/inline/InlineUpdateController.java  |  51 ++++
  .../inline/InlineUpdateControllerFactory.java |  21 ++
  chrome/browser/endpoint_fetcher/BUILD.gn      |   2 +
- .../endpoint_fetcher/endpoint_fetcher.cc      | 129 +++++++++++
+ .../endpoint_fetcher/endpoint_fetcher.cc      | 135 +++++++++-
  .../endpoint_fetcher/endpoint_fetcher.h       |  23 +-
- .../endpoint_fetcher/EndpointFetcher.java     |  11 +
+ .../endpoint_fetcher/EndpointFetcher.java     |  21 +-
  .../EndpointHeaderResponse.java               |  31 +++
  .../flags/android/chrome_feature_list.cc      |   6 +-
  .../flags/android/chrome_feature_list.h       |   1 +
  .../browser/flags/ChromeFeatureList.java      |   1 +
  .../strings/android_chrome_strings.grd        |  20 +-
- 22 files changed, 811 insertions(+), 42 deletions(-)
+ 22 files changed, 869 insertions(+), 48 deletions(-)
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/BromiteInlineUpdateController.java
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateController.java
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java
@@ -152,18 +152,19 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/OmahaBase
  /**
   * Keeps tabs on the current state of Chrome, tracking if and when a request should be sent to the
   * Omaha Server.
-@@ -97,7 +99,9 @@ public class OmahaBase {
+@@ -97,7 +99,10 @@ public class OmahaBase {
      static final String PREF_TIMESTAMP_FOR_NEW_REQUEST = "timestampForNewRequest";
      static final String PREF_TIMESTAMP_FOR_NEXT_POST_ATTEMPT = "timestampForNextPostAttempt";
      static final String PREF_TIMESTAMP_OF_INSTALL = "timestampOfInstall";
 -    static final String PREF_TIMESTAMP_OF_REQUEST = "timestampOfRequest";
 +    public static final String PREF_TIMESTAMP_OF_REQUEST = "timestampOfRequest";
 +    public static final String PREF_LATEST_MODIFIED_VERSION = "latestModifiedVersion";
++    public static final String PREF_LATEST_UPSTREAM_VERSION = "latestUpstreamVersion";
 +    public static final String PREF_ALLOW_INLINE_UPDATE = "allowInlineUpdate";
  
      static final int MIN_API_JOB_SCHEDULER = Build.VERSION_CODES.M;
  
-@@ -158,7 +162,8 @@ public class OmahaBase {
+@@ -158,7 +163,8 @@ public class OmahaBase {
  
      /** See {@link #sIsDisabled}. */
      static boolean isDisabled() {
@@ -173,21 +174,15 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/OmahaBase
      }
  
      /**
-@@ -630,4 +635,42 @@ public class OmahaBase {
+@@ -630,4 +636,47 @@ public class OmahaBase {
                  // updateStatus is only used for the on-demand check.
                  null);
      }
 +
-+    public static boolean isNewVersionAvailableByVersion(String latestVersionString) {
++    public static boolean isNewVersionAvailableByVersion(VersionNumber latestVersion) {
 +        VersionNumber mCurrentProductVersion = VersionNumber.fromString(ChromeVersionInfo.getProductVersion());
 +        if (mCurrentProductVersion == null) {
 +            Log.e(TAG, "BromiteUpdater: current product version is null");
-+            return false;
-+        }
-+
-+        VersionNumber latestVersion = VersionNumber.fromString(latestVersionString);
-+        if (latestVersion == null) {
-+            Log.e(TAG, "BromiteUpdater: invalid latest version '%s'", latestVersionString);
 +            return false;
 +        }
 +
@@ -204,16 +199,27 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/OmahaBase
 +        editor.apply();
 +    }
 +
-+    public static void setLastModifiedVersion(String version) {
++    public static void setLatestModifiedVersion(String version) {
 +        SharedPreferences preferences = OmahaBase.getSharedPreferences();
 +        SharedPreferences.Editor editor = preferences.edit();
 +        editor.putString(OmahaBase.PREF_LATEST_MODIFIED_VERSION, version);
 +        editor.apply();
 +    }
 +
++    public static void setLatestUpstreamVersion(String version) {
++        SharedPreferences preferences = OmahaBase.getSharedPreferences();
++        SharedPreferences.Editor editor = preferences.edit();
++        editor.putString(OmahaBase.PREF_LATEST_UPSTREAM_VERSION, version);
++        editor.apply();
++    }
++
 +    public static void resetUpdatePrefs() {
-+        OmahaBase.setLastModifiedVersion("");
-+        OmahaBase.updateLastPushedTimeStamp(0);
++        SharedPreferences preferences = OmahaBase.getSharedPreferences();
++        SharedPreferences.Editor editor = preferences.edit();
++        editor.putLong(OmahaBase.PREF_TIMESTAMP_OF_REQUEST, 0);
++        editor.putString(OmahaBase.PREF_LATEST_MODIFIED_VERSION, "");
++        editor.putString(OmahaBase.PREF_LATEST_UPSTREAM_VERSION, "");
++        editor.apply();
 +    }
  }
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateConfigs.java b/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateConfigs.java
@@ -247,8 +253,8 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateCon
          int INTENT_ONLY = 2;
 +
 +        /**
-+         * Requires both Omaha and Play Store to say an update is available. Only ever uses the
-+         * inline update flow.
++         * Inline updates that contact Bromite official GitHub repository to say whether an update is available.
++         * Only ever uses the inline update flow.
 +         */
 +        int INLINE_ONLY = 3;
      }
@@ -288,38 +294,20 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateCon
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMenuItemHelper.java b/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMenuItemHelper.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMenuItemHelper.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMenuItemHelper.java
-@@ -22,6 +22,7 @@ import org.chromium.base.metrics.RecordHistogram;
- import org.chromium.base.task.PostTask;
- import org.chromium.base.task.TaskTraits;
- import org.chromium.chrome.R;
-+import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateInteractionSource;
- import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateState;
- import org.chromium.chrome.browser.omaha.UpdateStatusProvider.UpdateStatus;
- import org.chromium.chrome.browser.preferences.Pref;
-@@ -157,7 +158,7 @@ public class UpdateMenuItemHelper {
- 
-                 try {
-                     UpdateStatusProvider.getInstance().startIntentUpdate(
--                            activity, false /* newTask */);
-+                            activity, UpdateInteractionSource.FROM_MENU, false /* newTask */);
-                     recordItemClickedHistogram(ITEM_CLICKED_INTENT_LAUNCHED);
-                     getPrefService().setBoolean(Pref.CLICKED_UPDATE_MENU_ITEM, true);
-                 } catch (ActivityNotFoundException e) {
-@@ -165,8 +166,22 @@ public class UpdateMenuItemHelper {
+@@ -165,8 +165,21 @@ public class UpdateMenuItemHelper {
                      recordItemClickedHistogram(ITEM_CLICKED_INTENT_FAILED);
                  }
                  break;
++            case UpdateState.VULNERABLE_VERSION:
++            // Intentional fall through.
 +            case UpdateState.INLINE_UPDATE_AVAILABLE:
-+                UpdateStatusProvider.getInstance().startInlineUpdate(
-+                        UpdateInteractionSource.FROM_MENU, activity);
++                UpdateStatusProvider.getInstance().startInlineUpdate(activity);
 +                break;
 +            case UpdateState.INLINE_UPDATE_READY:
-+                UpdateStatusProvider.getInstance().finishInlineUpdate(
-+                        UpdateInteractionSource.FROM_MENU);
++                UpdateStatusProvider.getInstance().finishInlineUpdate();
 +                break;
 +            case UpdateState.INLINE_UPDATE_FAILED:
-+                UpdateStatusProvider.getInstance().retryInlineUpdate(
-+                        UpdateInteractionSource.FROM_MENU, activity);
++                UpdateStatusProvider.getInstance().retryInlineUpdate(activity);
 +                break;
              case UpdateState.UNSUPPORTED_OS_VERSION:
              // Intentional fall through.
@@ -328,17 +316,33 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMen
              default:
                  return;
          }
-@@ -268,6 +283,58 @@ public class UpdateMenuItemHelper {
+@@ -215,7 +228,7 @@ public class UpdateMenuItemHelper {
+ 
+         mMenuUiState = new MenuUiState();
+         switch (mStatus.updateState) {
+-            case UpdateState.UPDATE_AVAILABLE:
++            case UpdateState.UPDATE_AVAILABLE: // this is not used in Bromite
+                 // The badge is hidden if the update menu item has been clicked until there is an
+                 // even newer version of Chrome available.
+                 showBadge |= !TextUtils.equals(
+@@ -268,6 +281,65 @@ public class UpdateMenuItemHelper {
                  mMenuUiState.itemState.icon = R.drawable.ic_error_24dp_filled;
                  mMenuUiState.itemState.enabled = false;
                  break;
++            case UpdateState.VULNERABLE_VERSION:
++            // Intentional fall through.
 +            case UpdateState.INLINE_UPDATE_AVAILABLE:
 +                // The badge is hidden if the update menu item has been clicked until there is an
 +                // even newer version of Chrome available.
-+                showBadge |= !TextUtils.equals(
++                if (mStatus.updateState == UpdateState.VULNERABLE_VERSION) {
++                    // always show badge in case of vulnerable version
++                    showBadge = true;
++                } else {
++                    showBadge |= !TextUtils.equals(
 +                        getPrefService().getString(
 +                                Pref.LATEST_VERSION_WHEN_CLICKED_UPDATE_MENU_ITEM),
 +                        mStatus.latestUnsupportedVersion);
++                }
 +
 +                if (showBadge) {
 +                    mMenuUiState.buttonState = new MenuButtonState();
@@ -410,17 +414,18 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
  import org.chromium.base.BuildInfo;
  import org.chromium.base.Callback;
  import org.chromium.base.ContextUtils;
-@@ -26,6 +31,9 @@ import org.chromium.base.metrics.RecordHistogram;
+@@ -26,6 +31,10 @@ import org.chromium.base.metrics.RecordHistogram;
  import org.chromium.base.task.AsyncTask;
  import org.chromium.base.task.AsyncTask.Status;
  import org.chromium.base.task.PostTask;
 +import org.chromium.chrome.browser.app.ChromeActivity;
++import org.chromium.chrome.browser.omaha.inline.BromiteInlineUpdateController;
 +import org.chromium.chrome.browser.omaha.inline.InlineUpdateController;
 +import org.chromium.chrome.browser.omaha.inline.InlineUpdateControllerFactory;
  import org.chromium.chrome.browser.omaha.metrics.UpdateSuccessMetrics;
  import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
  import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
-@@ -36,28 +44,50 @@ import java.io.File;
+@@ -36,30 +45,38 @@ import java.io.File;
  import java.lang.annotation.Retention;
  import java.lang.annotation.RetentionPolicy;
  
@@ -438,21 +443,6 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
   */
 -public class UpdateStatusProvider {
 +public class UpdateStatusProvider implements ActivityStateListener {
-+    /**
-+     * Possible sources of user interaction regarding updates.
-+     * Treat this as append only as it is used by UMA.
-+     */
-+    @IntDef({UpdateInteractionSource.FROM_MENU, UpdateInteractionSource.FROM_INFOBAR,
-+            UpdateInteractionSource.FROM_NOTIFICATION})
-+    @Retention(RetentionPolicy.SOURCE)
-+    public @interface UpdateInteractionSource {
-+        int FROM_MENU = 0;
-+        int FROM_INFOBAR = 1;
-+        int FROM_NOTIFICATION = 2;
-+
-+        int NUM_ENTRIES = 3;
-+    }
-+
      /**
       * Possible update states.
       * Treat this as append only as it is used by UMA.
@@ -460,7 +450,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
 -    @IntDef({UpdateState.NONE, UpdateState.UPDATE_AVAILABLE, UpdateState.UNSUPPORTED_OS_VERSION})
 +    @IntDef({UpdateState.NONE, UpdateState.UPDATE_AVAILABLE, UpdateState.UNSUPPORTED_OS_VERSION,
 +            UpdateState.INLINE_UPDATE_AVAILABLE, UpdateState.INLINE_UPDATE_DOWNLOADING,
-+            UpdateState.INLINE_UPDATE_READY, UpdateState.INLINE_UPDATE_FAILED})
++            UpdateState.INLINE_UPDATE_READY, UpdateState.INLINE_UPDATE_FAILED, UpdateState.VULNERABLE_VERSION})
      @Retention(RetentionPolicy.SOURCE)
      public @interface UpdateState {
          int NONE = 0;
@@ -475,10 +465,14 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
 +        int INLINE_UPDATE_DOWNLOADING = 4;
 +        int INLINE_UPDATE_READY = 5;
 +        int INLINE_UPDATE_FAILED = 6;
++        int VULNERABLE_VERSION = 7;
  
-         int NUM_ENTRIES = 7;
+-        int NUM_ENTRIES = 7;
++        int NUM_ENTRIES = 8;
      }
-@@ -93,6 +123,12 @@ public class UpdateStatusProvider {
+ 
+     /** A set of properties that represent the current update state for Chrome. */
+@@ -93,6 +110,12 @@ public class UpdateStatusProvider {
           */
          private boolean mIsSimulated;
  
@@ -491,7 +485,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
          public UpdateStatus() {}
  
          UpdateStatus(UpdateStatus other) {
-@@ -101,11 +137,13 @@ public class UpdateStatusProvider {
+@@ -101,11 +124,13 @@ public class UpdateStatusProvider {
              latestVersion = other.latestVersion;
              latestUnsupportedVersion = other.latestUnsupportedVersion;
              mIsSimulated = other.mIsSimulated;
@@ -505,17 +499,16 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
      private final UpdateQuery mOmahaQuery;
      private final UpdateSuccessMetrics mMetrics;
      private @Nullable UpdateStatus mStatus;
-@@ -173,19 +211,44 @@ public class UpdateStatusProvider {
+@@ -173,6 +198,30 @@ public class UpdateStatusProvider {
          pingObservers();
      }
  
 +    /**
 +     * Starts the inline update process, if possible.
-+     * @source         The source of the action (the UI that caused it).
 +     * @param activity An {@link Activity} that will be used to interact with Play.
 +     */
-+    public void startInlineUpdate(@UpdateInteractionSource int source, Activity activity) {
-+        if (mStatus == null || mStatus.updateState != UpdateState.INLINE_UPDATE_AVAILABLE) return;
++    public void startInlineUpdate(Activity activity) {
++        if (mStatus == null || (mStatus.updateState != UpdateState.INLINE_UPDATE_AVAILABLE && mStatus.updateState != UpdateState.VULNERABLE_VERSION)) return;
 +        mInlineController.startUpdate(activity);
 +    }
 +
@@ -523,13 +516,13 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
 +     * Retries the inline update process, if possible.
 +     * @param activity An {@link Activity} that will be used to interact with Play.
 +     */
-+    public void retryInlineUpdate(@UpdateInteractionSource int source, Activity activity) {
-+        if (mStatus == null || mStatus.updateState != UpdateState.INLINE_UPDATE_AVAILABLE) return;
++    public void retryInlineUpdate(Activity activity) {
++        if (mStatus == null || (mStatus.updateState != UpdateState.INLINE_UPDATE_AVAILABLE && mStatus.updateState != UpdateState.VULNERABLE_VERSION)) return;
 +        mInlineController.startUpdate(activity);
 +    }
 +
 +    /** Finishes the inline update process, which may involve restarting the app. */
-+    public void finishInlineUpdate(@UpdateInteractionSource int source) {
++    public void finishInlineUpdate() {
 +        if (mStatus == null || mStatus.updateState != UpdateState.INLINE_UPDATE_READY) return;
 +        mInlineController.completeUpdate();
 +    }
@@ -537,13 +530,11 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
      /**
       * Starts the intent update process, if possible
       * @param context An {@link Context} that will be used to fire off the update intent.
-+     * @param source  The source of the action (the UI that caused it).
-      * @param newTask Whether or not to make the intent a new task.
+@@ -180,12 +229,11 @@ public class UpdateStatusProvider {
       * @return        Whether or not the update intent was sent and had a valid handler.
       */
--    public boolean startIntentUpdate(Context context, boolean newTask) {
-+    public boolean startIntentUpdate(
-+            Context context, @UpdateInteractionSource int source, boolean newTask) {
+     public boolean startIntentUpdate(Context context, boolean newTask) {
++        // currently not used in Bromite
          if (mStatus == null || mStatus.updateState != UpdateState.UPDATE_AVAILABLE) return false;
          if (TextUtils.isEmpty(mStatus.updateUrl)) return false;
  
@@ -553,7 +544,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
              Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(mStatus.updateUrl));
              if (newTask) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
              context.startActivity(intent);
-@@ -196,9 +259,29 @@ public class UpdateStatusProvider {
+@@ -196,9 +244,29 @@ public class UpdateStatusProvider {
          return true;
      }
  
@@ -583,7 +574,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
      }
  
      private void pingObservers() {
-@@ -206,27 +289,59 @@ public class UpdateStatusProvider {
+@@ -206,21 +274,38 @@ public class UpdateStatusProvider {
      }
  
      private void resolveStatus() {
@@ -597,24 +588,26 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
  
 -        if (!mStatus.mIsSimulated) {
 -            mStatus.updateState = mOmahaQuery.getResult().updateState;
-+        if (mStatus.mIsSimulated) {
++        if (mStatus.mIsSimulated) { // used only during tests
 +            if (mStatus.mIsInlineSimulated) {
 +                @UpdateState
 +                int inlineState = mInlineController.getStatus();
++                String updateUrl = mInlineController.getUpdateUrl();
 +
 +                if (inlineState == UpdateState.NONE) {
 +                    mStatus.updateState = mOmahaQuery.getResult().updateState;
 +                } else {
 +                    mStatus.updateState = inlineState;
++                    mStatus.updateUrl = updateUrl;
 +                }
 +            }
 +        } else {
-+            @UpdateState
-+            int omahaState = mOmahaQuery.getResult().updateState;
++            // used by Bromite to resolve update status
++            // ignores Omaha status
 +            @UpdateState
 +            int inlineState = mInlineController.getStatus();
-+            mStatus.updateState = resolveOmahaAndInlineStatus(
-+                    UpdateConfigs.getConfiguration(), omahaState, inlineState);
++            mStatus.updateState = inlineState;
++            mStatus.updateUrl = mInlineController.getUpdateUrl();
          }
  
          if (!mRecordedInitialStatus) {
@@ -624,30 +617,24 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
              mRecordedInitialStatus = true;
          }
  
-         pingObservers();
+@@ -232,6 +317,7 @@ public class UpdateStatusProvider {
      }
  
-+    @VisibleForTesting
-+    static @UpdateState int resolveOmahaAndInlineStatus(
-+            @UpdateConfigs.UpdateFlowConfiguration int configuration, @UpdateState int omahaState,
-+            @UpdateState int inlineState) {
-+        switch (configuration) {
-+            case UpdateConfigs.UpdateFlowConfiguration.NEVER_SHOW:
-+                return UpdateState.NONE;
-+            case UpdateConfigs.UpdateFlowConfiguration.INLINE_ONLY:
-+                if (inlineState == UpdateState.NONE) return omahaState;
-+                return inlineState;
-+            case UpdateConfigs.UpdateFlowConfiguration.INTENT_ONLY: // Intentional fall through.
-+            default:
-+                // Fall back to use Omaha only and use the old flow.
-+                return omahaState;
-+        }
-+    }
-+
-     private static final class LazyHolder {
-         private static final UpdateStatusProvider INSTANCE = new UpdateStatusProvider();
-     }
-@@ -268,6 +383,8 @@ public class UpdateStatusProvider {
+     private static final class UpdateQuery extends AsyncTask<UpdateStatus> {
++        static final String TAG = "UpdateStatusProvider";
+         private final Context mContext = ContextUtils.getApplicationContext();
+         private final Runnable mCallback;
+ 
+@@ -249,7 +335,7 @@ public class UpdateStatusProvider {
+         protected UpdateStatus doInBackground() {
+             UpdateStatus testStatus = getTestStatus();
+             if (testStatus != null) return testStatus;
+-            return getRealStatus(mContext);
++            return getActualStatus(mContext);
+         }
+ 
+         @Override
+@@ -268,6 +354,8 @@ public class UpdateStatusProvider {
              status.mIsSimulated = true;
              status.updateState = forcedUpdateState;
  
@@ -656,8 +643,12 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
              // Push custom configurations for certain update states.
              switch (forcedUpdateState) {
                  case UpdateState.UPDATE_AVAILABLE:
-@@ -287,24 +404,12 @@ public class UpdateStatusProvider {
-         private UpdateStatus getRealStatus(Context context) {
+@@ -284,27 +372,33 @@ public class UpdateStatusProvider {
+             return status;
+         }
+ 
+-        private UpdateStatus getRealStatus(Context context) {
++        private UpdateStatus getActualStatus(Context context) {
              UpdateStatus status = new UpdateStatus();
  
 -            if (VersionNumberGetter.isNewerVersionAvailable(context)) {
@@ -682,8 +673,26 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
 +            status.latestVersion = preferences.getString(OmahaBase.PREF_LATEST_MODIFIED_VERSION, "");
 +
 +            status.updateState = UpdateState.NONE;
-+            if (status.latestVersion != null && status.latestVersion.length() != 0 && OmahaBase.isNewVersionAvailableByVersion(status.latestVersion)) {
-+                status.updateState = UpdateState.INLINE_UPDATE_AVAILABLE;
++            if (status.latestVersion != null && status.latestVersion.length() != 0) {
++                VersionNumber latestVersion = VersionNumber.fromString(status.latestVersion);
++                if (latestVersion == null) {
++                   Log.e(TAG, "BromiteUpdater: stored latest version '%s' is invalid", status.latestVersion);
++                } else if (OmahaBase.isNewVersionAvailableByVersion(latestVersion)) {
++                   status.updateState = UpdateState.INLINE_UPDATE_AVAILABLE;
++                   status.updateUrl = BromiteInlineUpdateController.getDownloadUrl();
++                   return status;
++                }
++                String latestUpstreamVersion = preferences.getString(OmahaBase.PREF_LATEST_UPSTREAM_VERSION, "");
++                if (latestUpstreamVersion != null && latestUpstreamVersion.length() != 0) {
++                   VersionNumber upstreamVersion = VersionNumber.fromString(latestUpstreamVersion);
++                   if (upstreamVersion == null) {
++                       Log.e(TAG, "BromiteUpdater: stored latest upstream version '%s' is invalid", latestUpstreamVersion);
++                   } else if (OmahaBase.isNewVersionAvailableByVersion(upstreamVersion)) {
++                       status.updateUrl = BromiteInlineUpdateController.VULNERABLE_VERSION_DOC_URL;
++                       status.updateState = UpdateState.VULNERABLE_VERSION;
++                       return status;
++                   }
++                }
              }
  
              return status;
@@ -704,7 +713,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/Br
 new file mode 100644
 --- /dev/null
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/BromiteInlineUpdateController.java
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,242 @@
 +// Copyright 2021 The Ungoogled Chromium Authors. All rights reserved.
 +//
 +// This file is part of Ungoogled Chromium Android.
@@ -764,13 +773,15 @@ new file mode 100644
 +import org.chromium.chrome.browser.endpoint_fetcher.EndpointResponse;
 +import org.chromium.chrome.browser.omaha.VersionNumber;
 +
-+class BromiteInlineUpdateController implements InlineUpdateController {
++public class BromiteInlineUpdateController implements InlineUpdateController {
 +
 +    private static final String TAG = "BromiteInlineUpdateController";
 +    private final String REDIRECT_URL_PREFIX = "https://github.com/bromite/bromite/releases/download/";
-+    private final String UPDATE_VERSION_URL = "https://github.com/bromite/bromite/releases/latest/download/";
++    private static final String UPDATE_VERSION_URL = "https://github.com/bromite/bromite/releases/latest/download/";
++    private final String UPSTREAM_VERSION_URL = "https://bromite.org/upstream.txt";
++    public static final String VULNERABLE_VERSION_DOC_URL = "https://bromite.org/vulnerable-version";
 +
-+    private String getDownloadUrl() {
++    public static String getDownloadUrl() {
 +        return UPDATE_VERSION_URL + BuildConfig.BUILD_TARGET_CPU + "_ChromePublic.apk";
 +    }
 +
@@ -778,6 +789,7 @@ new file mode 100644
 +    private Runnable mCallback;
 +    private @Nullable @UpdateStatusProvider.UpdateState Integer mUpdateState =
 +                                                    UpdateStatusProvider.UpdateState.NONE;
++    private String mUpdateUrl = "";
 +
 +    BromiteInlineUpdateController(Runnable callback) {
 +        mCallback = callback;
@@ -788,6 +800,7 @@ new file mode 100644
 +        if (mEnabled == enabled) return;
 +
 +        mEnabled = enabled;
++        // check for an update when state changes
 +        if (mEnabled) pullCurrentState();
 +    }
 +
@@ -798,13 +811,18 @@ new file mode 100644
 +    }
 +
 +    @Override
++    public String getUpdateUrl() {
++        // relies on a prior call to getStatus() to have state and URL correctly pulled
++        return mUpdateUrl;
++    }
++
++    @Override
 +    public void startUpdate(Activity activity) {
 +        assert ChromeActivity.class.isInstance(activity);
 +        ChromeActivity thisActivity = (ChromeActivity) activity;
-+        String downloadUrl = getDownloadUrl();
 +        // Always open in new incognito tab
 +        TabCreator tabCreator = thisActivity.getTabCreator(true);
-+        tabCreator.createNewTab(new LoadUrlParams(downloadUrl, PageTransition.AUTO_BOOKMARK),
++        tabCreator.createNewTab(new LoadUrlParams(mUpdateUrl, PageTransition.AUTO_BOOKMARK),
 +                TabLaunchType.FROM_LINK, thisActivity.getActivityTab());
 +    }
 +
@@ -819,6 +837,7 @@ new file mode 100644
 +            return;
 +        }
 +
++        // do not pull state if there is already a state set
 +        if (mUpdateState != UpdateStatusProvider.UpdateState.NONE)
 +            return;
 +
@@ -829,18 +848,17 @@ new file mode 100644
 +            case UpdateStatusProvider.UpdateState.INLINE_UPDATE_AVAILABLE:
 +                break;
 +            case UpdateStatusProvider.UpdateState.NONE:
-+                checkLatestVersion((ok) -> {
-+                    if (ok == false) return;
-+
-+                    SharedPreferences preferences = OmahaBase.getSharedPreferences();
-+                    String latestVersion = preferences.getString(OmahaBase.PREF_LATEST_MODIFIED_VERSION, "");
++                OmahaBase.resetUpdatePrefs();
++                checkLatestVersion((latestVersion) -> {
++                    if (latestVersion == null) return;
 +
 +                    if (OmahaBase.isNewVersionAvailableByVersion(latestVersion)) {
-+                        postStatus(UpdateStatusProvider.UpdateState.INLINE_UPDATE_AVAILABLE);
++                        postStatus(UpdateStatusProvider.UpdateState.INLINE_UPDATE_AVAILABLE, getDownloadUrl());
 +                    } else {
-+                        if (mUpdateState != UpdateStatusProvider.UpdateState.NONE) {
-+                            postStatus(UpdateStatusProvider.UpdateState.NONE);
-+                        }
++                        checkLatestUpstreamVersion((latestUpstreamVersion) -> {
++                           if (latestUpstreamVersion == null) return;
++                              postStatus(UpdateStatusProvider.UpdateState.VULNERABLE_VERSION, VULNERABLE_VERSION_DOC_URL);
++                        });
 +                    }
 +                });
 +                break;
@@ -851,6 +869,8 @@ new file mode 100644
 +            case UpdateStatusProvider.UpdateState.INLINE_UPDATE_DOWNLOADING:
 +                // Intentional fall through.
 +            case UpdateStatusProvider.UpdateState.UNSUPPORTED_OS_VERSION:
++                // Intentional fall through.
++            case UpdateStatusProvider.UpdateState.VULNERABLE_VERSION:
 +                // Intentional fall through.
 +            default:
 +                return;
@@ -864,17 +884,15 @@ new file mode 100644
 +        return currentTime - lastPushedTimeStamp >= getUpdateNotificationInterval();
 +    }
 +
-+    private void checkLatestVersion(final Callback<Boolean> callback) {
++    private void checkLatestVersion(final Callback<VersionNumber> callback) {
 +        assert UPDATE_VERSION_URL != null;
-+
-+        OmahaBase.resetUpdatePrefs();
 +
 +        String urlToCheck = getDownloadUrl();
 +        Log.i(TAG, "BromiteUpdater: fetching with HEAD '%s'", urlToCheck);
 +
 +        EndpointFetcher.nativeHeadWithNoAuth(
 +                (endpointResponse) -> {
-+                    OmahaBase.updateLastPushedTimeStamp(System.currentTimeMillis());
++                    boolean versionFound = false;
 +                    String redirectURL = endpointResponse.getRedirectUrl();
 +                    if (redirectURL != null) {
 +                        Log.i(TAG, "BromiteUpdater: obtained response '%s' and redirect URL '%s'", endpointResponse.getResponseString(), redirectURL);
@@ -884,28 +902,57 @@ new file mode 100644
 +                            if (parts.length > 0) {
 +                                VersionNumber version = VersionNumber.fromString(parts[0]);
 +                                if (version != null) {
-+                                    OmahaBase.setLastModifiedVersion(parts[0]);
-+                                    callback.onResult(true);
++                                    versionFound = true;
++                                    OmahaBase.setLatestModifiedVersion(parts[0]);
++                                    callback.onResult(version);
 +                                    return;
 +                                }
 +                            }
 +                        }
-+                    } else {
++                    }
++                    if (!versionFound) {
 +                        // retry after 1 hour
 +                        OmahaBase.updateLastPushedTimeStamp(
 +                            System.currentTimeMillis() - getUpdateNotificationInterval() -
 +                            DateUtils.HOUR_IN_MILLIS);
-+                        Log.i(TAG, "BromiteUpdater: failed, will retry in 1 hour");
++                        Log.e(TAG, "BromiteUpdater: failed, will retry in 1 hour");
 +                    }
 +
-+                    callback.onResult(false);
++                    callback.onResult(null);
 +                },
 +                Profile.getLastUsedRegularProfile(),
 +                urlToCheck, /*timeout*/5000, /*follow_redirect*/false);
 +    }
 +
-+    private void postStatus(@UpdateStatusProvider.UpdateState int status) {
++    private void checkLatestUpstreamVersion(final Callback<VersionNumber> callback) {
++        Log.i(TAG, "BromiteUpdater: fetching with GET '%s'", UPSTREAM_VERSION_URL);
++
++        EndpointFetcher.nativeFetchWithNoAuth(
++                (endpointResponse) -> {
++                    String response = endpointResponse.getResponseString();
++                    Log.i(TAG, "BromiteUpdater: obtained upstream version update response '%s'", response);
++                    VersionNumber version = VersionNumber.fromString(response);
++                    if (version != null) {
++                        OmahaBase.updateLastPushedTimeStamp(System.currentTimeMillis());
++                        OmahaBase.setLatestUpstreamVersion(response);
++                        callback.onResult(version);
++                        return;
++                    }
++                    // retry after 1 hour
++                    OmahaBase.updateLastPushedTimeStamp(
++                        System.currentTimeMillis() - getUpdateNotificationInterval() -
++                        DateUtils.HOUR_IN_MILLIS);
++                    Log.e(TAG, "BromiteUpdater: failed to fetch upstream version, will retry in 1 hour");
++
++                    callback.onResult(null);
++                },
++                Profile.getLastUsedRegularProfile(),
++                UPSTREAM_VERSION_URL, /*timeout*/5000);
++    }
++
++    private void postStatus(@UpdateStatusProvider.UpdateState int status, String updateUrl) {
 +        mUpdateState = status;
++        mUpdateUrl = updateUrl;
 +        PostTask.postTask(UiThreadTaskTraits.DEFAULT, mCallback);
 +    }
 +}
@@ -913,7 +960,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/In
 new file mode 100644
 --- /dev/null
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateController.java
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,51 @@
 +// Copyright 2019 The Chromium Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -934,7 +981,7 @@ new file mode 100644
 + */
 +public interface InlineUpdateController {
 +    /**
-+     * Enables or disables the controller.
++     * Enables or disables the controller. It will trigger an update check when previously disabled.
 +     * @param enabled true iff the controller should be enabled.
 +     */
 +    void setEnabled(boolean enabled);
@@ -946,6 +993,12 @@ new file mode 100644
 +    @Nullable
 +    @UpdateStatusProvider.UpdateState
 +    Integer getStatus();
++
++    /**
++     * @return The current update URL for the inline update process.  May be an empty string if the state
++     * hasn't been determined yet or if state does not specify one.
++     */
++    String getUpdateUrl();
 +
 +    /**
 +     * Starts the update, if possible.  This will send an {@link Intent} out to play, which may
@@ -1146,6 +1199,23 @@ diff --git a/chrome/browser/endpoint_fetcher/endpoint_fetcher.cc b/chrome/browse
  }  // namespace
  
  // TODO(crbug.com/1077537) Create a KeyProvider so
+@@ -392,13 +500,13 @@ static void JNI_EndpointFetcher_NativeFetchWithNoAuth(
+     JNIEnv* env,
+     const base::android::JavaParamRef<jobject>& jprofile,
+     const base::android::JavaParamRef<jstring>& jurl,
+-    jint jannotation_hash_code,
++    jlong jtimeout,
+     const base::android::JavaParamRef<jobject>& jcallback) {
+   auto endpoint_fetcher = std::make_unique<EndpointFetcher>(
+       ProfileAndroid::FromProfileAndroid(jprofile),
+       GURL(base::android::ConvertJavaStringToUTF8(env, jurl)),
+-      net::NetworkTrafficAnnotationTag::FromJavaAnnotation(
+-          jannotation_hash_code));
++      jtimeout,
++      NO_TRAFFIC_ANNOTATION_YET);
+   auto* const endpoint_fetcher_ptr = endpoint_fetcher.get();
+   endpoint_fetcher_ptr->PerformRequest(
+       base::BindOnce(&OnEndpointFetcherComplete,
 @@ -409,4 +517,25 @@ static void JNI_EndpointFetcher_NativeFetchWithNoAuth(
        nullptr);
  }
@@ -1250,7 +1320,7 @@ diff --git a/chrome/browser/endpoint_fetcher/endpoint_fetcher.h b/chrome/browser
 diff --git a/chrome/browser/endpoint_fetcher/java/src/org/chromium/chrome/browser/endpoint_fetcher/EndpointFetcher.java b/chrome/browser/endpoint_fetcher/java/src/org/chromium/chrome/browser/endpoint_fetcher/EndpointFetcher.java
 --- a/chrome/browser/endpoint_fetcher/java/src/org/chromium/chrome/browser/endpoint_fetcher/EndpointFetcher.java
 +++ b/chrome/browser/endpoint_fetcher/java/src/org/chromium/chrome/browser/endpoint_fetcher/EndpointFetcher.java
-@@ -70,6 +70,14 @@ public final class EndpointFetcher {
+@@ -70,6 +70,22 @@ public final class EndpointFetcher {
                  postData, timeout, headers, annotation.getHashCode(), callback);
      }
  
@@ -1262,12 +1332,23 @@ diff --git a/chrome/browser/endpoint_fetcher/java/src/org/chromium/chrome/browse
 +                profile, url, timeout, allow_redirect, callback);
 +    }
 +
++    @MainThread
++    public static void nativeFetchWithNoAuth(
++            Callback<EndpointResponse> callback, Profile profile,
++            String url, long timeout) {
++        EndpointFetcherJni.get().nativeFetchWithNoAuth(
++                profile, url, timeout, callback);
++    }
++
      @NativeMethods
      public interface Natives {
          void nativeFetchOAuth(Profile profile, String oathConsumerName, String url,
-@@ -80,5 +88,8 @@ public final class EndpointFetcher {
+@@ -78,7 +94,10 @@ public final class EndpointFetcher {
+         void nativeFetchChromeAPIKey(Profile profile, String url, String httpsMethod,
+                 String contentType, String postData, long timeout, String[] headers,
                  int annotationHashCode, Callback<EndpointResponse> callback);
-         void nativeFetchWithNoAuth(Profile profile, String url, int annotationHashCode,
+-        void nativeFetchWithNoAuth(Profile profile, String url, int annotationHashCode,
++        void nativeFetchWithNoAuth(Profile profile, String url, long timeout,
                  Callback<EndpointResponse> callback);
 +        void nativeHeadWithNoAuth(
 +                Profile profile, String url, long timeout, boolean allow_redirect,
