@@ -52,13 +52,13 @@ cd /tank/chromium4allen/src
 
 ## Prepare Chromium
 
-The patches are intended to be applied to the `95.0.4638.78` tag of
+The patches are intended to be applied to the `98.0.4758.108` tag of
 the Chromium repo. Before continuing, make sure you are on that tag in
 the Chromium source repo:
 
 ```
 git fetch origin
-git checkout -B promethean-95.0.4638.78 95.0.4638.78
+git checkout -B promethean-98.0.4758.108 98.0.4758.108
 gclient sync --with_branch_heads --with_tags
 gclient runhooks
 ```
@@ -88,7 +88,7 @@ done
 ```
 
 All patches should apply cleanly. If they did not, make sure you have
-checked out the proper Chromium tag (95.0.4638.78).
+checked out the proper Chromium tag (98.0.4758.108).
 
 ## Getting the third dependencies
 
@@ -160,11 +160,11 @@ If you do not have an upstream remote, add it with:
 
     git describe --tags --abbrev=0 upstream/master
 
-This will give you output like `94.0.4606.94` which we'll use as an example going forward.
+This will give you output like `98.0.4758.108` which we'll use as an example going forward.
 
 4. Create a new branch based on this tag
 
-    git checkout -b upstream-94.0.4606.94 94.0.4606.94
+    git checkout -b upstream-98.0.4758.108 98.0.4758.108
 
 5. Rebase this branch on the current master
 
