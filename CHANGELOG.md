@@ -1,3 +1,9 @@
+# 98.0.4758.116
+* disable minidumps upload
+* complete disabling of client hint headers (thanks to @uazo)
+* disable another way to activate origin trials (thanks to @uazo)
+* fix for gateway attacks via websockets blocking (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1693)
+
 # 98.0.4758.108
 * re-introduce flag for text fragments
 * re-introduce content feature flag to disable field trials
