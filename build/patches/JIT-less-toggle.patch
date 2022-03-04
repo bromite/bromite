@@ -3,20 +3,20 @@ Date: Fri, 18 Jun 2021 03:34:20 +0000
 Subject: JIT-less toggle
 
 ---
- chrome/android/java/res/xml/privacy_preferences.xml  |  5 +++++
- .../browser/privacy/settings/PrivacySettings.java    | 12 ++++++++++++
- .../ui/android/strings/android_chrome_strings.grd    |  7 +++++++
- .../browser/BrowserStartupControllerImpl.java        |  1 +
- .../chromium/content/browser/DeviceUtilsImpl.java    |  6 ++++++
- 5 files changed, 31 insertions(+)
+ chrome/android/java/res/xml/privacy_preferences.xml   |  5 +++++
+ .../browser/privacy/settings/PrivacySettings.java     | 11 +++++++++++
+ .../ui/android/strings/android_chrome_strings.grd     |  7 +++++++
+ .../content/browser/BrowserStartupControllerImpl.java |  1 +
+ .../org/chromium/content/browser/DeviceUtilsImpl.java |  8 ++++++++
+ 5 files changed, 32 insertions(+)
 
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
 --- a/chrome/android/java/res/xml/privacy_preferences.xml
 +++ b/chrome/android/java/res/xml/privacy_preferences.xml
-@@ -32,6 +32,11 @@
+@@ -37,6 +37,11 @@
          android:title="@string/preload_pages_title"
          android:summary="@string/preload_pages_summary"
-         android:persistent="false"/>
+         android:fragment="org.chromium.chrome.browser.prefetch.settings.PreloadPagesSettingsFragment"/>
 +    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
 +        android:key="force_no_jit"
 +        android:title="@string/force_no_jit_title"
@@ -36,7 +36,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
  import android.os.Build;
  import android.content.SharedPreferences;
  import android.os.Bundle;
-@@ -79,6 +80,7 @@ public class PrivacySettings
+@@ -82,6 +83,7 @@ public class PrivacySettings
      private static final String PREF_SEARCH_SUGGESTIONS = "search_suggestions";
      private static final String PREF_CONTEXTUAL_SEARCH = "contextual_search";
      public static final String PREF_AUTOFILL_ASSISTANT = "autofill_assistant";
@@ -44,34 +44,33 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
      private ChromeSwitchPreference mSearchSuggestions;
      private @Nullable ChromeSwitchPreference mAutofillAssistant;
      private @Nullable Preference mContextualSearch;
-@@ -200,6 +202,10 @@ public class PrivacySettings
-                     .setBoolean(Pref.CAN_MAKE_PAYMENT_ENABLED, (boolean) newValue);
+@@ -214,6 +216,10 @@ public class PrivacySettings
          } else if (PREF_SEARCH_SUGGESTIONS.equals(key)) {
-             prefService.setBoolean(Pref.SEARCH_SUGGEST_ENABLED, (boolean) newValue);
+             UserPrefs.get(Profile.getLastUsedRegularProfile())
+                     .setBoolean(Pref.SEARCH_SUGGEST_ENABLED, (boolean) newValue);
 +        } else if (PREF_FORCE_NO_JIT.equals(key)) {
 +            SharedPreferences.Editor sharedPreferenceEditor = ContextUtils.getAppSharedPreferences().edit();
 +            sharedPreferenceEditor.putBoolean(PREF_FORCE_NO_JIT, (boolean) newValue);
 +            sharedPreferenceEditor.apply();
          } else if (PREF_AUTOFILL_ASSISTANT.equals(key)) {
              mSharedPreferencesManager.writeBoolean(
-                 ChromePreferenceKeys.AUTOFILL_ASSISTANT_ENABLED, (boolean) newValue);
-@@ -279,6 +285,12 @@ public class PrivacySettings
-             historyInIncognitoPref.setChecked(
-                     prefService.getBoolean(Pref.INCOGNITO_TAB_HISTORY_ENABLED));
-         }
-+
+                  ChromePreferenceKeys.AUTOFILL_ASSISTANT_ENABLED, (boolean) newValue);
+@@ -268,6 +274,11 @@ public class PrivacySettings
+ 
+         Preference privacySandboxPreference = findPreference(PREF_PRIVACY_SANDBOX);
+         if (privacySandboxPreference != null) {
 +        ChromeSwitchPreference forceNoJit =
 +                (ChromeSwitchPreference) findPreference(PREF_FORCE_NO_JIT);
 +        forceNoJit.setOnPreferenceChangeListener(this);
 +        forceNoJit.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
 +
-     }
- 
-     private ChromeManagedPreferenceDelegate createManagedPreferenceDelegate() {
+             privacySandboxPreference.setSummary(
+                     PrivacySandboxSettingsFragment.getStatusString(getContext()));
+         }
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -944,6 +944,13 @@ Privacy Sandbox trials are still in active development and are available in sele
+@@ -1003,6 +1003,13 @@ Privacy Sandbox trials are still in active development and are available in sele
          Please verify that this is a valid provider or try again later
        </message>
  
@@ -107,16 +106,17 @@ diff --git a/content/public/android/java/src/org/chromium/content/browser/Device
  import org.chromium.base.StrictModeContext;
  import org.chromium.content_public.common.ContentSwitches;
  import org.chromium.ui.base.DeviceFormFactor;
-@@ -22,4 +23,9 @@ public class DeviceUtilsImpl {
+@@ -22,4 +23,11 @@ public class DeviceUtilsImpl {
              }
          }
      }
 +    public static void addJitlessSwitch() {
-+	if (ContextUtils.getAppSharedPreferences().getBoolean("force_no_jit", false)) {
-+	    CommandLine.getInstance().appendSwitchWithValue("js-flags", "--jitless");
++	try (StrictModeContext ignored = StrictModeContext.allowDiskReads()) {
++	    if (ContextUtils.getAppSharedPreferences().getBoolean("force_no_jit", false)) {
++		CommandLine.getInstance().appendSwitchWithValue("js-flags", "--jitless");
++	    }
 +	}
 +    }
  }
--- 
-2.20.1
-
+--
+2.25.1

@@ -1,5 +1,49 @@
+# 98.0.4758.108
+* re-introduce flag for text fragments
+* re-introduce content feature flag to disable field trials
+* disable idle detection
+* disable critical client hints
+* disable supervised users
+* partial fix for incognito notification (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1503)
+* consider websockets 'unknown' address space as 'public' (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1693)
+* fix crash when accessing site settings of some sites (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1355)
+
+# 97.0.4692.106
+* disable url-keyed metrics reporting service (thanks to @uazo)
+* disable mobile identity consistency by default
+* disable appending variations header
+* use Google Chrome branding for client hints
+* make HTTPS-only mode enabled by default
+* enable trivial auto var init (thanks to @BayLee4, fixes https://github.com/bromite/bromite/issues/1749)
+* enable use_cfi_cast
+
+# 96.0.4664.183
+* updated zh_CN translations (thanks to @zhmars)
+
+# 96.0.4664.104
+* separate patches for package name
+
+# 96.0.4664.54
+* restored offline-indicator-v2 flag (fixes https://github.com/bromite/bromite/issues/1588)
+* re-introduced option to use home page as NTP (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1519)
+* ask user before closing all tabs (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1561)
+* fix crash on always incognito on tablet (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1611)
+* dropped patch to not upload crash data
+* fix autofill pop-up not appearing (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1534)
+
+# 95.0.4638.79
+* improvements for field trials disable patch (thanks to @uazo)
+* remove privacy sandbox UI leftover (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1560)
+* disable conversion measurement API (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1531)
+* remove all code related to FLoC (thanks to @uazo)
+* remove all code related to ENABLE_REPORTING (thanks to @uazo)
+* enable ad-tagging feature
+* SystemWebView: ignore StrictMode warning (thanks to @jylitalbit, https://github.com/bromite/bromite/pull/1567)
+* improvements for field trials fetch patch (thanks to @uazo)
+* disable accessibility service by default (thanks to @uazo, https://github.com/bromite/bromite/pull/1559)
+
 # 95.0.4638.78
-* disable third-party originl trials
+* disable third-party origin trials (fixes https://github.com/bromite/bromite/issues/1530)
 * dropped patch for async DNS flag
 * dropped duplicate patch for pull-to-refresh flag
 * fix application not closing on incognito tab (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1503)

@@ -20,7 +20,7 @@ Projects which follow a strict approach on this are [Iridium](https://iridiumbro
 
 Yes, in order to play protected/encrypted media content the browser will use Android's DRM media framework to automatically negotiate access (same as Chromium).
 This means for example that requests to Android license servers will be performed (`www.googleapis.com`), see https://w3c.github.io/encrypted-media/#direct-individualization
-To disable this functionality you should disable protected content playback from Site settings -> Multimedia.
+To disable this functionality you should disable protected content playback from Site settings -> Protected Content.
 
 ## What is the SystemWebView?
 It is the core component of Android for all web page visualizations. For example when you access a new wifi network and need to activate it, that is using the SystemWebView. If you do not know what it is then you do not need to install it.
@@ -31,7 +31,7 @@ Ad-blocking was present and always enabled in the SystemWebView from version `72
 
 ## How to enable DNS-over-HTTPS?
 
-See [this wiki page](https://github.com/bromite/bromite/wiki/Enabling-DNS-over-HTTPS).
+See [this page](https://www.bromite.org/doh).
 
 ## Can you add HTTPS everywhere?
 No.
@@ -78,4 +78,10 @@ Yes, since version 94.0.4606.109 the native Android autofill can be used; this d
 
 ## Does Bromite support casting media content?
 
-No; this would require Play Store binary blobs.
+No, this would require Play Store binary blobs.
+
+## Can you add this search engine as default?
+No.
+Bromite does not make any choice related to default search engines, the Chromium default is used.
+Various Android browsers get some fee to ship their apps with a specific default search engine, Bromite does not get any fee from anyone.
+Changing the default search engine would lead to an endless series of requests to change it based on personal preferences, thus no change is made to the default.

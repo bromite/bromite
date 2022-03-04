@@ -52,13 +52,13 @@ cd /tank/chromium4allen/src
 
 ## Prepare Chromium
 
-The patches are intended to be applied to the `95.0.4638.78` tag of
+The patches are intended to be applied to the `98.0.4758.108` tag of
 the Chromium repo. Before continuing, make sure you are on that tag in
 the Chromium source repo:
 
 ```
 git fetch origin
-git checkout -B promethean-95.0.4638.78 95.0.4638.78
+git checkout -B promethean-98.0.4758.108 98.0.4758.108
 gclient sync --with_branch_heads --with_tags
 gclient runhooks
 ```
@@ -88,7 +88,7 @@ done
 ```
 
 All patches should apply cleanly. If they did not, make sure you have
-checked out the proper Chromium tag (95.0.4638.78).
+checked out the proper Chromium tag (98.0.4758.108).
 
 ## Getting the third dependencies
 
@@ -160,11 +160,11 @@ If you do not have an upstream remote, add it with:
 
     git describe --tags --abbrev=0 upstream/master
 
-This will give you output like `94.0.4606.94` which we'll use as an example going forward.
+This will give you output like `98.0.4758.108` which we'll use as an example going forward.
 
 4. Create a new branch based on this tag
 
-    git checkout -b upstream-94.0.4606.94 94.0.4606.94
+    git checkout -b upstream-98.0.4758.108 98.0.4758.108
 
 5. Rebase this branch on the current master
 
@@ -181,14 +181,18 @@ the conflicts pre-resolved. Then rebase onto `origin/master` and -- if
 the rebase succeeds cleanly -- push the new branch.
 
 # Bromite - Take back your browser
-
-<img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> <img src="https://www.bromite.org/license.svg" alt="GNU GPL v3" title="GNU VPL v3" />
-
-<img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
+<a href="https://github.com/bromite/bromite/releases/latest">
+  <img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> </a>
+<a href="https://github.com/bromite/bromite/blob/master/LICENSE">
+  <img src="https://www.bromite.org/license.svg" alt="GNU GPL v3" title="GNU VPL v3" />
+</a> <br>
+<a href="https://www.bromite.org">
+  <img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
+</a>
 
 Bromite is a [Chromium](https://www.chromium.org/Home) fork with support for ad blocking and enhanced privacy.
 
-Bromite is only available for Android Lollipop (v5.0, API level 21) and above.
+Bromite is only available for Android Marshmallow (v6.0, API level 23) and above.
 
 <img src="https://fdroid.bromite.org/fdroid/bromite_bromite_gh_downloads.svg" alt="Downloads on Github" title="Downloads on Github" />
 
@@ -207,9 +211,9 @@ Please donate to support development of Bromite and the costs for the build syst
 
 [&rarr; Support development with a donation](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=JP3XTQPVRNET2): [![paypal](https://www.bromite.org/assets/img/btn_donate_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=JP3XTQPVRNET2)
 
-<a href="bitcoin:bc1qmpyuqsvs3tz3uaysplmwjr33gg4rzu6cqweaq834ehc25vduxppqkrszel">BTC donations address</a>: `bc1qmpyuqsvs3tz3uaysplmwjr33gg4rzu6cqweaq834ehc25vduxppqkrszel`
+<a href="bitcoin:bc1qlx7h0lj9z88g2xfeuwsrtfs77sxuhrxf2t28sw">BTC donations address</a>: `bc1qlx7h0lj9z88g2xfeuwsrtfs77sxuhrxf2t28sw`
 
-ETH donations address: `0xf47ff39223d828f99fec5ab53bd068c5c0522042`
+ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 
 # Features
 
@@ -294,6 +298,7 @@ Flags which have been retired from upstream Chromium but are still available in 
 * `#num-raster-threads`
 * `#enable-image-reader`, enabled by default
 * `#enable-tab-groups` and `#enable-tab-groups-ui-improvements`
+* `#offline-indicator-v2`
 
 New flags:
 
@@ -322,7 +327,7 @@ All built versions are available as [releases](https://github.com/bromite/bromit
 
 Each tag corresponds to a Chromium Stable release tag.
 
-Bromite is currently built for ARM, ARM64 and x86 and for the Android SDK versions 19 and 21; [Bromite SystemWebView](https://www.bromite.org/system_web_view) is provided as well (SDK21+).
+Bromite is currently built for ARM, ARM64 and x86 and for the Android SDK version 23+; [Bromite SystemWebView](https://www.bromite.org/system_web_view) is provided as well (SDK23+).
 For every Bromite build you can always find a matching [vanilla Chromium](https://www.bromite.org/chromium) build which is used for example to verify which issues are specific to Bromite or not.
 
 You will automatically receive notifications about new updates (and be able to install them) via the auto updater functionality (enabled by default), see [related wiki page](https://github.com/bromite/bromite/wiki/AutomaticUpdates).
@@ -356,7 +361,7 @@ The [Bromite main repository](https://github.com/bromite/bromite) contains tags 
 Please refer to [official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
 
 The Chromium version tag used as base for the patches is available here: [RELEASE](./build/RELEASE); this is always corresponding to the git tag for every release.
-The GN args used to build Bromite are available here: [GN_ARGS](./build/GN_ARGS).
+The GN args used to build Bromite are available here: [bromite.gn_args](./build/bromite.gn_args).
 The patches are to be applied second the order specified in the `bromite_patches_list.txt` file (you can use `git am`).
 
 ## How to build the filters
