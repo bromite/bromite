@@ -21,7 +21,7 @@ to use the flag in the hamburger menu to navigate with a custom useragent leavin
  .../chromium/chrome/browser/tab/TabUtils.java |  25 +--
  .../browser/android/content/content_utils.cc  |  28 +++
  .../preferences/browser_prefs_android.cc      |   7 +
- .../privacy_preferences_manager_impl.cc       | 119 +++++++++++
+ .../privacy_preferences_manager_impl.cc       | 118 +++++++++++
  .../preferences/ChromePreferenceKeys.java     |   5 +
  .../settings/PrivacyPreferencesManager.java   |   8 +
  .../org/chromium/chrome/browser/tab/Tab.java  |   2 +
@@ -29,16 +29,16 @@ to use the flag in the hamburger menu to navigate with a custom useragent leavin
  .../tabmodel/TabWindowManagerImpl.java        |  18 ++
  .../strings/android_chrome_strings.grd        |  35 ++++
  chrome/common/pref_names.cc                   |  13 ++
- chrome/common/pref_names.h                    |   9 +
+ chrome/common/pref_names.h                    |   8 +
  .../widget/RadioButtonWithEditText.java       |  11 +
- .../embedder_support/user_agent_utils.cc      |   6 +
+ .../embedder_support/user_agent_utils.cc      |   7 +
  .../navigation_controller_android.cc          |   4 +
  .../navigation_controller_android.h           |   1 +
  .../renderer_host/render_process_host_impl.cc |   1 +
  .../browser/web_contents/web_contents_impl.cc |   4 +
  .../framehost/NavigationControllerImpl.java   |   3 +-
  content/renderer/render_thread_impl.cc        |   1 -
- 31 files changed, 740 insertions(+), 14 deletions(-)
+ 31 files changed, 739 insertions(+), 14 deletions(-)
  create mode 100644 chrome/android/java/res/layout/custom_useragent_preferences.xml
  create mode 100644 chrome/android/java/res/xml/useragent_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/UserAgentPreferences.java
@@ -278,8 +278,8 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/init/ChromeBrow
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacyPreferencesManagerImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacyPreferencesManagerImpl.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacyPreferencesManagerImpl.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacyPreferencesManagerImpl.java
-@@ -117,6 +117,41 @@ public class PrivacyPreferencesManagerImpl implements PrivacyPreferencesManager
-         return PrivacyPreferencesManagerImplJni.get().isMetricsReportingEnabled();
+@@ -131,10 +131,52 @@ public class PrivacyPreferencesManagerImpl implements PrivacyPreferencesManager
+         sInstance = instance;
      }
  
 +    @Override
@@ -317,10 +317,8 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
 +        PrivacyPreferencesManagerImplJni.get().setDesktopModeViewportMetaEnabled(enabled);
 +    }
 +
-     @Override
-     public void setMetricsReportingEnabled(boolean enabled) {
-         PrivacyPreferencesManagerImplJni.get().setMetricsReportingEnabled(enabled);
-@@ -136,5 +171,12 @@ public class PrivacyPreferencesManagerImpl implements PrivacyPreferencesManager
+     @NativeMethods
+     public interface Natives {
          boolean isMetricsReportingEnabled();
          void setMetricsReportingEnabled(boolean enabled);
          boolean isMetricsReportingDisabledByPolicy();
@@ -741,7 +739,7 @@ diff --git a/chrome/browser/android/preferences/browser_prefs_android.cc b/chrom
 diff --git a/chrome/browser/android/preferences/privacy_preferences_manager_impl.cc b/chrome/browser/android/preferences/privacy_preferences_manager_impl.cc
 --- a/chrome/browser/android/preferences/privacy_preferences_manager_impl.cc
 +++ b/chrome/browser/android/preferences/privacy_preferences_manager_impl.cc
-@@ -12,6 +12,31 @@
+@@ -12,6 +12,30 @@
  #include "components/metrics/metrics_pref_names.h"
  #include "components/prefs/pref_service.h"
  
@@ -769,11 +767,10 @@ diff --git a/chrome/browser/android/preferences/privacy_preferences_manager_impl
 +using base::android::ScopedJavaGlobalRef;
 +using base::android::ScopedJavaLocalRef;
 +
-+
  static jboolean JNI_PrivacyPreferencesManagerImpl_IsMetricsReportingEnabled(
      JNIEnv* env) {
    PrefService* local_state = g_browser_process->local_state();
-@@ -33,3 +58,97 @@ JNI_PrivacyPreferencesManagerImpl_IsMetricsReportingDisabledByPolicy(
+@@ -33,3 +57,97 @@ JNI_PrivacyPreferencesManagerImpl_IsMetricsReportingDisabledByPolicy(
               metrics::prefs::kMetricsReportingEnabled) &&
           !local_state->GetBoolean(metrics::prefs::kMetricsReportingEnabled);
  }
@@ -1034,11 +1031,10 @@ diff --git a/chrome/common/pref_names.cc b/chrome/common/pref_names.cc
 diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
 --- a/chrome/common/pref_names.h
 +++ b/chrome/common/pref_names.h
-@@ -1210,3 +1210,12 @@ extern const char kIncognitoTabHistoryEnabled[];
+@@ -1210,3 +1210,11 @@ extern const char kIncognitoTabHistoryEnabled[];
  }  // namespace prefs
  
  #endif  // CHROME_COMMON_PREF_NAMES_H_
-+
 +#if defined(OS_ANDROID)
 +extern const char kOverrideUserAgentEnabled[];
 +extern const char kOverrideUserAgent[];
@@ -1071,19 +1067,20 @@ diff --git a/components/browser_ui/widget/android/java/src/org/chromium/componen
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
-@@ -560,6 +560,12 @@ blink::UserAgentMetadata GetUserAgentMetadata(PrefService* pref_service) {
+@@ -558,6 +558,13 @@ blink::UserAgentMetadata GetUserAgentMetadata(PrefService* pref_service) {
+           policy::policy_prefs::kUserAgentClientHintsGREASEUpdateEnabled);
+     ua_options.force_major_to_minor = GetMajorToMinorFromPrefs(pref_service);
    }
-   ua_options.force_major_version_100 = base::FeatureList::IsEnabled(
-       blink::features::kForceMajorVersion100InUserAgent);
 +  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 +  if (command_line->HasSwitch(kUserAgent)) {
-+    // do not define any metadata when a custom user agent is in use
++    std::string ua = command_line->GetSwitchValueASCII(kUserAgent);
++
 +    return metadata;
 +  }
 +
+   ua_options.force_major_version_100 = base::FeatureList::IsEnabled(
+       blink::features::kForceMajorVersion100InUserAgent);
    metadata.brand_version_list = GetBrandMajorVersionList(
-       enable_updated_grease_by_policy, ua_options.force_major_to_minor);
-   metadata.brand_full_version_list = GetBrandFullVersionList(
 diff --git a/content/browser/renderer_host/navigation_controller_android.cc b/content/browser/renderer_host/navigation_controller_android.cc
 --- a/content/browser/renderer_host/navigation_controller_android.cc
 +++ b/content/browser/renderer_host/navigation_controller_android.cc
