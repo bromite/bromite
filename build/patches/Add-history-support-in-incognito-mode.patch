@@ -13,13 +13,14 @@ See also: https://github.com/bromite/bromite/pull/1427
  .../chrome_junit_test_java_sources.gni        |   4 +
  chrome/android/chrome_test_java_sources.gni   |   6 +
  .../java/res/xml/privacy_preferences.xml      |   5 +
- .../AppMenuPropertiesDelegateImpl.java        |  29 +-
- .../CustomTabAppMenuPropertiesDelegate.java   |   3 +
+ .../AppMenuPropertiesDelegateImpl.java        |  25 +-
+ .../CustomTabAppMenuPropertiesDelegate.java   |   4 +
  .../browser/download/DownloadUtils.java       |  16 +-
- .../browser/history/HistoryManager.java       |  17 +-
- .../chrome/browser/history/HistoryPage.java   |  15 +
+ .../browser/history/HistoryManager.java       |  18 +-
+ .../chrome/browser/history/HistoryPage.java   |  16 +
+ .../native_page/NativePageFactory.java        |   4 +-
  .../chrome/browser/ntp/RecentTabsManager.java |   8 +-
- .../privacy/settings/PrivacySettings.java     |  16 +
+ .../privacy/settings/PrivacySettings.java     |  18 +
  .../browser/tab/HistoricalTabSaver.java       |  12 +-
  .../browser/tabmodel/TabPersistentStore.java  |   5 +-
  .../history/Bromite_HistoryManagerTest.java   | 112 ++++++
@@ -38,15 +39,15 @@ See also: https://github.com/bromite/bromite/pull/1427
  .../offline_page_model_factory.h              |   1 +
  .../offline_pages/recent_tab_helper.cc        |  12 +
  .../request_coordinator_factory.h             |   2 +
- chrome/browser/prefs/browser_prefs.cc         |   4 +-
+ chrome/browser/prefs/browser_prefs.cc         |   2 +
  .../browser/ui/android/native_page/BUILD.gn   |   2 +
- .../browser/ui/native_page/NativePage.java    |   6 +-
+ .../browser/ui/native_page/NativePage.java    |  12 +-
  .../ui/native_page/NativePageTest.java        |  26 ++
  .../strings/android_chrome_strings.grd        |   6 +
- chrome/common/pref_names.cc                   |   3 +
- chrome/common/pref_names.h                    |   7 +
+ chrome/common/pref_names.cc                   |   2 +
+ chrome/common/pref_names.h                    |   4 +
  chrome/test/BUILD.gn                          |   5 +
- 36 files changed, 1044 insertions(+), 39 deletions(-)
+ 37 files changed, 1047 insertions(+), 41 deletions(-)
  create mode 100644 chrome/android/javatests/src/org/chromium/chrome/browser/history/Bromite_HistoryManagerTest.java
  create mode 100644 chrome/android/javatests/src/org/chromium/chrome/browser/privacy/settings/Bromite_PrivacySettingsFragmentTest_HistoryInAlwaysIncognito.java
  create mode 100644 chrome/android/junit/src/org/chromium/chrome/browser/app/appmenu/Bromite_AppMenuPropertiesDelegateUnitTest.java
@@ -96,7 +97,7 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
-@@ -96,6 +96,10 @@ import java.util.ArrayList;
+@@ -97,6 +97,10 @@ import java.util.ArrayList;
  import java.util.List;
  import java.util.Map;
  
@@ -107,7 +108,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/App
  /**
   * Base implementation of {@link AppMenuPropertiesDelegate} that handles hiding and showing menu
   * items based on activity state.
-@@ -156,6 +160,13 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+@@ -157,6 +161,13 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
      private @StartSurfaceState int mStartSurfaceState;
      protected Runnable mAppMenuInvalidator;
  
@@ -121,17 +122,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/App
      /**
       * Construct a new {@link AppMenuPropertiesDelegateImpl}.
       * @param context The activity context.
-@@ -524,7 +535,8 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
-     }
- 
-     private void prepareCommonMenuItems(Menu menu, @MenuGroup int menuGroup, boolean isIncognito) {
--        if (ContextUtils.getAppSharedPreferences().getBoolean("always_incognito", false)) {
-+        boolean always_incognito = ContextUtils.getAppSharedPreferences().getBoolean("always_incognito", false);
-+        if (always_incognito) {
-             final MenuItem newTabOption = menu.findItem(R.id.new_tab_menu_id);
-             if (newTabOption != null)
-                 newTabOption.setVisible(false);
-@@ -586,7 +598,15 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+@@ -588,7 +599,15 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
              }
  
              if (item.getItemId() == R.id.recent_tabs_menu_id) {
@@ -148,26 +139,33 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/App
              }
              if (item.getItemId() == R.id.menu_group_tabs) {
                  item.setVisible(isMenuGroupTabsVisible);
-@@ -823,7 +843,10 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+@@ -825,7 +844,9 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
          //                is not persisted when adding to the homescreen.
          // * If creating shortcuts it not supported by the current home screen.
          return WebappsUtils.isAddToHomeIntentSupported() && !isChromeScheme && !isFileScheme
 -                && !isContentScheme && !isIncognito && !url.isEmpty();
 +                && !isContentScheme && !url.isEmpty()
 +                && (!isIncognito ||
-+                    ContextUtils.getAppSharedPreferences().getBoolean(
-+                        "always_incognito", false));
++                    AlwaysIncognitoLinkInterceptor.isAlwaysIncognito());
      }
  
      /**
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/customtabs/CustomTabAppMenuPropertiesDelegate.java
-@@ -168,6 +168,9 @@ public class CustomTabAppMenuPropertiesDelegate extends AppMenuPropertiesDelegat
+@@ -20,6 +20,7 @@ import org.chromium.base.ContextUtils;
+ import org.chromium.base.supplier.ObservableSupplier;
+ import org.chromium.chrome.R;
+ import org.chromium.chrome.browser.ActivityTabProvider;
++import org.chromium.chrome.browser.AlwaysIncognitoLinkInterceptor;
+ import org.chromium.chrome.browser.DefaultBrowserInfo;
+ import org.chromium.chrome.browser.app.appmenu.AppMenuPropertiesDelegateImpl;
+ import org.chromium.chrome.browser.bookmarks.BookmarkBridge;
+@@ -168,6 +169,9 @@ public class CustomTabAppMenuPropertiesDelegate extends AppMenuPropertiesDelegat
                  downloadItemVisible = false;
                  openInChromeItemVisible = false;
              }
-+            if (ContextUtils.getAppSharedPreferences().getBoolean("always_incognito", false)) {
++            if (AlwaysIncognitoLinkInterceptor.isAlwaysIncognito()) {
 +                downloadItemVisible = true;
 +            }
  
@@ -176,7 +174,15 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/customtabs/Cust
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadUtils.java b/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadUtils.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadUtils.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadUtils.java
-@@ -71,6 +71,10 @@ import org.chromium.ui.widget.Toast;
+@@ -34,6 +34,7 @@ import org.chromium.base.annotations.NativeMethods;
+ import org.chromium.base.metrics.RecordHistogram;
+ import org.chromium.base.metrics.RecordUserAction;
+ import org.chromium.chrome.R;
++import org.chromium.chrome.browser.AlwaysIncognitoLinkInterceptor;
+ import org.chromium.chrome.browser.ChromeTabbedActivity;
+ import org.chromium.chrome.browser.IntentHandler;
+ import org.chromium.chrome.browser.download.items.OfflineContentAggregatorFactory;
+@@ -71,6 +72,10 @@ import org.chromium.ui.widget.Toast;
  
  import java.io.File;
  
@@ -187,13 +193,12 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/download/Downlo
  /**
   * A class containing some utility static methods.
   */
-@@ -311,7 +315,17 @@ public class DownloadUtils {
+@@ -311,7 +316,16 @@ public class DownloadUtils {
          // Offline pages isn't supported in Incognito. This should be checked before calling
          // OfflinePageBridge.getForProfile because OfflinePageBridge instance will not be found
          // for incognito profile.
 -        if (tab.isIncognito()) return false;
-+        boolean always_incognito =
-+            ContextUtils.getAppSharedPreferences().getBoolean("always_incognito", false);
++        boolean always_incognito = AlwaysIncognitoLinkInterceptor.isAlwaysIncognito();
 +        if (always_incognito) {
 +            PrefService prefService = UserPrefs.get(Profile.getLastUsedRegularProfile());
 +            boolean historyEnabledInIncognito =
@@ -209,7 +214,15 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/download/Downlo
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/history/HistoryManager.java b/chrome/android/java/src/org/chromium/chrome/browser/history/HistoryManager.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/history/HistoryManager.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/history/HistoryManager.java
-@@ -41,6 +41,12 @@ import org.chromium.ui.base.Clipboard;
+@@ -22,6 +22,7 @@ import org.chromium.base.metrics.RecordHistogram;
+ import org.chromium.base.metrics.RecordUserAction;
+ import org.chromium.base.supplier.Supplier;
+ import org.chromium.chrome.R;
++import org.chromium.chrome.browser.AlwaysIncognitoLinkInterceptor;
+ import org.chromium.chrome.browser.browsing_data.ClearBrowsingDataTabsFragment;
+ import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
+@@ -41,6 +42,12 @@ import org.chromium.ui.base.Clipboard;
  
  import java.util.List;
  
@@ -222,7 +235,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/history/History
  /**
   * Combines and manages the different UI components of browsing history.
   */
-@@ -213,7 +219,16 @@ public class HistoryManager implements OnMenuItemClickListener, SelectionObserve
+@@ -213,7 +220,16 @@ public class HistoryManager implements OnMenuItemClickListener, SelectionObserve
                                                  : mSelectableListLayout;
      }
  
@@ -231,7 +244,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/history/History
 +
 +    public boolean shouldShowIncognitoPlaceholder() {
 +        if (mIsIncognito &&
-+                ContextUtils.getAppSharedPreferences().getBoolean("always_incognito", false)) {
++                AlwaysIncognitoLinkInterceptor.isAlwaysIncognito()) {
 +            PrefService prefService = UserPrefs.get(Profile.getLastUsedRegularProfile());
 +            boolean historyEnabledInIncognito =
 +                prefService.getBoolean(Pref.INCOGNITO_TAB_HISTORY_ENABLED);
@@ -243,7 +256,14 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/history/History
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/history/HistoryPage.java b/chrome/android/java/src/org/chromium/chrome/browser/history/HistoryPage.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/history/HistoryPage.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/history/HistoryPage.java
-@@ -16,6 +16,12 @@ import org.chromium.chrome.browser.ui.native_page.BasicNativePage;
+@@ -10,12 +10,19 @@ import androidx.annotation.VisibleForTesting;
+ 
+ import org.chromium.base.supplier.Supplier;
+ import org.chromium.chrome.R;
++import org.chromium.chrome.browser.AlwaysIncognitoLinkInterceptor;
+ import org.chromium.chrome.browser.tab.Tab;
+ import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
+ import org.chromium.chrome.browser.ui.native_page.BasicNativePage;
  import org.chromium.chrome.browser.ui.native_page.NativePageHost;
  import org.chromium.components.embedder_support.util.UrlConstants;
  
@@ -256,12 +276,12 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/history/History
  /**
   * Native page for managing browsing history.
   */
-@@ -37,8 +43,17 @@ public class HistoryPage extends BasicNativePage {
+@@ -37,8 +44,17 @@ public class HistoryPage extends BasicNativePage {
              boolean isIncognito, Supplier<Tab> tabSupplier) {
          super(host);
  
 +        if (isIncognito &&
-+                ContextUtils.getAppSharedPreferences().getBoolean("always_incognito", false)) {
++                AlwaysIncognitoLinkInterceptor.isAlwaysIncognito()) {
 +            PrefService prefService = UserPrefs.get(Profile.getLastUsedRegularProfile());
 +            boolean historyEnabledInIncognito =
 +                prefService.getBoolean(Pref.INCOGNITO_TAB_HISTORY_ENABLED);
@@ -274,6 +294,27 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/history/History
          mTitle = host.getContext().getResources().getString(R.string.menu_history);
  
          initWithView(mHistoryManager.getView());
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/native_page/NativePageFactory.java b/chrome/android/java/src/org/chromium/chrome/browser/native_page/NativePageFactory.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/native_page/NativePageFactory.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/native_page/NativePageFactory.java
+@@ -15,6 +15,7 @@ import org.chromium.base.jank_tracker.JankTracker;
+ import org.chromium.base.supplier.BooleanSupplier;
+ import org.chromium.base.supplier.DestroyableObservableSupplier;
+ import org.chromium.base.supplier.Supplier;
++import org.chromium.chrome.browser.AlwaysIncognitoLinkInterceptor;
+ import org.chromium.chrome.browser.app.ChromeActivity;
+ import org.chromium.chrome.browser.bookmarks.BookmarkPage;
+ import org.chromium.chrome.browser.browser_controls.BrowserControlsMarginSupplier;
+@@ -243,7 +244,8 @@ public class NativePageFactory {
+             String url, NativePage candidatePage, Tab tab, boolean isIncognito) {
+         NativePage page;
+ 
+-        switch (NativePage.nativePageType(url, candidatePage, isIncognito)) {
++        boolean isAlwaysIncognito = AlwaysIncognitoLinkInterceptor.isAlwaysIncognito();
++        switch (NativePage.nativePageType(url, candidatePage, isIncognito, isAlwaysIncognito)) {
+             case NativePageType.NONE:
+                 return null;
+             case NativePageType.CANDIDATE:
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/RecentTabsManager.java b/chrome/android/java/src/org/chromium/chrome/browser/ntp/RecentTabsManager.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ntp/RecentTabsManager.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ntp/RecentTabsManager.java
@@ -300,7 +341,15 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/RecentTabsM
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
-@@ -155,6 +155,11 @@ public class PrivacySettings
+@@ -16,6 +16,7 @@ import androidx.preference.Preference;
+ import androidx.preference.PreferenceFragmentCompat;
+ import androidx.vectordrawable.graphics.drawable.VectorDrawableCompat;
+ 
++import org.chromium.base.Log;
+ import org.chromium.chrome.R;
+ import org.chromium.chrome.browser.feedback.HelpAndFeedbackLauncherImpl;
+ import org.chromium.chrome.browser.flags.ChromeFeatureList;
+@@ -156,6 +157,11 @@ public class PrivacySettings
          phoneAsASecurityKey.setVisible(
                  ChromeFeatureList.isEnabled(ChromeFeatureList.WEB_AUTH_PHONE_SUPPORT));
  
@@ -312,26 +361,24 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
          updatePreferences();
      }
  
-@@ -167,6 +172,9 @@ public class PrivacySettings
+@@ -172,10 +178,15 @@ public class PrivacySettings
          } else if (PREF_HTTPS_FIRST_MODE.equals(key)) {
              UserPrefs.get(Profile.getLastUsedRegularProfile())
                      .setBoolean(Pref.HTTPS_ONLY_MODE_ENABLED, (boolean) newValue);
 +        } else if (PREF_INCOGNITO_TAB_HISTORY_ENABLED.equals(key)) {
 +            UserPrefs.get(Profile.getLastUsedRegularProfile())
 +                    .setBoolean(Pref.INCOGNITO_TAB_HISTORY_ENABLED, (boolean) newValue);
-         } else if (PREF_ALWAYS_INCOGNITO.equals(key)) {
-             if (!mSnackbarManager.isShowing())
-                 mSnackbarManager.showSnackbar(mSnackbar);
-@@ -174,6 +182,7 @@ public class PrivacySettings
+         }
          return true;
      }
  
 +    public static final String PREF_INCOGNITO_TAB_HISTORY_ENABLED = "incognito_history_enabled";
++
      @Override
      public void onResume() {
          super.onResume();
-@@ -210,6 +219,13 @@ public class PrivacySettings
-                     PrivacySandboxSettingsFragment.getStatusString(getContext()));
+@@ -201,6 +212,13 @@ public class PrivacySettings
+                             : R.string.text_off);
          }
  
 +        ChromeSwitchPreference historyInIncognitoPref =
@@ -341,9 +388,9 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
 +                    prefService.getBoolean(Pref.INCOGNITO_TAB_HISTORY_ENABLED));
 +        }
 +
-         mIncognitoLockSettings.updateIncognitoReauthPreferenceIfNeeded(getActivity());
-     }
- 
+         Preference secureDnsPref = findPreference(PREF_SECURE_DNS);
+         if (secureDnsPref != null && secureDnsPref.isVisible()) {
+             secureDnsPref.setSummary(SecureDnsSettings.getSummary(getContext()));
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/HistoricalTabSaver.java b/chrome/android/java/src/org/chromium/chrome/browser/tab/HistoricalTabSaver.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tab/HistoricalTabSaver.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tab/HistoricalTabSaver.java
@@ -391,7 +438,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPer
                  PersistedTabData.onTabClose(tab);
 -                if (!tab.isIncognito()) HistoricalTabSaver.createHistoricalTab(tab);
 +                boolean is_always_incognito =
-+                    ContextUtils.getAppSharedPreferences().getBoolean(AlwaysIncognitoLinkInterceptor.PREF_ALWAYS_INCOGNITO, false);
++                    AlwaysIncognitoLinkInterceptor.isAlwaysIncognito();
 +                if (!tab.isIncognito() || is_always_incognito)
 +                        HistoricalTabSaver.createHistoricalTab(tab, is_always_incognito);
                  removeTabFromQueues(tab);
@@ -1564,20 +1611,18 @@ diff --git a/chrome/browser/offline_pages/request_coordinator_factory.h b/chrome
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
-@@ -214,7 +214,8 @@
- #include "chrome/browser/supervised_user/supervised_user_service.h"
+@@ -215,6 +215,7 @@
  #endif
  
--#if BUILDFLAG(IS_ANDROID)
-+#if BUILDFLAG(IS_ANDROID) //Bromite: include tab helper for history in incognito feature
+ #if BUILDFLAG(IS_ANDROID)
 +#include "chrome/browser/history/history_tab_helper.h"
  #include "chrome/browser/android/bookmarks/partner_bookmarks_shim.h"
  #include "chrome/browser/android/explore_sites/history_statistics_reporter.h"
  #include "chrome/browser/android/ntp/recent_tabs_page_prefs.h"
-@@ -1326,6 +1327,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
-   variations::VariationsService::RegisterProfilePrefs(registry);
-   video_tutorials::RegisterPrefs(registry);
-   feed::prefs::RegisterFeedSharedProfilePrefs(registry);
+@@ -1329,6 +1330,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+   // register incognito pref
+   registry->RegisterBooleanPref(prefs::kAlwaysIncognitoEnabled,
+                               /*default_value=*/false);
 +  HistoryTabHelper::RegisterProfilePrefs(registry);
    feed::RegisterProfilePrefs(registry);
  #else   // BUILDFLAG(IS_ANDROID)
@@ -1608,14 +1653,38 @@ diff --git a/chrome/browser/ui/android/native_page/java/src/org/chromium/chrome/
  /**
   * An interface for pages that will be using Android views instead of html/rendered Web content.
   */
-@@ -158,7 +160,9 @@ public interface NativePage {
+@@ -120,12 +122,12 @@ public interface NativePage {
+      */
+     @Deprecated // Use GURL-variant instead.
+     public static boolean isNativePageUrl(String url, boolean isIncognito) {
+-        return nativePageType(url, null, isIncognito) != NativePageType.NONE;
++        return nativePageType(url, null, isIncognito, false) != NativePageType.NONE;
+     }
+ 
+     public static boolean isNativePageUrl(GURL url, boolean isIncognito) {
+         return url != null
+-                && nativePageType(url.getSpec(), null, isIncognito) != NativePageType.NONE;
++                && nativePageType(url.getSpec(), null, isIncognito, false) != NativePageType.NONE;
+     }
+ 
+     /**
+@@ -136,7 +138,8 @@ public interface NativePage {
+      */
+     // TODO(crbug/783819) - Convert to using GURL.
+     public static @NativePageType int nativePageType(
+-            String url, NativePage candidatePage, boolean isIncognito) {
++            String url, NativePage candidatePage, boolean isIncognito,
++            boolean isAlwaysIncognito) {
+         if (url == null) return NativePageType.NONE;
+ 
+         Uri uri = Uri.parse(url);
+@@ -158,7 +161,8 @@ public interface NativePage {
              return NativePageType.DOWNLOADS;
          } else if (UrlConstants.HISTORY_HOST.equals(host)) {
              return NativePageType.HISTORY;
 -        } else if (UrlConstants.RECENT_TABS_HOST.equals(host) && !isIncognito) {
 +        } else if (UrlConstants.RECENT_TABS_HOST.equals(host) &&
-+                  (!isIncognito ||
-+                    ContextUtils.getAppSharedPreferences().getBoolean("always_incognito", false))) {
++                  (!isIncognito || isAlwaysIncognito)) {
              return NativePageType.RECENT_TABS;
          } else if (UrlConstants.EXPLORE_HOST.equals(host)) {
              return NativePageType.EXPLORE;
@@ -1667,23 +1736,22 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
        <message name="IDS_UI_RELAUNCH_NOTICE" desc="Summary for always incognito mode">
          Your changes will take effect the next time you relaunch Bromite.
        </message>
-+      <message name="IDS_INCOGNITO_HISTORY_ENABLED_TITLE" desc="Title for always enable history in incognito mode">
-+        Enable history in incognito tabs
-+      </message>
-+      <message name="IDS_INCOGNITO_HISTORY_ENABLED_SUMMARY" desc="Summary for always enable history in incognito mode">
-+        Record history even in incognito mode
-+      </message>
++			<message name="IDS_INCOGNITO_HISTORY_ENABLED_TITLE" desc="Title for always enable history in incognito mode">
++				Enable history in incognito tabs
++			</message>
++			<message name="IDS_INCOGNITO_HISTORY_ENABLED_SUMMARY" desc="Summary for always enable history in incognito mode">
++				Record history even in incognito mode
++			</message>
        <message name="IDS_CLEAR_BROWSING_HISTORY_SUMMARY_SIGNED_IN" desc="A text explaining other forms of activity for signed in users.">
          Clears history and autocompletions in the address bar. Your Google Account may have other forms of browsing history at <ph name="BEGIN_LINK">&lt;link&gt;</ph>myactivity.google.com<ph name="END_LINK">&lt;/link&gt;</ph>.
        </message>
 diff --git a/chrome/common/pref_names.cc b/chrome/common/pref_names.cc
 --- a/chrome/common/pref_names.cc
 +++ b/chrome/common/pref_names.cc
-@@ -3264,6 +3264,9 @@ const char kCaretBrowsingEnabled[] = "settings.a11y.caretbrowsing.enabled";
- // is toggled silently by the keyboard shortcut.
- const char kShowCaretBrowsingDialog[] =
-     "settings.a11y.caretbrowsing.show_dialog";
-+#else
+@@ -3279,6 +3279,8 @@ const char kLacrosLaunchSwitch[] = "lacros_launch_switch";
+ 
+ #if defined(OS_ANDROID)
+ const char kAlwaysIncognitoEnabled[] = "always_incognito_enabled";
 +const char kIncognitoTabHistoryEnabled[] =
 +    "incognito_tab_history_enabled";
  #endif
@@ -1692,20 +1760,17 @@ diff --git a/chrome/common/pref_names.cc b/chrome/common/pref_names.cc
 diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
 --- a/chrome/common/pref_names.h
 +++ b/chrome/common/pref_names.h
-@@ -1191,6 +1191,13 @@ extern const char kLastWhatsNewVersion[];
+@@ -1201,6 +1201,10 @@ extern const char kCorsNonWildcardRequestHeadersSupport[];
+ extern const char kOriginAgentClusterDefaultEnabled[];
  
- #if !BUILDFLAG(IS_ANDROID)
- extern const char kLensRegionSearchEnabled[];
-+#else
+ extern const char kForceMajorVersionToMinorPositionInUserAgent[];
++
++#if BUILDFLAG(IS_ANDROID)
 +extern const char kIncognitoTabHistoryEnabled[];
-+extern const char kOverrideUserAgentEnabled[];
-+extern const char kOverrideUserAgent[];
-+extern const char kOverrideUserAgentDesktopModeEnabled[];
-+extern const char kOverrideUserAgentDesktopMode[];
-+extern const char kDesktopModeViewportMetaEnabled[];
- #endif
++#endif
+ }  // namespace prefs
  
- extern const char kPrivacyReviewShowWelcomeCard[];
+ #endif  // CHROME_COMMON_PREF_NAMES_H_
 diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
 --- a/chrome/test/BUILD.gn
 +++ b/chrome/test/BUILD.gn
