@@ -2,7 +2,6 @@
 * flag to enable Certificate Transparency (thanks to @uazo)
 * allow adding search engines from incognito mode
 * disable all predictors code (thanks to @uazo)
-* disable safety check
 * revert allow block of view-source URLs
 * JIT toggle site setting (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1720 and https://github.com/bromite/bromite/issues/1819)
 * move always incognito preference to native (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1496 and https://github.com/bromite/bromite/issues/1568)
