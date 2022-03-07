@@ -1,3 +1,16 @@
+# 99.0.4844.55
+* flag to enable Certificate Transparency (thanks to @uazo)
+* allow adding search engines from incognito mode
+* disable all predictors code (thanks to @uazo)
+* disable safety check
+* revert allow block of view-source URLs
+* JIT toggle site setting (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1720 and https://github.com/bromite/bromite/issues/1819)
+* move always incognito preference to native (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1496 and https://github.com/bromite/bromite/issues/1568)
+* remove patch to add data saver header
+* close a potential security issue with user scripts on native pages (thanks to @uazo)
+* disable safety checks and possible Omaha interactions
+* disable SegmentationPlatformFeature and Optimization Hints (thanks to @uazo)
+
 # 98.0.4758.116
 * disable minidumps upload
 * complete disabling of client hint headers (thanks to @uazo)
