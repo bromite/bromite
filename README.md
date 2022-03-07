@@ -45,6 +45,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * always-visible cookies, javascript and ads site settings
 * remove Play integration binary blobs
 * use [CFI](https://en.wikipedia.org/wiki/Control-flow_integrity) on all architectures except x86
+* enable trivial auto var init
 * disable media router and remoting by default
 * disable dynamic module loading
 * show warnings for TLSv1.0/TLSv1.1 pages
@@ -66,21 +67,27 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * ask permission to play protected media
 * disable the DIAL repeating discovery
 * disable RTCGetCurrentBrowsingContextMedia by default
-* disable FLoC by default
+* disable FLoC and privacy sandbox by default
 * disable feeds
 * disable reporting of certificate errors
 * use pre-defined phone model for client hints and Javascript
 * site settings to disable images
 * allow forcing external links to open in incognito
 * disable AGSA by default
-* allow disabling JIT
+* allow disabling JIT (globally and per-site)
+* flag to enable Certificate Transparency
+* allow adding search engines from incognito mode
+* disable predictors
+* disable supervised users
+* disable safety check
+* disable capability to block `view-source:` URLs
+* disable `SegmentationPlatformFeature`, `OptimizationHints`, client hint headers
 
 ## Features not related to privacy
 * browser automatic updates, enabled by default
 * native Android autofill support
 * import/export bookmarks
 * bookmark all tabs from tabs regroup menu
-* flag to allow screenshots of incognito tabs
 * allow playing videos in background tabs and disable pause on switching tabs
 * all codecs included (proprietary, open H.264 etc.)
 * [AV1 codec support](https://github.com/bromite/bromite/wiki/AV1-support)
