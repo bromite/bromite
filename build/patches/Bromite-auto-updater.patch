@@ -11,7 +11,7 @@ Enable checking for new versions, with notifications and proxy support
  .../about_settings/AboutChromeSettings.java   |  28 +-
  .../chrome/browser/omaha/OmahaBase.java       |  57 ++++-
  .../chrome/browser/omaha/UpdateConfigs.java   |  30 ++-
- .../browser/omaha/UpdateMenuItemHelper.java   |  76 +++++-
+ .../browser/omaha/UpdateMenuItemHelper.java   |  81 +++++-
  .../browser/omaha/UpdateStatusProvider.java   | 161 +++++++++---
  .../browser/omaha/VersionNumberGetter.java    |   3 +-
  .../inline/BromiteInlineUpdateController.java | 241 ++++++++++++++++++
@@ -26,7 +26,7 @@ Enable checking for new versions, with notifications and proxy support
  .../flags/android/chrome_feature_list.h       |   1 +
  .../browser/flags/ChromeFeatureList.java      |   1 +
  .../strings/android_chrome_strings.grd        |  23 +-
- 22 files changed, 891 insertions(+), 56 deletions(-)
+ 22 files changed, 896 insertions(+), 56 deletions(-)
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/BromiteInlineUpdateController.java
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateController.java
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java
@@ -344,7 +344,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMen
                  // The badge is hidden if the update menu item has been clicked until there is an
                  // even newer version of Chrome available.
                  showBadge |= !TextUtils.equals(
-@@ -270,6 +284,66 @@ public class UpdateMenuItemHelper {
+@@ -270,6 +284,71 @@ public class UpdateMenuItemHelper {
                  mMenuUiState.itemState.icon = R.drawable.ic_error_24dp_filled;
                  mMenuUiState.itemState.enabled = false;
                  break;
@@ -353,23 +353,28 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMen
 +            case UpdateState.INLINE_UPDATE_AVAILABLE:
 +                // The badge is hidden if the update menu item has been clicked until there is an
 +                // even newer version of Chrome available.
-+                @StringRes int menuContentDescription = R.string.accessibility_toolbar_btn_menu_update;
++                @StringRes int defaultUpdateSummary = R.string.menu_update_summary_default;
 +                if (mStatus.updateState == UpdateState.VULNERABLE_VERSION) {
 +                    // always show badge in case of vulnerable version
 +                    showBadge = true;
-+                    menuContentDescription = R.string.accessibility_toolbar_btn_menu_vulnerable;
++                    mMenuUiState.buttonState = new MenuButtonState();
++                    mMenuUiState.buttonState.menuContentDescription = R.string.accessibility_toolbar_btn_menu_update;
++                    mMenuUiState.buttonState.darkBadgeIcon =
++                            R.drawable.ic_error_grey800_24dp_filled;
++                    mMenuUiState.buttonState.lightBadgeIcon = R.drawable.ic_error_white_24dp_filled;
++                    mMenuUiState.buttonState.adaptiveBadgeIcon = R.drawable.ic_error_24dp_filled;
++                    defaultUpdateSummary = R.string.menu_update_summary_vulnerable;
 +                } else {
 +                    showBadge |= !TextUtils.equals(
 +                        getPrefService().getString(
 +                                Pref.LATEST_VERSION_WHEN_CLICKED_UPDATE_MENU_ITEM),
 +                        mStatus.latestUnsupportedVersion);
-+                }
-+
-+                if (showBadge) {
-+                    mMenuUiState.buttonState = new MenuButtonState();
-+                    mMenuUiState.buttonState.menuContentDescription = menuContentDescription;
-+                    mMenuUiState.buttonState.darkBadgeIcon = R.drawable.badge_update_dark;
-+                    mMenuUiState.buttonState.lightBadgeIcon = R.drawable.badge_update_light;
++                    if (showBadge) {
++                        mMenuUiState.buttonState = new MenuButtonState();
++                        mMenuUiState.buttonState.menuContentDescription = R.string.accessibility_toolbar_btn_menu_update;
++                        mMenuUiState.buttonState.darkBadgeIcon = R.drawable.badge_update_dark;
++                        mMenuUiState.buttonState.lightBadgeIcon = R.drawable.badge_update_light;
++                    }
 +                }
 +
 +                mMenuUiState.itemState = new MenuItemState();
@@ -378,7 +383,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMen
 +                mMenuUiState.itemState.summary = UpdateConfigs.getCustomSummary();
 +                if (TextUtils.isEmpty(mMenuUiState.itemState.summary)) {
 +                    mMenuUiState.itemState.summary =
-+                            resources.getString(R.string.menu_update_summary_default);
++                            resources.getString(defaultUpdateSummary);
 +                }
 +                mMenuUiState.itemState.icon = R.drawable.ic_history_googblue_24dp;
 +                mMenuUiState.itemState.iconTintId = R.color.default_icon_color_blue_light;
@@ -796,8 +801,8 @@ new file mode 100644
 +    private static final String TAG = "BromiteInlineUpdateController";
 +    private final String REDIRECT_URL_PREFIX = "https://github.com/bromite/bromite/releases/download/";
 +    private static final String UPDATE_VERSION_URL = "https://github.com/bromite/bromite/releases/latest/download/";
-+    private final String UPSTREAM_VERSION_URL = "https://bromite.org/upstream.txt";
-+    public static final String VULNERABLE_VERSION_DOC_URL = "https://bromite.org/vulnerable-version";
++    private final String UPSTREAM_VERSION_URL = "https://www.bromite.org/upstream.txt";
++    public static final String VULNERABLE_VERSION_DOC_URL = "https://www.bromite.org/vulnerable-version";
 +
 +    public static String getDownloadUrl() {
 +        return UPDATE_VERSION_URL + BuildConfig.BUILD_TARGET_CPU + "_ChromePublic.apk";
@@ -947,7 +952,7 @@ new file mode 100644
 +
 +        EndpointFetcher.nativeFetchWithNoAuth(
 +                (endpointResponse) -> {
-+                    String response = endpointResponse.getResponseString();
++                    String response = endpointResponse.getResponseString().trim();
 +                    Log.i(TAG, "BromiteUpdater: obtained upstream version update response '%s'", response);
 +                    VersionNumber version = VersionNumber.fromString(response);
 +                    if (version != null) {
@@ -1562,16 +1567,19 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
  
        <!-- Account management UI strings. -->
        <message name="IDS_ACCOUNT_MANAGEMENT_TITLE" desc="Header title for the account management screen. [CHAR_LIMIT=32]">
-@@ -3371,7 +3377,7 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+@@ -3371,7 +3377,10 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
  
        <!-- Main menu items -->
        <message name="IDS_MENU_UPDATE" desc="Menu item for updating chrome. [CHAR_LIMIT=24]">
 -        Update Chrome
 +        Update Bromite
++      </message>
++      <message name="IDS_MENU_UPDATE_VULNERABLE" desc="Content description for the menu button when it is covered by the update icon that is displayed when the current version of Bromite is vulnerable.">
++        Update not available. Read more
        </message>
        <message name="IDS_MENU_UPDATE_SUMMARY_DEFAULT" desc="Summary string for update menu item explaining that a newer version of Chrome is available. [CHAR_LIMIT=30]">
          Newer version is available
-@@ -3382,6 +3388,18 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+@@ -3382,6 +3391,18 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
        <message name="IDS_MENU_UPDATE_UNSUPPORTED_SUMMARY_DEFAULT" desc="Summary string for update menu item explaining that the Android version on the device is unsupported. [CHAR_LIMIT=30]">
          Android version is unsupported
        </message>
@@ -1589,16 +1597,6 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
 +      </message>
        <message name="IDS_MENU_NEW_WINDOW" desc="Menu item for opening a new window. [CHAR_LIMIT=27]">
          New window
-       </message>
-@@ -3834,6 +3852,9 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
-       <message name="IDS_ACCESSIBILITY_TOOLBAR_BTN_MENU_UPDATE" desc="Content description for the menu button when it is covered by the update icon that is displayed when a newer version of Chrome is available.">
-         Update available. More options
-       </message>
-+      <message name="IDS_ACCESSIBILITY_TOOLBAR_BTN_MENU_VULNERABLE" desc="Content description for the menu button when it is covered by the update icon that is displayed when the current version of Bromite is vulnerable.">
-+        Update not available. Read more
-+      </message>
-       <message name="IDS_ACCESSIBILITY_TOOLBAR_BTN_MENU_OS_VERSION_UNSUPPORTED" desc="Content description for the menu button when it is covered by the warning icon that is displayed when the current Android OS version is unsupported.">
-         Chrome can’t update. More options
        </message>
 --
 2.25.1
