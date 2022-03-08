@@ -113,7 +113,7 @@ Finally, if you don't know how to begin with, maybe `Telemetry-event-video-full-
 
 ## Setting the build arguments
 
-The arguments in `bromite/build/GN_ARGS` must be used as the Chromium
+The arguments in `bromite/build/bromite.gn_args` must be used as the Chromium
 build arguments. To do this, run `gn args` with the default args
 file. You can optionally set your preferred editor. This is done from
 the Chromium src directory:
@@ -122,7 +122,7 @@ the Chromium src directory:
 EDITOR=vi gn args out/Default
 ```
 
-Replace all the args with the contents of the `build/GN_ARGS` file in this repo.
+Replace all the args with the contents of the `build/bromite.gn_args` file in this repo.
 
 ## Continuing the build
 
