@@ -8,7 +8,7 @@
 * remove patch to add data saver header
 * close a potential security issue with user scripts on native pages (thanks to @uazo)
 * disable safety checks and possible Omaha interactions
-* disable SegmentationPlatformFeature and Optimization Hints (thanks to @uazo)
+* disable SegmentationPlatformFeature and Optimization Hints (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1632)
 * add notification for a major upstream version being released (fixes https://github.com/bromite/bromite/issues/1796)
 * fix screenshots in incognito allowed by default (fixes https://github.com/bromite/bromite/issues/1816)
 
