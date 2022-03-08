@@ -1,5 +1,5 @@
 # 99.0.4844.55
-* flag to enable Certificate Transparency (thanks to @uazo)
+* flag to enable Certificate Transparency (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1554)
 * allow adding search engines from incognito mode
 * disable all predictors code (thanks to @uazo)
 * revert allow block of view-source URLs
@@ -9,6 +9,8 @@
 * close a potential security issue with user scripts on native pages (thanks to @uazo)
 * disable safety checks and possible Omaha interactions
 * disable SegmentationPlatformFeature and Optimization Hints (thanks to @uazo)
+* add notification for a major upstream version being released (fixes https://github.com/bromite/bromite/issues/1796)
+* fix screenshots in incognito allowed by default (fixes https://github.com/bromite/bromite/issues/1816)
 
 # 98.0.4758.116
 * disable minidumps upload
