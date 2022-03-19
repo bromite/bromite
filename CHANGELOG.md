@@ -1,7 +1,13 @@
+# 99.0.4844.77
+* fix missing adaptive icon for updates
+* do not close adblock filters editor when tapping reset button
+* change text for 'Never' in history days to keep setting
+* bring back dictionary hints in address bar
+
 # 99.0.4844.58
 * remove contextual search (fixes https://github.com/bromite/bromite/issues/1750)
 * remove global JIT settings
-* add privacy setting for how many number of days of history to keep (thanks to @uazo)
+* add privacy setting for how many number of days of history to keep (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1870)
 * disable UA full version (thanks to @uazo)
 * reintroduce patch for Save-Data header
 * updated zh_CN translations (thanks to @zhmars)
