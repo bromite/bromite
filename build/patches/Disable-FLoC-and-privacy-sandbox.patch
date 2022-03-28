@@ -8,28 +8,15 @@ the marking the history navigation and the javascript API and permission policie
 Also added the disabling of blink features through the DisabledForBromite tag
 ---
  .../java/res/xml/privacy_preferences.xml      |  4 --
- .../privacy/settings/PrivacySettings.java     | 21 -------
- .../browser/chrome_content_browser_client.cc  |  4 ++
- .../floc_component_installer.cc               | 10 +---
- .../floc_eligibility_observer.cc              | 58 +------------------
- .../floc_id_provider_impl.cc                  |  4 +-
+ .../privacy/settings/PrivacySettings.java     | 16 ------
+ .../browser/chrome_content_browser_client.cc  |  3 ++
  .../privacy_sandbox/generated_floc_pref.cc    |  2 +-
- .../federated_learning/features/features.cc   | 12 ++--
- components/federated_learning/floc_id.cc      | 19 +++---
  .../history/core/browser/history_backend.cc   | 13 +----
- .../history/core/browser/history_service.cc   |  9 +--
- components/history/core/browser/url_row.h     |  1 -
+ .../history/core/browser/history_service.cc   |  2 +-
  .../privacy_sandbox/privacy_sandbox_prefs.cc  |  4 +-
- .../privacy_sandbox_settings.cc               | 21 ++++---
- third_party/blink/common/features.cc          |  4 +-
- .../permissions_policy_feature.mojom          |  5 --
- .../renderer/bindings/generated_in_core.gni   |  2 -
- .../blink/renderer/core/dom/document.cc       | 31 +---------
- .../blink/renderer/core/dom/document.idl      |  1 -
- .../renderer/core/dom/interest_cohort.idl     |  4 --
- .../permissions_policy_features.json5         |  6 --
- .../platform/runtime_enabled_features.json5   |  5 +-
- 22 files changed, 45 insertions(+), 195 deletions(-)
+ .../privacy_sandbox_settings.cc               | 51 +++++--------------
+ .../privacy_sandbox_settings.h                |  1 -
+ 9 files changed, 21 insertions(+), 75 deletions(-)
 
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
 --- a/chrome/android/java/res/xml/privacy_preferences.xml
@@ -48,16 +35,7 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
-@@ -28,8 +28,6 @@ import org.chromium.chrome.browser.preferences.Pref;
- import org.chromium.chrome.browser.prefetch.settings.PreloadPagesSettingsFragment;
- import org.chromium.chrome.browser.privacy.secure_dns.SecureDnsSettings;
- import org.chromium.chrome.browser.privacy_review.PrivacyReviewDialog;
--import org.chromium.chrome.browser.privacy_sandbox.PrivacySandboxReferrer;
--import org.chromium.chrome.browser.privacy_sandbox.PrivacySandboxSettingsFragment;
- import org.chromium.chrome.browser.profiles.Profile;
- import org.chromium.chrome.browser.settings.ChromeManagedPreferenceDelegate;
- import org.chromium.chrome.browser.settings.SettingsLauncherImpl;
-@@ -72,7 +70,6 @@ public class PrivacySettings
+@@ -73,7 +73,6 @@ public class PrivacySettings
      private static final String PREF_SECURE_DNS = "secure_dns";
      private static final String PREF_DO_NOT_TRACK = "do_not_track";
      private static final String PREF_CLEAR_BROWSING_DATA = "clear_browsing_data";
@@ -65,26 +43,23 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
      private static final String PREF_PRIVACY_REVIEW = "privacy_review";
      private static final String PREF_INCOGNITO_LOCK = "incognito_lock";
      private static final String PREF_PHONE_AS_A_SECURITY_KEY = "phone_as_a_security_key";
-@@ -102,18 +99,6 @@ public class PrivacySettings
+@@ -103,15 +102,6 @@ public class PrivacySettings
          SettingsUtils.addPreferencesFromResource(this, R.xml.privacy_preferences);
          getActivity().setTitle(R.string.prefs_privacy_security);
  
--        findPreference(PREF_PRIVACY_SANDBOX)
--                .setSummary(PrivacySandboxSettingsFragment.getStatusString(getContext()));
+-        Preference sandboxPreference = findPreference(PREF_PRIVACY_SANDBOX);
+-        sandboxPreference.setSummary(PrivacySandboxSettingsFragment.getStatusString(getContext()));
 -        // Overwrite the click listener to pass a correct referrer to the fragment.
--        findPreference(PREF_PRIVACY_SANDBOX).setOnPreferenceClickListener(preference -> {
--            Bundle fragmentArgs = new Bundle();
--            fragmentArgs.putInt(PrivacySandboxSettingsFragment.PRIVACY_SANDBOX_REFERRER,
--                    PrivacySandboxReferrer.PRIVACY_SETTINGS);
--            new SettingsLauncherImpl().launchSettingsActivity(
--                    getContext(), PrivacySandboxSettingsFragment.class, fragmentArgs);
+-        sandboxPreference.setOnPreferenceClickListener(preference -> {
+-            PrivacySandboxSettingsFragmentV3.launchPrivacySandboxSettings(getContext(),
+-                    new SettingsLauncherImpl(), PrivacySandboxReferrer.PRIVACY_SETTINGS);
 -            return true;
 -        });
 -
          Preference privacyReviewPreference = findPreference(PREF_PRIVACY_REVIEW);
          if (!ChromeFeatureList.isEnabled(ChromeFeatureList.PRIVACY_REVIEW)) {
              getPreferenceScreen().removePreference(privacyReviewPreference);
-@@ -283,12 +268,6 @@ public class PrivacySettings
+@@ -284,12 +274,6 @@ public class PrivacySettings
              secureDnsPref.setSummary(SecureDnsSettings.getSummary(getContext()));
          }
  
@@ -100,146 +75,16 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/setting
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -2792,6 +2792,10 @@ bool ChromeContentBrowserClient::IsConversionMeasurementOperationAllowed(
+@@ -2808,6 +2808,9 @@ bool ChromeContentBrowserClient::IsConversionMeasurementOperationAllowed(
      const url::Origin* impression_origin,
      const url::Origin* conversion_origin,
      const url::Origin* reporting_origin) {
-+  // redundant code, privacy sandbox is already disabled in the prefs
-+  // but I leave it anyway for now
++  // make sure that this is always disabled in Bromite even if privacy sandbox is already disabled in the prefs
 +  if ((true))
 +    return false;
    Profile* profile = Profile::FromBrowserContext(browser_context);
  
    PrivacySandboxSettings* privacy_sandbox_settings =
-diff --git a/chrome/browser/component_updater/floc_component_installer.cc b/chrome/browser/component_updater/floc_component_installer.cc
---- a/chrome/browser/component_updater/floc_component_installer.cc
-+++ b/chrome/browser/component_updater/floc_component_installer.cc
-@@ -19,7 +19,7 @@ namespace component_updater {
- // The extension id is: cmahhnpholdijhjokonmfdjbfmklppij
- constexpr uint8_t kFlocComponentPublicKeySHA256[32] = {
-     0x2c, 0x07, 0x7d, 0xf7, 0xeb, 0x38, 0x97, 0x9e, 0xae, 0xdc, 0x53,
--    0x91, 0x5c, 0xab, 0xff, 0x89, 0xbc, 0xf0, 0xd9, 0x30, 0xd2, 0x2e,
-+    0x01, 0x02, 0x03, 0x04, 0x89, 0xbc, 0xf0, 0xd9, 0x30, 0xd2, 0x2e,
-     0x8f, 0x68, 0x3a, 0xf9, 0x21, 0x91, 0x9f, 0xc1, 0x84, 0xa1};
- 
- constexpr char kFlocComponentFetcherManifestName[] =
-@@ -56,10 +56,6 @@ void FlocComponentInstallerPolicy::ComponentReady(
-     const base::FilePath& install_dir,
-     base::Value manifest) {
-   DCHECK(!install_dir.empty());
--
--  floc_sorting_lsh_clusters_service_->OnSortingLshClustersFileReady(
--      install_dir.Append(federated_learning::kSortingLshClustersFileName),
--      version);
- }
- 
- // Called during startup and installation before ComponentReady().
-@@ -102,10 +98,6 @@ void RegisterFlocComponent(
-     ComponentUpdateService* cus,
-     federated_learning::FlocSortingLshClustersService*
-         floc_sorting_lsh_clusters_service) {
--  auto installer = base::MakeRefCounted<ComponentInstaller>(
--      std::make_unique<FlocComponentInstallerPolicy>(
--          floc_sorting_lsh_clusters_service));
--  installer->Register(cus, base::OnceClosure());
- }
- 
- }  // namespace component_updater
-diff --git a/chrome/browser/federated_learning/floc_eligibility_observer.cc b/chrome/browser/federated_learning/floc_eligibility_observer.cc
---- a/chrome/browser/federated_learning/floc_eligibility_observer.cc
-+++ b/chrome/browser/federated_learning/floc_eligibility_observer.cc
-@@ -17,55 +17,14 @@
- 
- namespace federated_learning {
- 
--namespace {
--
--history::HistoryService* GetHistoryService(content::WebContents* web_contents) {
--  DCHECK(web_contents);
--
--  Profile* profile =
--      Profile::FromBrowserContext(web_contents->GetBrowserContext());
--  if (profile->IsOffTheRecord())
--    return nullptr;
--
--  return HistoryServiceFactory::GetForProfile(
--      profile, ServiceAccessType::IMPLICIT_ACCESS);
--}
--
--}  // namespace
--
- FlocEligibilityObserver::~FlocEligibilityObserver() = default;
- 
- page_load_metrics::PageLoadMetricsObserver::ObservePolicy
- FlocEligibilityObserver::OnCommit(
-     content::NavigationHandle* navigation_handle) {
--  // At this point the add-page-to-history decision should have been made,
--  // because history is added in HistoryTabHelper::DidFinishNavigation, and this
--  // OnEligibleCommit method is invoked in the same broadcasting family through
--  // MetricsWebContentsObserver::DidFinishNavigation.
--
--  // TODO(yaoxia): Perhaps we want an explicit signal for "the page was added
--  // to history or was ineligible". This way we don't need to count on the above
--  // relation, and can also stop observing if the history was not added.
--
--  // If the IP was not publicly routable, the navigation history is not eligible
--  // for floc. We can stop observing now.
--  if (!navigation_handle->GetSocketAddress().address().IsPubliclyRoutable() &&
--      !base::FeatureList::IsEnabled(kFlocBypassIPIsPubliclyRoutableCheck)) {
--    return ObservePolicy::STOP_OBSERVING;
--  }
--
--  // If the interest-cohort permissions policy in the main document disallows
--  // the floc inclusion, the navigation history is not eligible for floc. We can
--  // stop observing now.
--  if (!navigation_handle->GetRenderFrameHost()->IsFeatureEnabled(
--          blink::mojom::PermissionsPolicyFeature::kInterestCohort)) {
--    return ObservePolicy::STOP_OBSERVING;
--  }
--
--  DCHECK(!eligible_commit_);
--  eligible_commit_ = true;
--
--  return ObservePolicy::CONTINUE_OBSERVING;
-+  // do not mark navigation as interesting for floc
-+  // see https://github.com/WICG/floc#sites-which-interest-cohorts-will-be-calculated-on
-+  return ObservePolicy::STOP_OBSERVING;
- }
- 
- void FlocEligibilityObserver::OnAdResource() {
-@@ -86,17 +45,6 @@ FlocEligibilityObserver::FlocEligibilityObserver(content::RenderFrameHost* rfh)
-       web_contents_(content::WebContents::FromRenderFrameHost(rfh)) {}
- 
- void FlocEligibilityObserver::OnOptInSignalObserved() {
--  if (!eligible_commit_ || observed_opt_in_signal_)
--    return;
--
--  if (history::HistoryService* hs = GetHistoryService(web_contents_)) {
--    hs->SetFlocAllowed(
--        history::ContextIDForWebContents(web_contents_),
--        web_contents_->GetController().GetLastCommittedEntry()->GetUniqueID(),
--        web_contents_->GetLastCommittedURL());
--  }
--
--  observed_opt_in_signal_ = true;
- }
- 
- DOCUMENT_USER_DATA_KEY_IMPL(FlocEligibilityObserver);
-diff --git a/chrome/browser/federated_learning/floc_id_provider_impl.cc b/chrome/browser/federated_learning/floc_id_provider_impl.cc
---- a/chrome/browser/federated_learning/floc_id_provider_impl.cc
-+++ b/chrome/browser/federated_learning/floc_id_provider_impl.cc
-@@ -396,10 +396,8 @@ void FlocIdProviderImpl::OnGetRecentlyVisitedURLsCompleted(
-   base::Time history_end_time = base::Time::Min();
- 
-   for (const history::URLResult& url_result : results) {
--    if (!(url_result.content_annotations().annotation_flags &
--          history::VisitContentAnnotationFlag::kFlocEligibleRelaxed)) {
-+    if ((true))
-       continue;
--    }
- 
-     if (url_result.visit_time() < history_begin_time)
-       history_begin_time = url_result.visit_time();
 diff --git a/chrome/browser/privacy_sandbox/generated_floc_pref.cc b/chrome/browser/privacy_sandbox/generated_floc_pref.cc
 --- a/chrome/browser/privacy_sandbox/generated_floc_pref.cc
 +++ b/chrome/browser/privacy_sandbox/generated_floc_pref.cc
@@ -252,95 +97,10 @@ diff --git a/chrome/browser/privacy_sandbox/generated_floc_pref.cc b/chrome/brow
  
    return extensions::settings_private::SetPrefResult::SUCCESS;
  }
-diff --git a/components/federated_learning/features/features.cc b/components/federated_learning/features/features.cc
---- a/components/federated_learning/features/features.cc
-+++ b/components/federated_learning/features/features.cc
-@@ -12,13 +12,13 @@ namespace federated_learning {
- // bypassed when determining the eligibility for a page to be included in floc
- // computation. This is useful for developers to test FLoC in local environment.
- const base::Feature kFlocBypassIPIsPubliclyRoutableCheck{
--    "FlocBypassIPIsPubliclyRoutableCheck", base::FEATURE_DISABLED_BY_DEFAULT};
-+    "FlocBypassIPIsPubliclyRoutableCheck", base::FEATURE_DISABLED_BY_DEFAULT}; // guard this
- 
- // Enables or disables the FlocIdComputed event logging, which happens when a
- // floc id is first computed for a browsing session or is refreshed due to a
- // long period of time has passed since the last computation.
- const base::Feature kFlocIdComputedEventLogging{
--    "FlocIdComputedEventLogging", base::FEATURE_ENABLED_BY_DEFAULT};
-+    "FlocIdComputedEventLogging", base::FEATURE_DISABLED_BY_DEFAULT};
- 
- // If enabled, pages that had ad resources will be included in floc computation;
- // otherwise, only pages that used the document.interestCohort API will be
-@@ -27,18 +27,18 @@ const base::Feature kFlocIdComputedEventLogging{
- // criteria.
- const base::Feature kFlocPagesWithAdResourcesDefaultIncludedInFlocComputation{
-     "FlocPagesWithAdResourcesDefaultIncludedInFlocComputation",
--    base::FEATURE_DISABLED_BY_DEFAULT};
-+    base::FEATURE_DISABLED_BY_DEFAULT}; // guard this
- 
- // The main floc feature for all the subsidiary control and setting params. It's
- // controlling the floc update rate, and the minimum history domain size
- // required.
- // TODO(yaoxia): merge other floc features into this one.
- const base::Feature kFederatedLearningOfCohorts{
--    "FederatedLearningOfCohorts", base::FEATURE_DISABLED_BY_DEFAULT};
-+    "FederatedLearningOfCohorts", base::FEATURE_DISABLED_BY_DEFAULT}; // guard this
- constexpr base::FeatureParam<base::TimeDelta> kFlocIdScheduledUpdateInterval{
--    &kFederatedLearningOfCohorts, "update_interval", base::Days(7)};
-+    &kFederatedLearningOfCohorts, "update_interval", base::Days(1)};
- constexpr base::FeatureParam<int> kFlocIdMinimumHistoryDomainSizeRequired{
--    &kFederatedLearningOfCohorts, "minimum_history_domain_size_required", 3};
-+    &kFederatedLearningOfCohorts, "minimum_history_domain_size_required", 99999};
- constexpr base::FeatureParam<int> kFlocIdFinchConfigVersion{
-     &kFederatedLearningOfCohorts, "finch_config_version", 1};
- 
-diff --git a/components/federated_learning/floc_id.cc b/components/federated_learning/floc_id.cc
---- a/components/federated_learning/floc_id.cc
-+++ b/components/federated_learning/floc_id.cc
-@@ -38,9 +38,8 @@ FlocId FlocId::CreateValid(uint64_t id,
-                            base::Time history_begin_time,
-                            base::Time history_end_time,
-                            uint32_t sorting_lsh_version) {
--  return FlocId(id, Status::kValid, history_begin_time, history_end_time,
--                kFlocIdFinchConfigVersion.Get(), sorting_lsh_version,
--                /*compute_time=*/base::Time::Now());
-+  // always return an invalid floc id
-+  return CreateInvalid(Status::kInvalidBlocked);
- }
- 
- FlocId::FlocId(const FlocId& id) = default;
-@@ -100,15 +99,7 @@ void FlocId::RegisterPrefs(PrefRegistrySimple* registry) {
- }
- 
- void FlocId::SaveToPrefs(PrefService* prefs) {
--  DCHECK_NE(status_, Status::kInvalidNoStatusPrefs);
--
--  prefs->SetUint64(kFlocIdValuePrefKey, id_);
--  prefs->SetInteger(kFlocIdStatusPrefKey, static_cast<int>(status_));
--  prefs->SetTime(kFlocIdHistoryBeginTimePrefKey, history_begin_time_);
--  prefs->SetTime(kFlocIdHistoryEndTimePrefKey, history_end_time_);
--  prefs->SetUint64(kFlocIdFinchConfigVersionPrefKey, finch_config_version_);
--  prefs->SetUint64(kFlocIdSortingLshVersionPrefKey, sorting_lsh_version_);
--  prefs->SetTime(kFlocIdComputeTimePrefKey, compute_time_);
-+  // don't save anything
- }
- 
- void FlocId::UpdateStatusAndSaveToPrefs(PrefService* prefs, Status status) {
-@@ -126,6 +117,10 @@ void FlocId::ResetComputeTimeAndSaveToPrefs(base::Time compute_time,
- 
- // static
- FlocId FlocId::ReadFromPrefs(PrefService* prefs) {
-+  // don't load anything
-+  if ((true))
-+    return CreateInvalid(FlocId::Status::kInvalidBlocked);
-+
-   Status status = Status::kInvalidNoStatusPrefs;
- 
-   // We rely on the time to tell whether it's a fresh profile.
 diff --git a/components/history/core/browser/history_backend.cc b/components/history/core/browser/history_backend.cc
 --- a/components/history/core/browser/history_backend.cc
 +++ b/components/history/core/browser/history_backend.cc
-@@ -486,18 +486,7 @@ void HistoryBackend::SetFlocAllowed(ContextID context_id,
+@@ -486,18 +486,7 @@ void HistoryBackend::SetBrowsingTopicsAllowed(ContextID context_id,
    if (!visit_id)
      return;
  
@@ -349,21 +109,21 @@ diff --git a/components/history/core/browser/history_backend.cc b/components/his
 -  VisitContentAnnotations annotations;
 -  if (db_->GetContentAnnotationsForVisit(visit_id, &annotations)) {
 -    annotations.annotation_flags |=
--        VisitContentAnnotationFlag::kFlocEligibleRelaxed;
+-        VisitContentAnnotationFlag::kBrowsingTopicsEligible;
 -    db_->UpdateContentAnnotationsForVisit(visit_id, annotations);
 -  } else {
 -    annotations.annotation_flags |=
--        VisitContentAnnotationFlag::kFlocEligibleRelaxed;
+-        VisitContentAnnotationFlag::kBrowsingTopicsEligible;
 -    db_->AddContentAnnotationsForVisit(visit_id, annotations);
 -  }
-+  // we don't want anyone to mark history as floc enabled
++  // in Bromite disallow marking anything in history related to topics
    ScheduleCommit();
  }
  
 diff --git a/components/history/core/browser/history_service.cc b/components/history/core/browser/history_service.cc
 --- a/components/history/core/browser/history_service.cc
 +++ b/components/history/core/browser/history_service.cc
-@@ -383,7 +383,7 @@ void HistoryService::AddPage(const GURL& url,
+@@ -392,7 +392,7 @@ void HistoryService::AddPage(const GURL& url,
    AddPage(HistoryAddPageArgs(
        url, time, context_id, nav_entry_id, referrer, redirects, transition,
        !ui::PageTransitionIsMainFrame(transition), visit_source,
@@ -372,44 +132,19 @@ diff --git a/components/history/core/browser/history_service.cc b/components/his
  }
  
  void HistoryService::AddPage(const GURL& url,
-@@ -463,12 +463,7 @@ void HistoryService::UpdateWithPageEndTime(ContextID context_id,
- void HistoryService::SetFlocAllowed(ContextID context_id,
-                                     int nav_entry_id,
-                                     const GURL& url) {
--  TRACE_EVENT0("browser", "HistoryService::SetFlocAllowed");
--  DCHECK(backend_task_runner_) << "History service being called after cleanup";
--  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
--  ScheduleTask(PRIORITY_NORMAL,
--               base::BindOnce(&HistoryBackend::SetFlocAllowed, history_backend_,
--                              context_id, nav_entry_id, url));
-+  // we don't want anyone to mark history as floc enabled
- }
- 
- void HistoryService::AddContentModelAnnotationsForVisit(
-diff --git a/components/history/core/browser/url_row.h b/components/history/core/browser/url_row.h
---- a/components/history/core/browser/url_row.h
-+++ b/components/history/core/browser/url_row.h
-@@ -166,7 +166,6 @@ enum VisitContentAnnotationFlag : uint64_t {
-   // 3. Page opted in / Either one of the following holds:
-   //      - document.interestCohort API is used in the page
-   //      - the page has heuristically detected ad resources
--  kFlocEligibleRelaxed = 1 << 0,
- };
- 
- using VisitContentAnnotationFlags = uint64_t;
 diff --git a/components/privacy_sandbox/privacy_sandbox_prefs.cc b/components/privacy_sandbox/privacy_sandbox_prefs.cc
 --- a/components/privacy_sandbox/privacy_sandbox_prefs.cc
 +++ b/components/privacy_sandbox/privacy_sandbox_prefs.cc
-@@ -34,7 +34,7 @@ namespace privacy_sandbox {
+@@ -48,7 +48,7 @@ namespace privacy_sandbox {
  
  void RegisterProfilePrefs(PrefRegistrySimple* registry) {
    registry->RegisterBooleanPref(
 -      prefs::kPrivacySandboxApisEnabled, true,
 +      prefs::kPrivacySandboxApisEnabled, false,
        user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+   registry->RegisterBooleanPref(prefs::kPrivacySandboxApisEnabledV2, false);
    registry->RegisterBooleanPref(
-       prefs::kPrivacySandboxManuallyControlled, false,
-@@ -45,7 +45,7 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
+@@ -60,7 +60,7 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
    registry->RegisterTimePref(prefs::kPrivacySandboxFlocDataAccessibleSince,
                               base::Time());
    registry->RegisterBooleanPref(
@@ -417,21 +152,46 @@ diff --git a/components/privacy_sandbox/privacy_sandbox_prefs.cc b/components/pr
 +      prefs::kPrivacySandboxFlocEnabled, false,
        user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
    registry->RegisterDictionaryPref(prefs::kPrivacySandboxFledgeJoinBlocked);
- }
+   registry->RegisterBooleanPref(prefs::kPrivacySandboxNoticeDisplayed, false);
 diff --git a/components/privacy_sandbox/privacy_sandbox_settings.cc b/components/privacy_sandbox/privacy_sandbox_settings.cc
 --- a/components/privacy_sandbox/privacy_sandbox_settings.cc
 +++ b/components/privacy_sandbox/privacy_sandbox_settings.cc
-@@ -91,8 +91,7 @@ PrivacySandboxSettings::PrivacySandboxSettings(
+@@ -82,8 +82,7 @@ PrivacySandboxSettings::PrivacySandboxSettings(
+     bool incognito_profile)
+     : host_content_settings_map_(host_content_settings_map),
+       cookie_settings_(cookie_settings),
+-      pref_service_(pref_service),
+-      incognito_profile_(incognito_profile) {
++      pref_service_(pref_service) {
+   DCHECK(pref_service_);
+   DCHECK(host_content_settings_map_);
+   DCHECK(cookie_settings_);
+@@ -104,22 +103,13 @@ PrivacySandboxSettings::PrivacySandboxSettings(
  PrivacySandboxSettings::~PrivacySandboxSettings() = default;
  
  bool PrivacySandboxSettings::IsFlocAllowed() const {
 -  return pref_service_->GetBoolean(prefs::kPrivacySandboxFlocEnabled) &&
--         pref_service_->GetBoolean(prefs::kPrivacySandboxApisEnabled);
+-         IsPrivacySandboxEnabled();
 +  return false;
  }
  
  bool PrivacySandboxSettings::IsFlocAllowedForContext(
-@@ -115,11 +114,8 @@ base::Time PrivacySandboxSettings::FlocDataAccessibleSince() const {
+     const GURL& url,
+     const absl::optional<url::Origin>& top_frame_origin) const {
+-  // If FLoC is disabled completely, it is not available in any context.
+-  if (!IsFlocAllowed())
+-    return false;
+-
+-  ContentSettingsForOneType cookie_settings;
+-  cookie_settings_->GetCookieSettings(&cookie_settings);
+-
+-  return IsPrivacySandboxEnabledForContext(url, top_frame_origin,
+-                                           cookie_settings);
++  return false;
+ }
+ 
+ base::Time PrivacySandboxSettings::FlocDataAccessibleSince() const {
+@@ -128,11 +118,8 @@ base::Time PrivacySandboxSettings::FlocDataAccessibleSince() const {
  
  void PrivacySandboxSettings::SetFlocDataAccessibleFromNow(
      bool reset_calculate_timer) const {
@@ -445,196 +205,79 @@ diff --git a/components/privacy_sandbox/privacy_sandbox_settings.cc b/components
  }
  
  bool PrivacySandboxSettings::IsConversionMeasurementAllowed(
-@@ -234,6 +230,8 @@ bool PrivacySandboxSettings::IsFledgeJoiningAllowed(
+@@ -262,6 +249,8 @@ bool PrivacySandboxSettings::IsFledgeJoiningAllowed(
  bool PrivacySandboxSettings::IsFledgeAllowed(
      const url::Origin& top_frame_origin,
      const url::Origin& auction_party) {
 +  if ((true))
 +    return false;
    // If the sandbox is disabled, then FLEDGE is never allowed.
-   if (!pref_service_->GetBoolean(prefs::kPrivacySandboxApisEnabled))
+   if (!IsPrivacySandboxEnabled())
      return false;
-@@ -262,12 +260,13 @@ std::vector<GURL> PrivacySandboxSettings::FilterFledgeAllowedParties(
+@@ -290,30 +279,17 @@ std::vector<GURL> PrivacySandboxSettings::FilterFledgeAllowedParties(
  }
  
- bool PrivacySandboxSettings::IsPrivacySandboxAllowed() {
+ bool PrivacySandboxSettings::IsPrivacySandboxEnabled() const {
+-  // Which preference is consulted is dependent on whether release 3 of the
+-  // settings is available.
+-  if (base::FeatureList::IsEnabled(privacy_sandbox::kPrivacySandboxSettings3)) {
+-    // For Privacy Sandbox Settings 3, APIs are disabled in incognito.
+-    if (incognito_profile_)
+-      return false;
+-
+-    // The V2 pref was introduced with the 3rd Privacy Sandbox release.
+-    return pref_service_->GetBoolean(prefs::kPrivacySandboxApisEnabledV2);
+-  }
+-
 -  return pref_service_->GetBoolean(prefs::kPrivacySandboxApisEnabled);
 +  return false;
  }
  
  void PrivacySandboxSettings::SetPrivacySandboxEnabled(bool enabled) {
    pref_service_->SetBoolean(prefs::kPrivacySandboxManuallyControlled, true);
--  pref_service_->SetBoolean(prefs::kPrivacySandboxApisEnabled, enabled);
-+  // never enable privacy sandbox
-+  pref_service_->SetBoolean(prefs::kPrivacySandboxApisEnabled, false);
+ 
+-  // Only apply the decision to the appropriate preference. Confirmation logic
+-  // DCHECKS that the user has not been able to enable the V2 preference
+-  // without seeing a dialog.
++  // in Bromite never enable the privacy sandbox
+   if (base::FeatureList::IsEnabled(privacy_sandbox::kPrivacySandboxSettings3)) {
+-    pref_service_->SetBoolean(prefs::kPrivacySandboxApisEnabledV2, enabled);
++    pref_service_->SetBoolean(prefs::kPrivacySandboxApisEnabledV2, false);
+   } else {
+-    pref_service_->SetBoolean(prefs::kPrivacySandboxApisEnabled, enabled);
++    pref_service_->SetBoolean(prefs::kPrivacySandboxApisEnabled, false);
+   }
+ }
+ 
+@@ -327,7 +303,6 @@ bool PrivacySandboxSettings::IsTrustTokensAllowed() {
  }
  
  void PrivacySandboxSettings::OnCookiesCleared() {
-@@ -286,6 +285,10 @@ bool PrivacySandboxSettings::IsPrivacySandboxAllowedForContext(
-     const GURL& url,
-     const absl::optional<url::Origin>& top_frame_origin,
-     const ContentSettingsForOneType& cookie_settings) const {
-+  // even if prefs::kPrivacySandboxApisEnabled and
-+  // prefs::kPrivacySandboxFlocEnabled are always false
-+  if ((true))
-+    return false; // guard this code path
-   if (!pref_service_->GetBoolean(prefs::kPrivacySandboxApisEnabled))
-     return false;
- 
-diff --git a/third_party/blink/common/features.cc b/third_party/blink/common/features.cc
---- a/third_party/blink/common/features.cc
-+++ b/third_party/blink/common/features.cc
-@@ -895,11 +895,11 @@ const base::Feature kSendCnameAliasesToSubresourceFilterFromRenderer{
- // API exposure will be disabled regardless of the OT config.
- // (See https://github.com/WICG/floc.)
- const base::Feature kInterestCohortAPIOriginTrial{
--    "InterestCohortAPIOriginTrial", base::FEATURE_DISABLED_BY_DEFAULT};
-+    "InterestCohortAPIOriginTrial", base::FEATURE_DISABLED_BY_DEFAULT}; // guard this
- 
- // Enable the availability of the "interest-cohort" permissions policy.
- const base::Feature kInterestCohortFeaturePolicy{
--    "InterestCohortFeaturePolicy", base::FEATURE_DISABLED_BY_DEFAULT};
-+    "InterestCohortFeaturePolicy", base::FEATURE_DISABLED_BY_DEFAULT}; // guard this
- 
- const base::Feature kDisableDocumentDomainByDefault{
-     "DisableDocumentDomainByDefault", base::FEATURE_DISABLED_BY_DEFAULT};
-diff --git a/third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom b/third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom
---- a/third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom
-+++ b/third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom
-@@ -125,11 +125,6 @@ enum PermissionsPolicyFeature {
-   // Controls access to screen capture via getDisplayMedia().
-   kDisplayCapture = 81,
- 
--  // Controls the access to the interest cohort as well as the eligibility for
--  // the navigation history entry to be included in the interest cohort
--  // computation. (https://github.com/WICG/floc)
--  kInterestCohort = 82,
--
-   // Controls whether Autofill may fill fields in that frame when triggered on
-   // a field with the main frame's origin.
-   kSharedAutofill = 83,
-diff --git a/third_party/blink/renderer/bindings/generated_in_core.gni b/third_party/blink/renderer/bindings/generated_in_core.gni
---- a/third_party/blink/renderer/bindings/generated_in_core.gni
-+++ b/third_party/blink/renderer/bindings/generated_in_core.gni
-@@ -203,8 +203,6 @@ generated_dictionary_sources_in_core = [
-   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_input_device_capabilities_init.h",
-   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_input_event_init.cc",
-   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_input_event_init.h",
--  "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_interest_cohort.cc",
--  "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_interest_cohort.h",
-   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_intersection_observer_init.cc",
-   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_intersection_observer_init.h",
-   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_intrinsic_sizes_result_options.cc",
-diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
---- a/third_party/blink/renderer/core/dom/document.cc
-+++ b/third_party/blink/renderer/core/dom/document.cc
-@@ -79,7 +79,6 @@
- #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
- #include "third_party/blink/renderer/bindings/core/v8/v8_element_creation_options.h"
- #include "third_party/blink/renderer/bindings/core/v8/v8_element_registration_options.h"
--#include "third_party/blink/renderer/bindings/core/v8/v8_interest_cohort.h"
- #include "third_party/blink/renderer/bindings/core/v8/v8_observable_array_css_style_sheet.h"
- #include "third_party/blink/renderer/bindings/core/v8/v8_throw_dom_exception.h"
- #include "third_party/blink/renderer/bindings/core/v8/v8_union_elementcreationoptions_string.h"
-@@ -6045,8 +6044,7 @@ ScriptPromise Document::interestCohort(ScriptState* script_state,
-     return ScriptPromise();
-   }
- 
--  if (!GetExecutionContext()->IsFeatureEnabled(
--          mojom::blink::PermissionsPolicyFeature::kInterestCohort)) {
-+  if ((true)) {
-     exception_state.ThrowDOMException(
-         DOMExceptionCode::kInvalidAccessError,
-         "The \"interest-cohort\" Permissions Policy denied the use of "
-@@ -6058,33 +6056,6 @@ ScriptPromise Document::interestCohort(ScriptState* script_state,
-       MakeGarbageCollected<ScriptPromiseResolver>(script_state);
- 
-   ScriptPromise promise = resolver->Promise();
--
--  GetFlocService(ExecutionContext::From(script_state))
--      ->GetInterestCohort(WTF::Bind(
--          [](ScriptPromiseResolver* resolver, Document* document,
--             mojom::blink::InterestCohortPtr interest_cohort) {
--            DCHECK(resolver);
--            DCHECK(document);
--
--            if (interest_cohort->version.IsEmpty()) {
--              ScriptState* state = resolver->GetScriptState();
--              ScriptState::Scope scope(state);
--
--              resolver->Reject(V8ThrowDOMException::CreateOrEmpty(
--                  state->GetIsolate(), DOMExceptionCode::kDataError,
--                  "Failed to get the interest cohort: either it is "
--                  "unavailable, or preferences or content settings have "
--                  "denied access."));
--            } else {
--              InterestCohort* result = InterestCohort::Create();
--              result->setId(interest_cohort->id);
--              result->setVersion(interest_cohort->version);
--
--              resolver->Resolve(result);
--            }
--          },
--          WrapPersistent(resolver), WrapPersistent(this)));
--
-   return promise;
+-  SetFlocDataAccessibleFromNow(/*reset_calculate_timer=*/false);
  }
  
-diff --git a/third_party/blink/renderer/core/dom/document.idl b/third_party/blink/renderer/core/dom/document.idl
---- a/third_party/blink/renderer/core/dom/document.idl
-+++ b/third_party/blink/renderer/core/dom/document.idl
-@@ -193,7 +193,6 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
+ void PrivacySandboxSettings::OnPrivacySandboxPrefChanged() {
+@@ -351,8 +326,8 @@ void PrivacySandboxSettings::RemoveObserver(Observer* observer) {
+ bool PrivacySandboxSettings::IsPrivacySandboxEnabledForContext(
+     const GURL& url,
+     const absl::optional<url::Origin>& top_frame_origin,
+-    const ContentSettingsForOneType& cookie_settings) const {
+-  if (!IsPrivacySandboxEnabled())
++    const ContentSettingsForOneType& cookie_settings) const { // always disable this in Bromite
++  if ((true))
+     return false;
  
-     // Interest Cohort API
-     // TODO(yaoxia): Add web tests. http://crbug/1130074.
--    [CallWith=ScriptState, RaisesException, NewObject, SecureContext, RuntimeEnabled=InterestCohortAPI, MeasureAs=InterestCohortAPI_interestCohort_Method] Promise<InterestCohort> interestCohort();
+   // TODO (crbug.com/1155504): Bypassing the CookieSettings class to access
+diff --git a/components/privacy_sandbox/privacy_sandbox_settings.h b/components/privacy_sandbox/privacy_sandbox_settings.h
+--- a/components/privacy_sandbox/privacy_sandbox_settings.h
++++ b/components/privacy_sandbox/privacy_sandbox_settings.h
+@@ -163,7 +163,6 @@ class PrivacySandboxSettings : public KeyedService {
+   scoped_refptr<content_settings::CookieSettings> cookie_settings_;
+   raw_ptr<PrefService> pref_service_;
+   PrefChangeRegistrar pref_change_registrar_;
+-  bool incognito_profile_;
+ };
  
-     // Text fragment directive API
-     // https://wicg.github.io/scroll-to-text-fragment/#feature-detectability
-diff --git a/third_party/blink/renderer/core/dom/interest_cohort.idl b/third_party/blink/renderer/core/dom/interest_cohort.idl
---- a/third_party/blink/renderer/core/dom/interest_cohort.idl
-+++ b/third_party/blink/renderer/core/dom/interest_cohort.idl
-@@ -4,7 +4,3 @@
- 
- // https://wicg.github.io/floc/#dictdef-interestcohort
- 
--dictionary InterestCohort {
--  DOMString id;
--  DOMString version;
--};
-diff --git a/third_party/blink/renderer/core/permissions_policy/permissions_policy_features.json5 b/third_party/blink/renderer/core/permissions_policy/permissions_policy_features.json5
---- a/third_party/blink/renderer/core/permissions_policy/permissions_policy_features.json5
-+++ b/third_party/blink/renderer/core/permissions_policy/permissions_policy_features.json5
-@@ -240,12 +240,6 @@
-       permissions_policy_name: "idle-detection",
-       depends_on: ["IdleDetection"],
-     },
--    {
--      name: "InterestCohort",
--      permissions_policy_name: "interest-cohort",
--      feature_default: "EnableForAll",
--      depends_on: ["InterestCohortFeaturePolicy"],
--    },
-     {
-       name: "JoinAdInterestGroup",
-       permissions_policy_name: "join-ad-interest-group",
-diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
---- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
-+++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -1256,12 +1256,11 @@
-     },
-     {
-       name: "InterestCohortAPI",
--      origin_trial_feature_name: "InterestCohortAPI",
--      origin_trial_allows_third_party: true,
-+      depends_on: ["DisabledForBromite"]
-     },
-     {
-       name: "InterestCohortFeaturePolicy",
--      status: "experimental",
-+      depends_on: ["DisabledForBromite"]
-     },
-     {
-       name: "KeyboardAccessibleTooltip",
+ #endif  // COMPONENTS_PRIVACY_SANDBOX_PRIVACY_SANDBOX_SETTINGS_H_
 --
 2.25.1
