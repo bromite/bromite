@@ -9,12 +9,12 @@ Enable checking for new versions, with notifications and proxy support
  chrome/android/chrome_java_sources.gni        |   3 +
  .../java/res/xml/about_chrome_preferences.xml |   5 +
  .../about_settings/AboutChromeSettings.java   |  28 +-
- .../chrome/browser/omaha/OmahaBase.java       |  57 ++++-
+ .../chrome/browser/omaha/OmahaBase.java       |  57 +++-
  .../chrome/browser/omaha/UpdateConfigs.java   |  30 ++-
- .../browser/omaha/UpdateMenuItemHelper.java   |  81 +++++-
+ .../browser/omaha/UpdateMenuItemHelper.java   |  82 +++++-
  .../browser/omaha/UpdateStatusProvider.java   | 161 +++++++++---
  .../browser/omaha/VersionNumberGetter.java    |   3 +-
- .../inline/BromiteInlineUpdateController.java | 241 ++++++++++++++++++
+ .../inline/BromiteInlineUpdateController.java | 243 ++++++++++++++++++
  .../omaha/inline/InlineUpdateController.java  |  51 ++++
  .../inline/InlineUpdateControllerFactory.java |  21 ++
  chrome/browser/endpoint_fetcher/BUILD.gn      |   2 +
@@ -22,11 +22,11 @@ Enable checking for new versions, with notifications and proxy support
  .../endpoint_fetcher/endpoint_fetcher.h       |  22 +-
  .../endpoint_fetcher/EndpointFetcher.java     |  22 +-
  .../EndpointHeaderResponse.java               |  31 +++
- .../flags/android/chrome_feature_list.cc      |   6 +-
+ .../flags/android/chrome_feature_list.cc      |   4 +
  .../flags/android/chrome_feature_list.h       |   1 +
  .../browser/flags/ChromeFeatureList.java      |   1 +
  .../strings/android_chrome_strings.grd        |  23 +-
- 22 files changed, 896 insertions(+), 56 deletions(-)
+ 22 files changed, 898 insertions(+), 55 deletions(-)
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/BromiteInlineUpdateController.java
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateController.java
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java
@@ -45,7 +45,7 @@ diff --git a/build/android/java/templates/BuildConfig.template b/build/android/j
 diff --git a/build/config/android/rules.gni b/build/config/android/rules.gni
 --- a/build/config/android/rules.gni
 +++ b/build/config/android/rules.gni
-@@ -1975,6 +1975,9 @@ if (enable_java_templates) {
+@@ -1981,6 +1981,9 @@ if (enable_java_templates) {
            ]
          }
        }
@@ -58,7 +58,7 @@ diff --git a/build/config/android/rules.gni b/build/config/android/rules.gni
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
-@@ -865,6 +865,9 @@ chrome_java_sources = [
+@@ -804,6 +804,9 @@ chrome_java_sources = [
    "java/src/org/chromium/chrome/browser/omaha/UpdateConfigs.java",
    "java/src/org/chromium/chrome/browser/omaha/UpdateMenuItemHelper.java",
    "java/src/org/chromium/chrome/browser/omaha/UpdateStatusProvider.java",
@@ -344,7 +344,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMen
                  // The badge is hidden if the update menu item has been clicked until there is an
                  // even newer version of Chrome available.
                  showBadge |= !TextUtils.equals(
-@@ -270,6 +284,71 @@ public class UpdateMenuItemHelper {
+@@ -270,6 +284,72 @@ public class UpdateMenuItemHelper {
                  mMenuUiState.itemState.icon = R.drawable.ic_error_24dp_filled;
                  mMenuUiState.itemState.enabled = false;
                  break;
@@ -374,6 +374,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMen
 +                        mMenuUiState.buttonState.menuContentDescription = R.string.accessibility_toolbar_btn_menu_update;
 +                        mMenuUiState.buttonState.darkBadgeIcon = R.drawable.badge_update_dark;
 +                        mMenuUiState.buttonState.lightBadgeIcon = R.drawable.badge_update_light;
++                        mMenuUiState.buttonState.adaptiveBadgeIcon = R.drawable.badge_update;
 +                    }
 +                }
 +
@@ -392,7 +393,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateMen
 +            case UpdateState.INLINE_UPDATE_DOWNLOADING:
 +                mMenuUiState.itemState = new MenuItemState();
 +                mMenuUiState.itemState.title = R.string.menu_inline_update_downloading;
-+                mMenuUiState.itemState.titleColorId = R.color.default_text_color_secondary;
++                mMenuUiState.itemState.titleColorId = R.color.default_text_color_secondary_dark;
 +                break;
 +            case UpdateState.INLINE_UPDATE_READY:
 +                mMenuUiState.itemState = new MenuItemState();
@@ -737,7 +738,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/Br
 new file mode 100644
 --- /dev/null
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/BromiteInlineUpdateController.java
-@@ -0,0 +1,241 @@
+@@ -0,0 +1,243 @@
 +// Copyright 2021 The Ungoogled Chromium Authors. All rights reserved.
 +//
 +// This file is part of Ungoogled Chromium Android.
@@ -880,7 +881,9 @@ new file mode 100644
 +                    } else {
 +                        checkLatestUpstreamVersion((latestUpstreamVersion) -> {
 +                           if (latestUpstreamVersion == null) return;
-+                              postStatus(UpdateStatusProvider.UpdateState.VULNERABLE_VERSION, VULNERABLE_VERSION_DOC_URL);
++                           if (OmahaBase.isNewVersionAvailableByVersion(latestUpstreamVersion)) {
++                               postStatus(UpdateStatusProvider.UpdateState.VULNERABLE_VERSION, VULNERABLE_VERSION_DOC_URL);
++                           }
 +                        });
 +                    }
 +                });
@@ -1512,27 +1515,25 @@ diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browse
 @@ -252,6 +252,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
      &kNewWindowAppMenu,
      &kOfflineIndicatorV2,
-     &kOfflineMeasurementsBackgroundTask,
-+    &kInlineUpdateFlow,
      &kPageAnnotationsService,
++    &kInlineUpdateFlow,
      &kBookmarksImprovedSaveFlow,
      &kBookmarksRefresh,
-@@ -680,7 +681,10 @@ const base::Feature kIncognitoReauthenticationForAndroid{
-     "IncognitoReauthenticationForAndroid", base::FEATURE_DISABLED_BY_DEFAULT};
- 
+     &kProbabilisticCryptidRenderer,
+@@ -685,6 +686,9 @@ const base::Feature kIncognitoReauthenticationForAndroid{
  const base::Feature kIncognitoScreenshot{"IncognitoScreenshot",
--                                         base::FEATURE_DISABLED_BY_DEFAULT};
-+                                         base::FEATURE_ENABLED_BY_DEFAULT};
-+
+                                          base::FEATURE_DISABLED_BY_DEFAULT};
+ 
 +const base::Feature kInlineUpdateFlow{"InlineUpdateFlow",
 +                                      base::FEATURE_ENABLED_BY_DEFAULT};
- 
++
  const base::Feature kInstantStart{"InstantStart",
                                    base::FEATURE_DISABLED_BY_DEFAULT};
+ 
 diff --git a/chrome/browser/flags/android/chrome_feature_list.h b/chrome/browser/flags/android/chrome_feature_list.h
 --- a/chrome/browser/flags/android/chrome_feature_list.h
 +++ b/chrome/browser/flags/android/chrome_feature_list.h
-@@ -111,6 +111,7 @@ extern const base::Feature kImmersiveUiMode;
+@@ -109,6 +109,7 @@ extern const base::Feature kImmersiveUiMode;
  extern const base::Feature kIncognitoReauthenticationForAndroid;
  extern const base::Feature kIncognitoScreenshot;
  extern const base::Feature kImprovedA2HS;
@@ -1543,7 +1544,7 @@ diff --git a/chrome/browser/flags/android/chrome_feature_list.h b/chrome/browser
 diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
 --- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
 +++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
-@@ -367,6 +367,7 @@ public abstract class ChromeFeatureList {
+@@ -366,6 +366,7 @@ public abstract class ChromeFeatureList {
      public static final String INCOGNITO_REAUTHENTICATION_FOR_ANDROID =
              "IncognitoReauthenticationForAndroid";
      public static final String INCOGNITO_SCREENSHOT = "IncognitoScreenshot";
@@ -1554,7 +1555,7 @@ diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/f
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -1824,6 +1824,12 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -1825,6 +1825,12 @@ Your Google account may have other forms of browsing history like searches and a
        <message name="IDS_DEPRECATION_WARNING" desc="Warning about Chrome updates no longer being supported">
          Chrome updates are no longer supported for this version of Android
        </message>
@@ -1567,19 +1568,19 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
  
        <!-- Account management UI strings. -->
        <message name="IDS_ACCOUNT_MANAGEMENT_TITLE" desc="Header title for the account management screen. [CHAR_LIMIT=32]">
-@@ -3371,7 +3377,10 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+@@ -3312,7 +3318,10 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
  
        <!-- Main menu items -->
        <message name="IDS_MENU_UPDATE" desc="Menu item for updating chrome. [CHAR_LIMIT=24]">
 -        Update Chrome
 +        Update Bromite
 +      </message>
-+      <message name="IDS_MENU_UPDATE_VULNERABLE" desc="Content description for the menu button when it is covered by the update icon that is displayed when the current version of Bromite is vulnerable.">
++      <message name="IDS_MENU_UPDATE_SUMMARY_VULNERABLE" desc="Content description for the menu button when it is covered by the update icon that is displayed when the current version of Bromite is vulnerable.">
 +        Update not available. Read more
        </message>
        <message name="IDS_MENU_UPDATE_SUMMARY_DEFAULT" desc="Summary string for update menu item explaining that a newer version of Chrome is available. [CHAR_LIMIT=30]">
          Newer version is available
-@@ -3382,6 +3391,18 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+@@ -3323,6 +3332,18 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
        <message name="IDS_MENU_UPDATE_UNSUPPORTED_SUMMARY_DEFAULT" desc="Summary string for update menu item explaining that the Android version on the device is unsupported. [CHAR_LIMIT=30]">
          Android version is unsupported
        </message>
