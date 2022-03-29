@@ -6,7 +6,7 @@
 * add option to never expire history
 * improve description for JIT site settings (fixes https://github.com/bromite/bromite/issues/1931)
 * remove more signin integration (fixes https://github.com/bromite/bromite/issues/1902)
-* miscellaneous fixes for AMP and background video playback
+* miscellaneous fixes for AMP and background video playback (fixes https://github.com/bromite/bromite/issues/1921)
 
 # 99.0.4844.77
 * fix missing adaptive icon for updates
