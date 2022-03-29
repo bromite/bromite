@@ -74,7 +74,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * site settings to disable images
 * allow forcing external links to open in incognito
 * disable AGSA by default
-* allow disabling JIT (globally and per-site)
+* allow disabling JIT (per-site, disabled by default)
 * flag to enable Certificate Transparency
 * allow adding search engines from incognito mode
 * disable predictors
@@ -82,6 +82,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * disable safety check
 * disable capability to block `view-source:` URLs
 * disable `SegmentationPlatformFeature`, `OptimizationHints`, client hint headers
+* disable `AsyncDNS` by default
 
 ## Features not related to privacy
 * browser automatic updates, enabled by default
@@ -108,6 +109,9 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * use Alt+D to focus address bar
 * allow sharing to Bromite
 * UI for crash information collection
+* allow OpenSearch search engine detection in incognito
+* allow OpenSearch search engine detection with paths
+* customize history expiration threshold
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 

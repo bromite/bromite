@@ -1,3 +1,13 @@
+# 100.0.4896.57
+* allow OpenSearch search engine URLs with path
+* disable AsyncDNS by default
+* remove translate menu entries
+* fix patch to remove contextual search (thanks to @nikolowry)
+* add option to never expire history
+* improve description for JIT site settings (fixes https://github.com/bromite/bromite/issues/1931)
+* remove more signin integration (fixes https://github.com/bromite/bromite/issues/1902)
+* miscellaneous fixes for AMP and background video playback
+
 # 99.0.4844.77
 * fix missing adaptive icon for updates
 * do not close adblock filters editor when tapping reset button
