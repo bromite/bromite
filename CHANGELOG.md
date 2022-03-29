@@ -1,14 +1,41 @@
+# 100.0.4896.57
+* allow OpenSearch search engine URLs with path
+* disable AsyncDNS by default
+* remove translate menu entries
+* fix patch to remove contextual search (thanks to @nikolowry)
+* add option to never expire history
+* improve description for JIT site settings (fixes https://github.com/bromite/bromite/issues/1931)
+* remove more signin integration (fixes https://github.com/bromite/bromite/issues/1902)
+* miscellaneous fixes for AMP and background video playback
+
+# 99.0.4844.77
+* fix missing adaptive icon for updates
+* do not close adblock filters editor when tapping reset button
+* change text for 'Never' in history days to keep setting
+* bring back dictionary hints in address bar
+
+# 99.0.4844.58
+* remove contextual search (fixes https://github.com/bromite/bromite/issues/1750)
+* remove global JIT settings
+* add privacy setting for how many number of days of history to keep (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1870)
+* disable UA full version (thanks to @uazo)
+* reintroduce patch for Save-Data header
+* updated zh_CN translations (thanks to @zhmars)
+* reintroduce Save-Data header flag
+
 # 99.0.4844.55
-* flag to enable Certificate Transparency (thanks to @uazo)
+* flag to enable Certificate Transparency (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1554)
 * allow adding search engines from incognito mode
 * disable all predictors code (thanks to @uazo)
 * revert allow block of view-source URLs
 * JIT toggle site setting (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1720 and https://github.com/bromite/bromite/issues/1819)
 * move always incognito preference to native (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1496 and https://github.com/bromite/bromite/issues/1568)
-* remove patch to add data saver header
+* remove Save-Data header flag
 * close a potential security issue with user scripts on native pages (thanks to @uazo)
 * disable safety checks and possible Omaha interactions
-* disable SegmentationPlatformFeature and Optimization Hints (thanks to @uazo)
+* disable SegmentationPlatformFeature and Optimization Hints (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1632)
+* add notification for a major upstream version being released (fixes https://github.com/bromite/bromite/issues/1796)
+* fix screenshots in incognito allowed by default (fixes https://github.com/bromite/bromite/issues/1816)
 
 # 98.0.4758.116
 * disable minidumps upload
@@ -193,7 +220,7 @@
 * use 64-bit ABI for webview processes (fixes https://github.com/bromite/bromite/issues/997)
 * use dedicated folder for bookmark all tabs
 * fix Javascript and cookies permissions missing (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/990)
-* fix missing enable save data header flag (fixes https://github.com/bromite/bromite/issues/989)
+* fix missing enable Save-Data header flag (fixes https://github.com/bromite/bromite/issues/989)
 * fix menu items not properly displayed with tab overflow menu regroup (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/963)
 
 # 89.0.4389.78
