@@ -59,7 +59,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * security enhancement patches from [GrapheneOS](https://github.com/GrapheneOS) project
 * disable scroll-to-text-fragment
 * reduced referer granularity
-* block gateway attacks via websockets
+* block gateway attacks via websockets (partial fix, see [this upstream issue](https://bugs.chromium.org/p/chromium/issues/detail?id=590714))
 * use 64-bit ABI for webview processes
 * make all favicon requests on-demand ([supercookie](https://supercookie.me/) mitigation)
 * enable all network isolation features (`PartitionConnectionsByNetworkIsolationKey`, `PartitionHttpServerPropertiesByNetworkIsolationKey`, `SplitHostCacheByNetworkIsolationKey`, `AppendFrameOriginToNetworkIsolationKey`, `SplitCacheByNetworkIsolationKey`, `UseRegistrableDomainInNetworkIsolationKey`, `PartitionSSLSessionsByNetworkIsolationKey`, `PartitionExpectCTStateByNetworkIsolationKey`, `PartitionDomainReliabilityByNetworkIsolationKey`)
@@ -83,6 +83,9 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * disable capability to block `view-source:` URLs
 * disable `SegmentationPlatformFeature`, `OptimizationHints`, client hint headers
 * disable `AsyncDNS` by default
+* customize history expiration threshold
+* disable idle detection
+* HTTPS-only mode enabled by default
 
 ## Features not related to privacy
 * browser automatic updates, enabled by default
@@ -111,7 +114,8 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * UI for crash information collection
 * allow OpenSearch search engine detection in incognito
 * allow OpenSearch search engine detection with paths
-* customize history expiration threshold
+* keyboard dictionary hints in address bar
+* always allow `view-source:` URLs
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 
@@ -145,6 +149,7 @@ New flags:
 * `#cleartext-permitted`, enabled by default, can be used to disable all cleartext-HTTP traffic
 * `#omnibox-autocomplete-filtering`, can be used to restrict omnibox autocomplete results
 * `#disable-external-intent-requests`
+* `#enable-userscripts-log`, see https://github.com/bromite/bromite/wiki/UserScripts#flags
 
 # Privacy limitations
 
