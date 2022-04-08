@@ -2,11 +2,57 @@ From: uazo <uazo@users.noreply.github.com>
 Date: Fri, 8 Apr 2022 11:04:04 +0000
 Subject: Add lifetime options support for permissions
 
-Add three options to the permissions selection panel 
-(geolocation, camera and microphone):
-- Just this once
-- Until the page is closed
-- Until the browser is closed
+this patch takes advantage of the possibility to indicate the session mode for content-settings:
+in fact in chromium it is possible to specify the constraint content_settings::SessionModel as
+UserSession when setting the value, even choosing a possible expiration time.
+The logics I have seen with the ClientHints but it seems that chromium exploits this possibility when
+it is necessary to maintain a specific value by origin.
+In any case, all content settings of this type are not saved on disk, allowing you to reset the status
+each time the application is restarted.
+
+The patch acts on these points:
+
+components/content_settings
+defines a new content_settings::LifetimeMode enum to specify the user's
+choice (Always, OnlyThisTime, UntilOriginClosed, UntilBrowserClosed).
+the enumeration is also generated for java by adding in content_settings_enums_javagen (gn).
+enumeration is mainly used in content_settings_utils.cc to create a specific content_settings::ContentSettingConstraints
+for use in SetContentSettingDefaultScope() by PermissionContextBase::UpdateContentSetting.
+in fact the chromium code does not provide a specific property to define a choice, which
+must instead be encoded through the ContentSettingConstraints: such mechanism is already in use
+in other parts of the code.
+Therefore, content_settings::GetConstraintSessionExpiration() and content_settings::IsConstraintSessionExpiration()
+manage the lifetime modes of the session content-settings.
+The patch also adds the session pattern to the ContentSettingPatternSource,
+so that it is mainly available for the ui.
+
+components/permissions
+actually adds lifetime support to permissions.
+most of the changes are caused by the fact that it is necessary to report the value selected by
+the user from the java ui managed by components/browser_ui, up to PermissionContextBase::UpdateContentSetting(),
+without necessarily having to modify all requests that are not related to the geolocation / camera / microphone.
+the mechanism I used was adding a new PermissionRequest::PermissionDecidedCallbackWithLifetime
+used by an overload of PermissionContextBase::CreatePermissionRequest so that only the code
+that interests me is modified: in fact the options are present only for the specific content-settings (see PermissionDialogModel.java).
+for other permissions, the patch behaves as before (see PermissionDialogDelegate::Accept)
+for geolocation it was necessary to act directly in the specific context, because, unlike
+the microphone / camera, although the class always derives from PermissionContextBase, the value in the
+content-setting is inserted in its specific method (FinishNotifyPermissionSet).
+
+components/page_info
+here the changes make it possible to see in the summary of the page_info the text
+"(only this session)" (aka page_info_android_permission_session_permission)
+through adding a new property "is_user_session" in PageInfoPermissionEntry (java)
+
+components/browser_ui
+the changes affect the settings ui, showing "(only this session)" in the specific content-setting.
+the same view is used both in the settings and in the page_info.
+
+for the management of UntilOriginClosed, I recovered the logics used by the flag
+kOneTimeGeolocationPermission active only in the desktop (files last_tab_standing_tracker_ *).
+basically that class manages a list of the active origins and allows you to perform
+operations when all the tabs relating to that origin are been closed:
+at that moment I delete the session content settings of type UntilOriginClosed.
 
 see also: https://github.com/bromite/bromite/issues/1549
 ---
