@@ -27,7 +27,7 @@ Use a native flag (credits to @uazo)
  .../webapps/WebappIntentDataProvider.java     | 14 +++++
  .../chrome_autocomplete_provider_client.cc    |  7 +++
  .../chrome_autocomplete_provider_client.h     |  1 +
- .../host_content_settings_map_factory.cc      | 15 +++++-
+ .../host_content_settings_map_factory.cc      | 16 +++++-
  .../flags/android/chrome_feature_list.cc      |  2 +-
  chrome/browser/prefs/browser_prefs.cc         |  3 ++
  .../strings/android_chrome_strings.grd        | 13 +++++
@@ -35,16 +35,11 @@ Use a native flag (credits to @uazo)
  .../snackbar/INeedSnackbarManager.java        | 27 ++++++++++
  chrome/common/pref_names.cc                   |  4 ++
  chrome/common/pref_names.h                    |  1 +
- .../browser/content_settings_pref_provider.cc |  6 ++-
- .../browser/content_settings_pref_provider.h  |  2 +
- .../core/browser/host_content_settings_map.cc |  4 +-
- .../core/browser/host_content_settings_map.h  |  4 ++
  .../browser/autocomplete_provider_client.cc   |  4 ++
  .../browser/autocomplete_provider_client.h    |  1 +
  .../omnibox/browser/base_search_provider.cc   |  2 +-
  components/omnibox/browser/search_provider.cc |  4 +-
- .../host_content_settings_map_factory.cc      |  1 +
- 36 files changed, 270 insertions(+), 41 deletions(-)
+ 31 files changed, 256 insertions(+), 39 deletions(-)
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/AlwaysIncognitoLinkInterceptor.java
  create mode 100644 chrome/browser/ui/messages/android/java/src/org/chromium/chrome/browser/ui/messages/snackbar/INeedSnackbarManager.java
 
@@ -618,11 +613,12 @@ diff --git a/chrome/browser/content_settings/host_content_settings_map_factory.c
  #include "components/content_settings/core/browser/content_settings_pref_provider.h"
  #include "components/content_settings/core/browser/host_content_settings_map.h"
  #include "components/keyed_service/content/browser_context_dependency_manager.h"
-@@ -96,9 +97,18 @@ scoped_refptr<RefcountedKeyedService>
+@@ -96,9 +97,19 @@ scoped_refptr<RefcountedKeyedService>
    if (profile->IsOffTheRecord() && !profile->IsGuestSession())
      GetForProfile(original_profile);
  
 +  bool always_incognito_enabled = false;
++
 +
 +  PrefService* prefService = original_profile->GetPrefs();
 +  if (prefService->GetBoolean(prefs::kAlwaysIncognitoEnabled)) {
@@ -630,15 +626,15 @@ diff --git a/chrome/browser/content_settings/host_content_settings_map_factory.c
 +    always_incognito_enabled = true;
 +  }
 +
++
    scoped_refptr<HostContentSettingsMap> settings_map(new HostContentSettingsMap(
        profile->GetPrefs(),
 -      profile->IsOffTheRecord() || profile->IsGuestSession(),
 +      !always_incognito_enabled && (profile->IsOffTheRecord() || profile->IsGuestSession()),
-+      always_incognito_enabled,
        /*store_last_modified=*/true,
        profile->ShouldRestoreOldSessionCookies()));
  
-@@ -108,6 +118,9 @@ scoped_refptr<RefcountedKeyedService>
+@@ -108,6 +119,9 @@ scoped_refptr<RefcountedKeyedService>
        HostContentSettingsMap::WEBUI_ALLOWLIST_PROVIDER,
        std::move(allowlist_provider));
  
@@ -676,7 +672,7 @@ diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browse
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -1110,6 +1110,19 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -1113,6 +1113,19 @@ Your Google account may have other forms of browsing history like searches and a
        <message name="IDS_CLEAR_BROWSING_HISTORY_SUMMARY_SYNCED_NO_LINK" desc="A text for the basic tab explaining browsing history for users with history sync. This version is shown when the link to MyActivity is displayed separately.">
          Clears history from all synced devices.
        </message>
@@ -764,108 +760,6 @@ diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
  #endif
  
  #if !BUILDFLAG(IS_ANDROID)
-diff --git a/components/content_settings/core/browser/content_settings_pref_provider.cc b/components/content_settings/core/browser/content_settings_pref_provider.cc
---- a/components/content_settings/core/browser/content_settings_pref_provider.cc
-+++ b/components/content_settings/core/browser/content_settings_pref_provider.cc
-@@ -107,10 +107,12 @@ void PrefProvider::RegisterProfilePrefs(
- 
- PrefProvider::PrefProvider(PrefService* prefs,
-                            bool off_the_record,
-+                           bool always_incognito_enabled,
-                            bool store_last_modified,
-                            bool restore_session)
-     : prefs_(prefs),
-       off_the_record_(off_the_record),
-+      always_incognito_enabled_(always_incognito_enabled),
-       store_last_modified_(store_last_modified),
-       clock_(base::DefaultClock::GetInstance()) {
-   TRACE_EVENT_BEGIN("startup", "PrefProvider::PrefProvider");
-@@ -144,7 +146,9 @@ PrefProvider::PrefProvider(PrefService* prefs,
-       content_settings_prefs_.insert(std::make_pair(
-           info->type(), std::make_unique<ContentSettingsPref>(
-                             info->type(), prefs_, &pref_change_registrar_,
--                            info->pref_name(), off_the_record_, restore_session,
-+                            info->pref_name(),
-+                            off_the_record_ || (!content_type_info && always_incognito_enabled_),
-+                            restore_session,
-                             base::BindRepeating(&PrefProvider::Notify,
-                                                 base::Unretained(this)))));
-     }
-diff --git a/components/content_settings/core/browser/content_settings_pref_provider.h b/components/content_settings/core/browser/content_settings_pref_provider.h
---- a/components/content_settings/core/browser/content_settings_pref_provider.h
-+++ b/components/content_settings/core/browser/content_settings_pref_provider.h
-@@ -37,6 +37,7 @@ class PrefProvider : public UserModifiableProvider {
- 
-   PrefProvider(PrefService* prefs,
-                bool off_the_record,
-+               bool always_incognito_enabled,
-                bool store_last_modified,
-                bool restore_session);
- 
-@@ -86,6 +87,7 @@ class PrefProvider : public UserModifiableProvider {
-   raw_ptr<PrefService> prefs_;
- 
-   const bool off_the_record_;
-+  const bool always_incognito_enabled_;
- 
-   bool store_last_modified_;
- 
-diff --git a/components/content_settings/core/browser/host_content_settings_map.cc b/components/content_settings/core/browser/host_content_settings_map.cc
---- a/components/content_settings/core/browser/host_content_settings_map.cc
-+++ b/components/content_settings/core/browser/host_content_settings_map.cc
-@@ -238,6 +238,7 @@ const char* ContentSettingToString(ContentSetting setting) {
- HostContentSettingsMap::HostContentSettingsMap(
-     PrefService* prefs,
-     bool is_off_the_record,
-+    bool always_incognito_enabled,
-     bool store_last_modified,
-     bool restore_session)
-     : RefcountedKeyedService(base::ThreadTaskRunnerHandle::Get()),
-@@ -246,6 +247,7 @@ HostContentSettingsMap::HostContentSettingsMap(
- #endif
-       prefs_(prefs),
-       is_off_the_record_(is_off_the_record),
-+      always_incognito_enabled_(always_incognito_enabled),
-       store_last_modified_(store_last_modified),
-       allow_invalid_secondary_pattern_for_testing_(false) {
-   TRACE_EVENT0("startup", "HostContentSettingsMap::HostContentSettingsMap");
-@@ -257,7 +259,7 @@ HostContentSettingsMap::HostContentSettingsMap(
-   policy_provider->AddObserver(this);
- 
-   auto pref_provider_ptr = std::make_unique<content_settings::PrefProvider>(
--      prefs_, is_off_the_record_, store_last_modified_, restore_session);
-+      prefs_, is_off_the_record_, always_incognito_enabled_, store_last_modified_, restore_session);
-   pref_provider_ = pref_provider_ptr.get();
-   content_settings_providers_[PREF_PROVIDER] = std::move(pref_provider_ptr);
-   user_modifiable_providers_.push_back(pref_provider_);
-diff --git a/components/content_settings/core/browser/host_content_settings_map.h b/components/content_settings/core/browser/host_content_settings_map.h
---- a/components/content_settings/core/browser/host_content_settings_map.h
-+++ b/components/content_settings/core/browser/host_content_settings_map.h
-@@ -80,6 +80,7 @@ class HostContentSettingsMap : public content_settings::Observer,
-   // profile or a guest session.
-   HostContentSettingsMap(PrefService* prefs,
-                          bool is_off_the_record,
-+                         bool always_incognito_enabled,
-                          bool store_last_modified,
-                          bool restore_session);
- 
-@@ -309,6 +310,7 @@ class HostContentSettingsMap : public content_settings::Observer,
- 
-   // Whether this settings map is for an incognito or guest session.
-   bool IsOffTheRecord() const { return is_off_the_record_; }
-+  bool IsAlwaysIncognito() const { return always_incognito_enabled_; }
- 
-   // Adds/removes an observer for content settings changes.
-   void AddObserver(content_settings::Observer* observer);
-@@ -443,6 +445,8 @@ class HostContentSettingsMap : public content_settings::Observer,
-   // Whether this settings map is for an incognito or guest session.
-   bool is_off_the_record_;
- 
-+  bool always_incognito_enabled_ = false;
-+
-   // Whether ContentSettings in the PrefProvider will store a last_modified
-   // timestamp.
-   bool store_last_modified_;
 diff --git a/components/omnibox/browser/autocomplete_provider_client.cc b/components/omnibox/browser/autocomplete_provider_client.cc
 --- a/components/omnibox/browser/autocomplete_provider_client.cc
 +++ b/components/omnibox/browser/autocomplete_provider_client.cc
@@ -914,16 +808,5 @@ diff --git a/components/omnibox/browser/search_provider.cc b/components/omnibox/
           ((default_url && !default_url->suggestions_url().empty() &&
             !*query_is_private) ||
            (keyword_url && !keyword_url->suggestions_url().empty()));
-diff --git a/weblayer/browser/host_content_settings_map_factory.cc b/weblayer/browser/host_content_settings_map_factory.cc
---- a/weblayer/browser/host_content_settings_map_factory.cc
-+++ b/weblayer/browser/host_content_settings_map_factory.cc
-@@ -45,6 +45,7 @@ HostContentSettingsMapFactory::BuildServiceInstanceFor(
-   scoped_refptr<HostContentSettingsMap> settings_map =
-       base::MakeRefCounted<HostContentSettingsMap>(
-           user_prefs::UserPrefs::Get(context), context->IsOffTheRecord(),
-+          /*always_incognito_enabled*/false,
-           /*store_last_modified=*/true,
-           /*restore_session=*/false);
- 
 --
 2.25.1
