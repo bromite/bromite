@@ -1,60 +1,53 @@
 From: uazo <uazo@users.noreply.github.com>
 Date: Fri, 8 Apr 2022 11:04:04 +0000
-Subject: Add lifetime options support for permissions
+Subject: Add lifetime options for permissions
 
-this patch takes advantage of the possibility to indicate the session mode for content-settings:
-in fact in chromium it is possible to specify the constraint content_settings::SessionModel as
-UserSession when setting the value, even choosing a possible expiration time.
-The logics I have seen with the ClientHints but it seems that chromium exploits this possibility when
-it is necessary to maintain a specific value by origin.
-In any case, all content settings of this type are not saved on disk, allowing you to reset the status
-each time the application is restarted.
+Indicate the session mode for content-settings by using the constraint `content_settings::SessionModel` as
+UserSession when setting the value, and also make use of an expiration time value.
+This is used in Chromium for `ClientHints` but it is generally possible to use this functionality when a
+specific value needs to be persisted by origin.
+All content settings of this type are not saved on disk (except for the `Forever` option), allowing user to
+reset the status each time application is restarted.
 
-The patch acts on these points:
+There are 4 main areas affected to introduce the functionality:
+* components/content_settings
+  A new `content_settings::LifetimeMode` enum value is defined to specify the user's
+  choice (Always, OnlyThisTime, UntilOriginClosed, UntilBrowserClosed).
+  Enumeration is also generated for java by adding it in `content_settings_enums_javagen` (gn).
+  This is mainly used in `content_settings_utils.cc` to create a specialised `content_settings::ContentSettingConstraints`
+  that is then used in `SetContentSettingDefaultScope()` by `PermissionContextBase::UpdateContentSetting`.
+  Existing Chromium data structures do not provide a specific property to define a choice which is instead encoded through
+  the `ContentSettingConstraints`; this approach is already used in other parts of the Chromium codebase so it is not
+  novel here.
+  Therefore, `content_settings::GetConstraintSessionExpiration()` and `content_settings::IsConstraintSessionExpiration()`
+  manage the lifetime modes of the session content-settings.
+  The modificaiton also adds the session pattern to the ContentSettingPatternSource so that it is available for the UI.
+* components/permissions
+  Lifetime support is added to the permissions; most of the changes are caused by the fact that it is necessary to report
+  the value selected by the user from the Java UI managed by `components/browser_ui` up to
+  `PermissionContextBase::UpdateContentSetting()`,   without necessarily having to modify all requests that are not
+  related to geolocation/camera/microphone. The approach used is a new
+  `PermissionRequest::PermissionDecidedCallbackWithLifetime` used by an overload of
+  `PermissionContextBase::CreatePermissionRequest` so that options are present only for the specific content-settings
+  (see `PermissionDialogModel.java`).
+  For other permissions no behaviour is changed (see `PermissionDialogDelegate::Accept`); for geolocation it was
+  necessary to act directly in the specific context, because, unlike microphone/camera, the content-setting value is
+  inserted in its specific method (`FinishNotifyPermissionSet`, that calls the callback), even if the class always
+  derives from `PermissionContextBase`.
+* components/page_info
+  Some changes needed to see in the summary of the `page_info` the text "(only this session)"
+  (aka `page_info_android_permission_session_permission`) through adding a new property "is_user_session" in
+  `PageInfoPermissionEntry` (Java).
+* components/browser_ui
+  Changes to the Settings UI to show "(only this session)" in the specific content-setting.
+  The same view is used both in the settings and in the page_info.
 
-components/content_settings
-defines a new content_settings::LifetimeMode enum to specify the user's
-choice (Always, OnlyThisTime, UntilOriginClosed, UntilBrowserClosed).
-the enumeration is also generated for java by adding in content_settings_enums_javagen (gn).
-enumeration is mainly used in content_settings_utils.cc to create a specific content_settings::ContentSettingConstraints
-for use in SetContentSettingDefaultScope() by PermissionContextBase::UpdateContentSetting.
-in fact the chromium code does not provide a specific property to define a choice, which
-must instead be encoded through the ContentSettingConstraints: such mechanism is already in use
-in other parts of the code.
-Therefore, content_settings::GetConstraintSessionExpiration() and content_settings::IsConstraintSessionExpiration()
-manage the lifetime modes of the session content-settings.
-The patch also adds the session pattern to the ContentSettingPatternSource,
-so that it is mainly available for the ui.
+For the management of `UntilOriginClosed` the logic used by flag `kOneTimeGeolocationPermission` was used; this flag
+is active only in the desktop (files `last_tab_standing_tracker_*`). It is a class that manages a list of the active
+origins and allows to perform operations when all the tabs relating to that origin have been closed, in this case
+deleting the session content settings of `UntilOriginClosed`.
 
-components/permissions
-actually adds lifetime support to permissions.
-most of the changes are caused by the fact that it is necessary to report the value selected by
-the user from the java ui managed by components/browser_ui, up to PermissionContextBase::UpdateContentSetting(),
-without necessarily having to modify all requests that are not related to the geolocation / camera / microphone.
-the mechanism I used was adding a new PermissionRequest::PermissionDecidedCallbackWithLifetime
-used by an overload of PermissionContextBase::CreatePermissionRequest so that only the code
-that interests me is modified: in fact the options are present only for the specific content-settings (see PermissionDialogModel.java).
-for other permissions, the patch behaves as before (see PermissionDialogDelegate::Accept)
-for geolocation it was necessary to act directly in the specific context, because, unlike
-the microphone / camera, although the class always derives from PermissionContextBase, the value in the
-content-setting is inserted in its specific method (FinishNotifyPermissionSet).
-
-components/page_info
-here the changes make it possible to see in the summary of the page_info the text
-"(only this session)" (aka page_info_android_permission_session_permission)
-through adding a new property "is_user_session" in PageInfoPermissionEntry (java)
-
-components/browser_ui
-the changes affect the settings ui, showing "(only this session)" in the specific content-setting.
-the same view is used both in the settings and in the page_info.
-
-for the management of UntilOriginClosed, I recovered the logics used by the flag
-kOneTimeGeolocationPermission active only in the desktop (files last_tab_standing_tracker_ *).
-basically that class manages a list of the active origins and allows you to perform
-operations when all the tabs relating to that origin are been closed:
-at that moment I delete the session content settings of type UntilOriginClosed.
-
-see also: https://github.com/bromite/bromite/issues/1549
+See also: https://github.com/bromite/bromite/issues/1549
 ---
  .../permissions/last_tab_standing_tracker.cc  | 33 +++++++-
  .../permissions/last_tab_standing_tracker.h   |  4 +-
@@ -94,8 +87,7 @@ see also: https://github.com/bromite/bromite/issues/1549
  components/permissions/permission_request.h   | 17 +++-
  .../permissions/permission_request_manager.cc | 38 ++++++---
  .../permissions/permission_request_manager.h  | 11 ++-
- media/base/media_switches.cc                  |  2 +-
- 39 files changed, 482 insertions(+), 63 deletions(-)
+ 38 files changed, 481 insertions(+), 62 deletions(-)
 
 diff --git a/chrome/browser/permissions/last_tab_standing_tracker.cc b/chrome/browser/permissions/last_tab_standing_tracker.cc
 --- a/chrome/browser/permissions/last_tab_standing_tracker.cc
@@ -141,7 +133,7 @@ diff --git a/chrome/browser/permissions/last_tab_standing_tracker.cc b/chrome/br
      tab_counter_.erase(origin);
      for (auto& observer : observer_list_)
        observer.OnLastPageFromOriginClosed(origin);
-+    auto content_settings =
++    HostContentSettingsMap* content_settings =
 +            permissions::PermissionsClient::Get()->GetSettingsMap(context_);
 +    RemoveSessionSettings(content_settings, origin, ContentSettingsType::GEOLOCATION);
 +    RemoveSessionSettings(content_settings, origin, ContentSettingsType::MEDIASTREAM_MIC);
@@ -268,7 +260,7 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
  import org.chromium.components.embedder_support.util.Origin;
  import org.chromium.content_public.browser.BrowserContextHandle;
  
-@@ -527,6 +528,11 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
+@@ -525,6 +526,11 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
          return mSite.getPermissionInfo(type) != null && mSite.getPermissionInfo(type).isEmbargoed();
      }
  
@@ -280,7 +272,7 @@ diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/c
      private void setUpClearDataPreference() {
          ClearWebsiteStorage preference = findPreference(PREF_CLEAR_DATA);
          long usage = mSite.getTotalUsage();
-@@ -919,6 +925,10 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
+@@ -911,6 +917,10 @@ public class SingleWebsiteSettings extends SiteSettingsPreferenceFragment
          if (contentType == mHighlightedPermission) {
              switchPreference.setBackgroundColor(mHighlightColor);
          }
@@ -355,7 +347,7 @@ diff --git a/components/browser_ui/site_settings/android/website_preference_brid
 diff --git a/components/browser_ui/strings/android/browser_ui_strings.grd b/components/browser_ui/strings/android/browser_ui_strings.grd
 --- a/components/browser_ui/strings/android/browser_ui_strings.grd
 +++ b/components/browser_ui/strings/android/browser_ui_strings.grd
-@@ -581,6 +581,11 @@
+@@ -580,6 +580,11 @@
        <message name="IDS_PAGE_INFO_URL_TRUNCATED" desc="Accessibility announcement when the URL in PageInfo switches from full to truncated display">
          URL truncated
        </message>
@@ -381,7 +373,7 @@ diff --git a/components/content_settings/android/BUILD.gn b/components/content_s
 diff --git a/components/content_settings/core/browser/content_settings_utils.cc b/components/content_settings/core/browser/content_settings_utils.cc
 --- a/components/content_settings/core/browser/content_settings_utils.cc
 +++ b/components/content_settings/core/browser/content_settings_utils.cc
-@@ -187,4 +187,33 @@ base::Time GetConstraintExpiration(const base::TimeDelta duration) {
+@@ -185,4 +185,33 @@ base::Time GetConstraintExpiration(const base::TimeDelta duration) {
    return base::Time::Now() + duration;
  }
  
@@ -446,7 +438,7 @@ diff --git a/components/content_settings/core/browser/host_content_settings_map.
 diff --git a/components/content_settings/core/common/content_settings.cc b/components/content_settings/core/common/content_settings.cc
 --- a/components/content_settings/core/common/content_settings.cc
 +++ b/components/content_settings/core/common/content_settings.cc
-@@ -147,13 +147,15 @@ ContentSettingPatternSource::ContentSettingPatternSource(
+@@ -146,13 +146,15 @@ ContentSettingPatternSource::ContentSettingPatternSource(
      base::Value setting_value,
      const std::string& source,
      bool incognito,
@@ -464,7 +456,7 @@ diff --git a/components/content_settings/core/common/content_settings.cc b/compo
  
  ContentSettingPatternSource::ContentSettingPatternSource() : incognito(false) {}
  
-@@ -170,6 +172,7 @@ ContentSettingPatternSource& ContentSettingPatternSource::operator=(
+@@ -169,6 +171,7 @@ ContentSettingPatternSource& ContentSettingPatternSource::operator=(
    expiration = other.expiration;
    source = other.source;
    incognito = other.incognito;
@@ -562,7 +554,7 @@ diff --git a/components/page_info/android/java/src/org/chromium/components/page_
              }
          }
  
-@@ -124,13 +129,15 @@ public class PermissionParamsListBuilder {
+@@ -123,13 +128,15 @@ public class PermissionParamsListBuilder {
          public final String nameMidSentence;
          public final int type;
          public final @ContentSettingValues int setting;
@@ -582,7 +574,7 @@ diff --git a/components/page_info/android/java/src/org/chromium/components/page_
 diff --git a/components/page_info/android/page_info_controller_android.cc b/components/page_info/android/page_info_controller_android.cc
 --- a/components/page_info/android/page_info_controller_android.cc
 +++ b/components/page_info/android/page_info_controller_android.cc
-@@ -166,6 +166,8 @@ void PageInfoControllerAndroid::SetPermissionInfo(
+@@ -157,6 +157,8 @@ void PageInfoControllerAndroid::SetPermissionInfo(
  
    std::map<ContentSettingsType, ContentSetting>
        user_specified_settings_to_display;
@@ -591,7 +583,7 @@ diff --git a/components/page_info/android/page_info_controller_android.cc b/comp
  
    for (const auto& permission : permission_info_list) {
      if (base::Contains(permissions_to_display, permission.type)) {
-@@ -174,6 +176,8 @@ void PageInfoControllerAndroid::SetPermissionInfo(
+@@ -165,6 +167,8 @@ void PageInfoControllerAndroid::SetPermissionInfo(
        if (setting_to_display) {
          user_specified_settings_to_display[permission.type] =
              *setting_to_display;
@@ -600,7 +592,7 @@ diff --git a/components/page_info/android/page_info_controller_android.cc b/comp
        }
      }
    }
-@@ -190,7 +194,8 @@ void PageInfoControllerAndroid::SetPermissionInfo(
+@@ -181,7 +185,8 @@ void PageInfoControllerAndroid::SetPermissionInfo(
            ConvertUTF16ToJavaString(env, setting_title),
            ConvertUTF16ToJavaString(env, setting_title_mid_sentence),
            static_cast<jint>(permission),
@@ -610,7 +602,7 @@ diff --git a/components/page_info/android/page_info_controller_android.cc b/comp
      }
    }
  
-@@ -203,7 +208,8 @@ void PageInfoControllerAndroid::SetPermissionInfo(
+@@ -194,7 +199,8 @@ void PageInfoControllerAndroid::SetPermissionInfo(
          env, controller_jobject_, ConvertUTF16ToJavaString(env, object_title),
          ConvertUTF16ToJavaString(env, object_title),
          static_cast<jint>(chosen_object->ui_info.content_settings_type),
@@ -623,7 +615,7 @@ diff --git a/components/page_info/android/page_info_controller_android.cc b/comp
 diff --git a/components/page_info/page_info.cc b/components/page_info/page_info.cc
 --- a/components/page_info/page_info.cc
 +++ b/components/page_info/page_info.cc
-@@ -1000,6 +1000,8 @@ void PageInfo::PresentSitePermissions() {
+@@ -979,6 +979,8 @@ void PageInfo::PresentSitePermissions() {
      permission_info.source = info.source;
      permission_info.is_one_time =
          (info.session_model == content_settings::SessionModel::OneTime);
@@ -1446,17 +1438,5 @@ diff --git a/components/permissions/permission_request_manager.h b/components/pe
    // Calls Cancelled on a request and all its duplicates.
    void CancelledIncludingDuplicates(PermissionRequest* request);
    // Calls RequestFinished on a request and all its duplicates.
-diff --git a/media/base/media_switches.cc b/media/base/media_switches.cc
---- a/media/base/media_switches.cc
-+++ b/media/base/media_switches.cc
-@@ -469,7 +469,7 @@ const base::Feature kUseR16Texture{"use-r16-texture",
- // Enables the Unified Autoplay policy by overriding the platform's default
- // autoplay policy.
- const base::Feature kUnifiedAutoplay{"UnifiedAutoplay",
--                                     base::FEATURE_DISABLED_BY_DEFAULT};
-+                                     base::FEATURE_ENABLED_BY_DEFAULT};
- 
- #if BUILDFLAG(IS_LINUX)
- // Enable vaapi video decoding on linux. This is already enabled by default on
 --
 2.25.1
