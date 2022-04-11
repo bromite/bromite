@@ -10,6 +10,8 @@
 * add menu entry to select all bookmarks (fixes https://github.com/bromite/bromite/issues/1959)
 * save only ContentSettings in always-incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1942)
 * fix Note 9 crash on startup (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1871)
+* remove passwords menu entry for leak check
+* remove privacy menu entry to use phone as a security key
 
 # 100.0.4896.57
 * allow OpenSearch search engine URLs with path
