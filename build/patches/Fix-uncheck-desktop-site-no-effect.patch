@@ -1,0 +1,154 @@
+From: Yifeng <wuyifeng@nd.com.cn>
+Date: Wed, 13 Apr 2022 07:00:00 +0000
+Subject: AP9-4674 Unchecking the option "Desktop site" can't set chromium to mobile mode
+
+Fix version: 1.1.0
+Revert the `change-Android-userAgent-to-deskmode-userAgent` patch
+Add `Firefox/97.2.0` to the android user agent.
+Hide the `Desktop site` check box when the page is `chrome://` or `chrome-native://`.
+
+---
+ content/public/common/user_agent.h |  2 +-
+ content/common/user_agent.cc | 31 +++++++++++++++++++++----------
+ components/embedder_support/user_agent_utils.cc | 16 ++++++++++++++++
+ chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java | 2 +-
+ 4 file changed, 39 insertions(+), 12 deletions(-)
+
+diff --git a/content/public/common/user_agent.h b/content/public/common/user_agent.h
+--- a/content/public/common/user_agent.h
++++ b/content/public/common/user_agent.h
+@@ -18,10 +18,10 @@ namespace frozen_user_agent_strings {
+ const char kDesktop[] =
+     "Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, "
+     "like Gecko) Chrome/%s.0.0.0 Safari/537.36";
+ const char kAndroid[] =
+     "Mozilla/5.0 (%s) "
+     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s.0.0.0 %s"
+-    "Safari/537.36";
++    "Safari/537.36  Firefox/97.2.0";
+ const char kUnifiedPlatformAndroid[] = "Linux; Android 10; K";
+ const char kUnifiedPlatformCrOS[] = "X11; CrOS x86_64";
+ const char kUnifiedPlatformLinux[] = "X11; Linux x86_64";
+diff --git a/content/common/user_agent.cc b/content/common/user_agent.cc
+--- a/content/common/user_agent.cc
++++ b/content/common/user_agent.cc
+@@ -36,7 +36,7 @@ std::string GetUserAgentPlatform() {
+ #elif defined(USE_OZONE)
+   return "X11; ";  // strange, but that's what Firefox uses
+ #elif defined(OS_ANDROID)
+-  return "X11; ";
++  return "Linux; ";
+ #elif defined(OS_FUCHSIA)
+   // TODO(https://crbug.com/1225812): Determine what to report for Fuchsia,
+   // considering both backwards compatibility and User-Agent Reduction.
+@@ -49,7 +49,9 @@ std::string GetUserAgentPlatform() {
+ }  // namespace
+
+ std::string GetUnifiedPlatform() {
+-#if defined(OS_CHROMEOS)
++#if defined(OS_ANDROID)
++  return frozen_user_agent_strings::kUnifiedPlatformAndroid;
++#elif defined(OS_CHROMEOS)
+   return frozen_user_agent_strings::kUnifiedPlatformCrOS;
+ #elif defined(OS_MAC)
+   return frozen_user_agent_strings::kUnifiedPlatformMacOS;
+@@ -217,7 +219,7 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
+                                                   const std::string& cpu_type) {
+   std::string os_cpu;
+
+-#if defined(OS_POSIX) && !defined(OS_MAC)
++#if !defined(OS_ANDROID) && defined(OS_POSIX) && !defined(OS_MAC)
+   // Should work on any Posix system.
+   struct utsname unixinfo;
+   uname(&unixinfo);
+@@ -239,9 +241,7 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
+                       cpu_type.c_str(),  // e.g. i686
+                       os_version.c_str()
+ #elif defined(OS_ANDROID)
+-                       "%s %s",
+-                       unixinfo.sysname,  // e.g. Linux
+-                       cpu_type.c_str()   // e.g. i686
++                      "Android %s", os_version.c_str()
+ #elif defined(OS_FUCHSIA)
+                       "Fuchsia"
+ #elif defined(OS_POSIX)
+@@ -257,9 +257,20 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
+
+ std::string GetReducedUserAgent(bool mobile, std::string major_version) {
+   std::string user_agent;
++#if defined(OS_ANDROID)
++  std::string device_compat;
++  // Note: The extra space after Mobile is meaningful here, to avoid
++  // "MobileSafari", but unneeded for non-mobile Android devices.
++  device_compat = mobile ? "Mobile " : "";
++  user_agent = base::StringPrintf(frozen_user_agent_strings::kAndroid,
++                                  GetUnifiedPlatform().c_str(),
++                                  major_version.c_str(), device_compat.c_str());
++#else
+   user_agent =
+       base::StringPrintf(frozen_user_agent_strings::kDesktop,
+                          GetUnifiedPlatform().c_str(), major_version.c_str());
++#endif
++
+   return user_agent;
+ }
+
+@@ -284,9 +295,9 @@ std::string BuildUserAgentFromProductAndExtraOSInfo(
+     const std::string& extra_os_info,
+     IncludeAndroidBuildNumber include_android_build_number) {
+   std::string os_info;
+-  base::StringAppendF(&os_info, "%s%s", GetUserAgentPlatform().c_str(),
+-                       BuildOSCpuInfo(IncludeAndroidBuildNumber::Exclude,
+-                                      IncludeAndroidModel::Include)
+-                           .c_str());
++  base::StrAppend(&os_info, {GetUserAgentPlatform(),
++                             BuildOSCpuInfo(include_android_build_number,
++                                            IncludeAndroidModel::Include),
++                             extra_os_info});
+   return BuildUserAgentFromOSAndProduct(os_info, product);
+ }
+diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
+--- a/components/embedder_support/user_agent_utils.cc
++++ b/components/embedder_support/user_agent_utils.cc
+@@ -265,6 +265,17 @@ std::string GetProduct() {
+ }
+
+ std::string GetUserAgent() {
++  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kUserAgent)) {
++    std::string ua = command_line->GetSwitchValueASCII(kUserAgent);
++    if (net::HttpUtil::IsValidHeaderValue(ua))
++      return ua;
++    LOG(WARNING) << "Ignored invalid value for flag --" << kUserAgent;
++  }
++
++  if (base::FeatureList::IsEnabled(blink::features::kReduceUserAgent))
++    return GetReducedUserAgent();
++
+   return GetFullUserAgent();
+ }
+
+@@ -280,5 +291,10 @@ std::string GetReducedUserAgent() {
+
+ std::string GetFullUserAgent() {
+   std::string product = GetProduct(/*allow_version_override=*/true);
++#if defined(OS_ANDROID)
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kUseMobileUserAgent))
++    product += " Mobile";
++#endif
+   return content::BuildUserAgentFromProduct(product);
+ }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
+@@ -1188,7 +1188,7 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+
+         // Hide request desktop site on all chrome:// pages except for the NTP.
+         boolean itemVisible = currentTab != null && canShowRequestDesktopSite
+-                && (!isChromeScheme || currentTab.isNativePage())
++                && !isChromeScheme
+                 && !shouldShowReaderModePrefs(currentTab) && currentTab.getWebContents() != null;
+         requestMenuRow.setVisible(itemVisible);
+         if (!itemVisible) return;
+2.17.1
