@@ -86,6 +86,8 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * customize history expiration threshold
 * disable idle detection
 * HTTPS-only mode enabled by default
+* disable TLS resumption by default
+* partition DoH requests by top-frame NIK
 
 ## Features not related to privacy
 * browser automatic updates, enabled by default
@@ -116,6 +118,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * allow OpenSearch search engine detection with paths
 * keyboard dictionary hints in address bar
 * always allow `view-source:` URLs
+* allow moving navigation bar to bottom
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 
