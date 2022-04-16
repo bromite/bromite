@@ -26,7 +26,7 @@ Support for tablet mode is also included.
  .../layouts/LayoutManagerChromeTablet.java    |  4 +-
  .../layouts/ToolbarSwipeLayout.java           | 15 +++++-
  .../overlays/strip/StripLayoutHelper.java     |  2 +-
- .../strip/StripLayoutHelperManager.java       | 35 +++++++++++--
+ .../strip/StripLayoutHelperManager.java       | 36 +++++++++++--
  .../scene_layer/StaticTabSceneLayer.java      |  8 ++-
  .../scene_layer/TabListSceneLayer.java        | 14 +++++
  .../scene_layer/TabStripSceneLayer.java       | 15 +++++-
@@ -75,7 +75,7 @@ Support for tablet mode is also included.
  .../accessibility/AccessibilitySettings.java  | 16 ++++++
  .../AccessibilitySettingsDelegate.java        |  6 +++
  .../render_widget_host_view_android.cc        |  3 ++
- 66 files changed, 673 insertions(+), 51 deletions(-)
+ 66 files changed, 674 insertions(+), 51 deletions(-)
 
 diff --git a/cc/base/features.cc b/cc/base/features.cc
 --- a/cc/base/features.cc
@@ -466,9 +466,9 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/accessibility/s
 +            mSnackbarManager.showSnackbar(mSnackbar);
 +    }
 +
-     @Override
-     public void addExtraPreferences(PreferenceFragmentCompat fragment) {
-         if (ImageDescriptionsController.getInstance().shouldShowImageDescriptionsMenuItem()) {
+     private static class ForceTabletUIDelegate implements BooleanPreferenceDelegate {
+         @Override
+         public boolean isEnabled() {
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
@@ -686,7 +686,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/over
          return mTabStripTreeProvider;
      }
  
-@@ -350,7 +366,16 @@ public class StripLayoutHelperManager implements SceneOverlay {
+@@ -350,7 +366,17 @@ public class StripLayoutHelperManager implements SceneOverlay {
          mNormalHelper.onSizeChanged(mWidth, mHeight);
          mIncognitoHelper.onSizeChanged(mWidth, mHeight);
  
@@ -699,6 +699,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/over
 +            // values are in pixels.
 +            top = height - ((mBrowserControlsManagerSupplier.get().getTopControlsHeight()
 +                             - mBrowserControlsManagerSupplier.get().getTopControlOffset()) / mDpToPx);
++            visibleViewportOffsetY = mHeight;
 +        }
 +        mStripFilterArea.set(0, top, mWidth, top + Math.min(getHeight(), visibleViewportOffsetY));
          mEventFilter.setEventArea(mStripFilterArea);
@@ -944,7 +945,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.
 +        if (CachedFeatureFlags.isEnabled(ChromeFeatureList.MOVE_TOP_TOOLBAR_TO_BOTTOM)) {
 +            // move the margin of the new tab page up if the top toolbar is at the bottom
 +            bottomMargin += mBrowserControlsStateProvider.getTopControlsHeight();
-+            topMargin = 0;
++            topMargin = -mBrowserControlsStateProvider.getTopControlsHeight();
 +        }
  
          if (topMargin != layoutParams.topMargin || bottomMargin != layoutParams.bottomMargin) {
@@ -954,7 +955,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.
       */
      private int getToolbarExtraYOffset() {
 -        return mBrowserControlsStateProvider.getTopControlsHeight() - mTabStripAndToolbarHeight;
-+        return mBrowserControlsStateProvider.getTopControlsHeightRealOffset();
++        return 0;
      }
  
      /** @return The view container for the new tab layout. */
@@ -2078,7 +2079,7 @@ diff --git a/components/browser_ui/accessibility/android/java/res/xml/accessibil
 diff --git a/components/browser_ui/accessibility/android/java/src/org/chromium/components/browser_ui/accessibility/AccessibilitySettings.java b/components/browser_ui/accessibility/android/java/src/org/chromium/components/browser_ui/accessibility/AccessibilitySettings.java
 --- a/components/browser_ui/accessibility/android/java/src/org/chromium/components/browser_ui/accessibility/AccessibilitySettings.java
 +++ b/components/browser_ui/accessibility/android/java/src/org/chromium/components/browser_ui/accessibility/AccessibilitySettings.java
-@@ -31,12 +31,15 @@ public class AccessibilitySettings
+@@ -28,6 +28,8 @@ public class AccessibilitySettings
      public static final String PREF_CAPTIONS = "captions";
  
      static final String PREF_FORCE_TABLET_UI = "force_tablet_ui";
@@ -2087,14 +2088,15 @@ diff --git a/components/browser_ui/accessibility/android/java/src/org/chromium/c
      private TextScalePreference mTextScalePref;
      private ChromeBaseCheckBoxPreference mForceEnableZoomPref;
      private boolean mRecordFontSizeChangeOnStop;
-     private AccessibilitySettingsDelegate mDelegate;
+@@ -35,6 +37,7 @@ public class AccessibilitySettings
+     private BooleanPreferenceDelegate mForceTabletUIDelegate;
      private BooleanPreferenceDelegate mReaderForAccessibilityDelegate;
      private BooleanPreferenceDelegate mAccessibilityTabSwitcherDelegate;
 +    private BooleanPreferenceDelegate mMoveTopToolbarToBottomDelegate;
  
      private FontSizePrefs mFontSizePrefs;
      private FontSizePrefsObserver mFontSizePrefsObserver = new FontSizePrefsObserver() {
-@@ -56,6 +59,10 @@ public class AccessibilitySettings
+@@ -54,6 +57,10 @@ public class AccessibilitySettings
          mFontSizePrefs = FontSizePrefs.getInstance(delegate.getBrowserContextHandle());
      }
  
@@ -2105,7 +2107,7 @@ diff --git a/components/browser_ui/accessibility/android/java/src/org/chromium/c
      @Override
      public void onActivityCreated(Bundle savedInstanceState) {
          super.onActivityCreated(savedInstanceState);
-@@ -105,6 +112,12 @@ public class AccessibilitySettings
+@@ -103,6 +110,12 @@ public class AccessibilitySettings
              getPreferenceScreen().removePreference(accessibilityTabSwitcherPref);
          }
  
@@ -2118,7 +2120,7 @@ diff --git a/components/browser_ui/accessibility/android/java/src/org/chromium/c
          Preference captions = findPreference(PREF_CAPTIONS);
          captions.setOnPreferenceClickListener(preference -> {
              Intent intent = new Intent(Settings.ACTION_CAPTIONING_SETTINGS);
-@@ -150,6 +163,9 @@ public class AccessibilitySettings
+@@ -147,6 +160,9 @@ public class AccessibilitySettings
              if (mReaderForAccessibilityDelegate != null) {
                  mReaderForAccessibilityDelegate.setEnabled((Boolean) newValue);
              }
