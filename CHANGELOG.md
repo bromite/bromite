@@ -4,9 +4,6 @@
 * mark sites as visited when they have an already-parsed OpenSearch descriptor
 * disable TLS resumption by default (thanks to @uazo)
 * partition DoH requests by top-frame NIK (thanks to @uazo)
-* restrict creation of dynamic code
-* forbid dynamic code generation on Linux
-* remove mremap from system call whitelist
 
 # 100.0.4896.83
 * update zh_CN translations (thanks to @zhmars)
