@@ -1,3 +1,7 @@
+# 100.0.4896.135
+* remove mremap from seccomp baseline policy
+* add flag to move top toolbar to bottom (thanks to @uazo)
+
 # 100.0.4896.92
 * improve user script errors and visualized name (thanks to @uazo)
 * fix autofill password not working anymore (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1956)
