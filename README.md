@@ -154,6 +154,7 @@ New flags:
 * `#disable-external-intent-requests`
 * `#enable-userscripts-log`, see https://github.com/bromite/bromite/wiki/UserScripts#flags
 * `#certificate-transparency-enabled`, enabled by default; see https://chromium.googlesource.com/chromium/src/+/master/net/docs/certificate-transparency.md
+* `#move-top-toolbar-to-bottom`, disabled by default
 
 # Privacy limitations
 
