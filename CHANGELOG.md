@@ -19,7 +19,6 @@
 * fix upstream DNS bug with inconsistent Android system DNS configuration (fixes https://github.com/bromite/bromite/issues/1960)
 * use less invasive approach to protect local IP address when using webRTC (fixes https://github.com/bromite/bromite/issues/589)
 * add menu entry to select all bookmarks (fixes https://github.com/bromite/bromite/issues/1959)
-* save only ContentSettings in always-incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1942)
 * fix Note 9 crash on startup (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1871)
 * remove passwords menu entry for leak check
 * remove privacy menu entry to use phone as a security key
@@ -55,6 +54,7 @@
 * allow adding search engines from incognito mode
 * disable all predictors code (thanks to @uazo)
 * revert allow block of view-source URLs
+* enable StrictOriginIsolation and SitePerProcess for all devices (thanks to @uazo)
 * JIT toggle site setting (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1720 and https://github.com/bromite/bromite/issues/1819)
 * move always incognito preference to native (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1496 and https://github.com/bromite/bromite/issues/1568)
 * remove Save-Data header flag
