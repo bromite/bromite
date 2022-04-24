@@ -1,0 +1,125 @@
+From: Yifeng <wuyifeng@nd.com.cn>
+Date: Fri, 22 Apr 2022 07:00:00 +0000
+Subject: AP9-5018 Open a new tab in the web page. The new tab is not in desktop mode
+
+Fix version: 1.1.0
+Fix the tab that opened with "_blank" target will not be in the current site.
+
+---
+ chrome/android/java/res/xml/useragent_preferences.xml | 3 ++-
+ content/browser/renderer_host/navigation_controller_android.cc | 5 +++++
+ content/browser/renderer_host/navigation_controller_android.h | 2 ++
+ content/browser/renderer_host/navigation_controller_impl.cc | 3 +--
+ content/browser/renderer_host/navigator.cc | 5 ++---
+ content/public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java | 9 +++++++++
+ 6 files changed, 21 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/android/java/res/xml/useragent_preferences.xml b/chrome/android/java/res/xml/useragent_preferences.xml
+--- a/chrome/android/java/res/xml/useragent_preferences.xml
++++ b/chrome/android/java/res/xml/useragent_preferences.xml
+@@ -26,6 +26,7 @@
+         android:key="desktop_mode_switch"
+         android:title="@string/option_desktop_flag"
+         android:summaryOn="@string/option_desktop_flag_on"
+-        android:summaryOff="@string/option_desktop_flag_off" />
++        android:summaryOff="@string/option_desktop_flag_off"
++        app:isPreferenceVisible="false" />
+
+ </PreferenceScreen>
+diff --git a/content/browser/renderer_host/navigation_controller_android.cc b/content/browser/renderer_host/navigation_controller_android.cc
+--- a/content/browser/renderer_host/navigation_controller_android.cc
++++ b/content/browser/renderer_host/navigation_controller_android.cc
+@@ -121,6 +121,11 @@ class MapData : public base::SupportsUserData::Data {
+
+ namespace content {
+
++bool IsDesktopSite() {
++  JNIEnv* env = AttachCurrentThread();
++  return Java_NavigationControllerImpl_isDesktopSite(env);
++}
++
+ NavigationControllerAndroid::NavigationControllerAndroid(
+     NavigationControllerImpl* navigation_controller)
+     : navigation_controller_(navigation_controller) {
+diff --git a/content/browser/renderer_host/navigation_controller_android.h b/content/browser/renderer_host/navigation_controller_android.h
+--- a/content/browser/renderer_host/navigation_controller_android.h
++++ b/content/browser/renderer_host/navigation_controller_android.h
+@@ -14,6 +14,8 @@
+
+ namespace content {
+
++CONTENT_EXPORT bool IsDesktopSite();
++
+ class NavigationControllerImpl;
+
+ // Android wrapper around NavigationController that provides safer passage
+diff --git a/content/browser/renderer_host/navigation_controller_impl.cc b/content/browser/renderer_host/navigation_controller_impl.cc
+--- a/content/browser/renderer_host/navigation_controller_impl.cc
++++ b/content/browser/renderer_host/navigation_controller_impl.cc
+@@ -61,6 +61,7 @@
+ #include "content/browser/renderer_host/debug_urls.h"
+ #include "content/browser/renderer_host/frame_tree.h"
+ #include "content/browser/renderer_host/frame_tree_node.h"
++#include "content/browser/renderer_host/navigation_controller_android.h"
+ #include "content/browser/renderer_host/navigation_entry_impl.h"
+ #include "content/browser/renderer_host/navigation_entry_restore_context_impl.h"
+ #include "content/browser/renderer_host/navigation_request.h"
+@@ -3299,8 +3300,7 @@ base::WeakPtr<NavigationHandle> NavigationControllerImpl::NavigateWithoutEntry(
+   // passed as a const reference, this is not possible.
+   // TODO(clamy): When we only create a NavigationRequest, move this to
+   // CreateNavigationRequestFromLoadURLParams.
+-  bool override_user_agent = ShouldOverrideUserAgent(params.override_user_agent,
+-                                                     GetLastCommittedEntry());
++  bool override_user_agent = IsDesktopSite();
+
+   // Don't allow an entry replacement if there is no entry to replace.
+   // http://crbug.com/457149
+diff --git a/content/browser/renderer_host/navigator.cc b/content/browser/renderer_host/navigator.cc
+--- a/content/browser/renderer_host/navigator.cc
++++ b/content/browser/renderer_host/navigator.cc
+@@ -19,6 +19,7 @@
+ #include "content/browser/renderer_host/debug_urls.h"
+ #include "content/browser/renderer_host/frame_tree.h"
+ #include "content/browser/renderer_host/frame_tree_node.h"
++#include "content/browser/renderer_host/navigation_controller_android.h"
+ #include "content/browser/renderer_host/navigation_controller_impl.h"
+ #include "content/browser/renderer_host/navigation_entry_impl.h"
+ #include "content/browser/renderer_host/navigation_request.h"
+@@ -929,9 +930,7 @@ void Navigator::OnBeginNavigation(
+   NavigationEntryImpl* navigation_entry =
+       GetNavigationEntryForRendererInitiatedNavigation(*common_params,
+                                                        frame_tree_node);
+-  const bool override_user_agent =
+-      delegate_ &&
+-      delegate_->ShouldOverrideUserAgentForRendererInitiatedNavigation();
++  const bool override_user_agent = IsDesktopSite();
+   if (navigation_entry)
+     navigation_entry->SetIsOverridingUserAgent(override_user_agent);
+
+diff --git a/content/public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java b/content/public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java
+--- a/content/public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java
++++ b/content/public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java
+@@ -11,6 +11,8 @@ import androidx.annotation.VisibleForTesting;
+ import org.chromium.base.annotations.CalledByNative;
+ import org.chromium.base.annotations.JNINamespace;
+ import org.chromium.base.annotations.NativeMethods;
++import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
++import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
+ import org.chromium.content_public.browser.LoadUrlParams;
+ import org.chromium.content_public.browser.NavigationController;
+ import org.chromium.content_public.browser.NavigationEntry;
+@@ -39,6 +41,13 @@ import org.chromium.url.Origin;
+         return new NavigationControllerImpl(nativeNavigationControllerAndroid);
+     }
+
++    @CalledByNative
++    private static boolean isDesktopSite() {
++        final boolean alwaysDesktopModeEnabled = SharedPreferencesManager.getInstance().readBoolean(
++            ChromePreferenceKeys.USERAGENT_ALWAYS_DESKTOP_MODE, true);
++        return alwaysDesktopModeEnabled;
++    }
++
+     @CalledByNative
+     private void destroy() {
+         mNativeNavigationControllerAndroid = 0;
+2.17.1
