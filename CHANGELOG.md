@@ -123,6 +123,7 @@
 * fix incognito tab closing new tab under normal tab (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1030)
 * allow custom tab intents and opening external links in incognito (thanks to @uazo)
 * never use HTTP probes for connectivity check on Android < M
+* re-introduce option to use home page as NTP (thanks to @uazo, https://github.com/bromite/bromite/pull/1586)
 
 # 94.0.4606.109
 * experimental user scripts support (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/792)
