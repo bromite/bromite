@@ -227,7 +227,7 @@ For any usage or development discussion please use GitHub Discussions: https://g
 * [GrapheneOS](https://github.com/GrapheneOS) for some security patches
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (via ungoogled-chromium)
 * [Brave Browser](https://github.com/brave/brave-core) for some patches
-* [Vadim Pleshkov](vadimpleshkov.me) for Bromite's logo
+* [Vadim Pleshkov](http://vadimpleshkov.me) for Bromite's logo
 
 # Filters credits
 * [EasyList](https://easylist.to/#easylist)
