@@ -8,13 +8,13 @@
   <img title="Bromite - take back your browser!" src="https://www.bromite.org/android-icon-192x192.png" width="96" alt="Bromite" />
 </a>
 
-Bromite is a [Chromium](https://www.chromium.org/Home) fork with support for ad blocking and enhanced privacy.
+Bromite is a [Chromium](https://www.chromium.org) fork with support for ad blocking and enhanced privacy.
 
 Bromite is only available for Android Marshmallow (v6.0, API level 23) and above.
 
 <img src="https://fdroid.bromite.org/fdroid/bromite_bromite_gh_downloads.svg" alt="Downloads on Github" title="Downloads on Github" />
 
-For the Frequently Asked Questions see [F.A.Q.](./FAQ.md)
+For the Frequently Asked Questions see [F.A.Q](./FAQ.md).
 
 For documentation see The [Wiki](github.com/bromite/bromite/wiki).
 
@@ -37,7 +37,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 
 * customizable adblock filters via user-provided URL (see www.bromite.org/custom-filters)
 * automatically updated adblock filters
-* remove click-tracking and AMP from search results
+* remove click-tracking and AMP from Google Search results
 * DNS-over-HTTPS support with any valid IETF DoH endpoint
 * always-incognito mode
 * disable all field trials permanently
@@ -51,12 +51,12 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * show warnings for TLSv1.0/TLSv1.1 pages
 * enable site-per-process isolation for all devices with memory > 1GB
 * completely remove safe browsing and other privacy-unfriendly features
-* [proxy configuration page](https://github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
+* [proxy configuration page](github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
 * settings to disable custom intents and clear session on exit
 * flags to toggle anti-fingerprinting mitigations for canvas, audio, client rects, webGL and sensor APIs (see full list below for all the new flags)
 * use frozen User-Agent to conceal real model and browser version
 * privacy enhancement patches from [Iridium](https://iridiumbrowser.de/), [Inox patchset](https://github.com/gcarq/inox-patchset), [Brave](https://brave.com/) and [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) projects
-* security enhancement patches from [GrapheneOS](https://github.com/GrapheneOS) project
+* security enhancement patches from [GrapheneOS](https://github.com/GrapheneOS) Project
 * disable scroll-to-text-fragment
 * reduced referer granularity
 * block gateway attacks via websockets (partial fix, see [this upstream issue](https://bugs.chromium.org/p/chromium/issues/detail?id=590714))
@@ -121,7 +121,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * always allow `view-source:` URLs
 * allow moving navigation bar to bottom
 
-You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
+You can inspect all functionality/privacy changes by reading the [Patches](./build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 
 ### Flags
 
@@ -163,14 +163,14 @@ Bromite's privacy features, including anti-fingerprinting mitigations (which are
 
 # Releases
 
-All built versions are available as [releases](https://github.com/bromite/bromite/releases); the [official website](https://www.bromite.org/) points to those releases and - when browsing via Android - it will automatically highlight the one apt for your device (or none otherwise).
+All built versions are available as [Releases](https://github.com/bromite/bromite/releases) : The [Official website](https://www.bromite.org/) points to those releases and - when browsing via Android - it will automatically highlight the one compatible with your device (or none otherwise).
 
 Each tag corresponds to a Chromium Stable release tag.
 
 Bromite is currently built for ARM, ARM64 and x86 and for the Android SDK version 23+; [Bromite SystemWebView](https://www.bromite.org/system_web_view) is provided as well (SDK23+).
 For every Bromite build you can always find a matching [vanilla Chromium](https://www.bromite.org/chromium) build which is used for example to verify which issues are specific to Bromite or not.
 
-You will automatically receive notifications about new updates (and be able to install them) via the auto updater functionality (enabled by default), see [related wiki page](https://github.com/bromite/bromite/wiki/AutomaticUpdates).
+You will automatically receive notifications about new updates (and be able to install them) via the auto updater functionality (enabled by default), see The [Wiki page](https://github.com/bromite/bromite/wiki/AutomaticUpdates).
 
 All official releases are also available through the [official third-party F-Droid repository](https://www.bromite.org/fdroid).
 
@@ -198,7 +198,7 @@ You can download csagan5's public GnuPG key from here: [csagan5.asc](./csagan5.a
 
 The [Bromite main repository](github.com/bromite/bromite) contains tags for each corresponding Chromium release (see chromium.googlesource.com/chromium/src.git).
 
-Please refer to [official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
+Please refer to [Official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
 
 The Chromium version tag used as base for the patches is available here: [RELEASE](./build/RELEASE); this is always corresponding to the git tag for every release.
 The GN args used to build Bromite are available here: [bromite.gn_args](./build/bromite.gn_args).
@@ -227,7 +227,7 @@ For any usage or development discussion please use GitHub Discussions: https://g
 * [GrapheneOS](https://github.com/GrapheneOS) for some security patches
 * [Inox patchset](https://github.com/gcarq/inox-patchset) for some patches (via ungoogled-chromium)
 * [Brave Browser](https://github.com/brave/brave-core) for some patches
-* [Vadim Pleshkov](http://vadimpleshkov.me/) for Bromite's logo
+* [Vadim Pleshkov](vadimpleshkov.me) for Bromite's logo
 
 # Filters credits
 * [EasyList](https://easylist.to/#easylist)
