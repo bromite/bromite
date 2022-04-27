@@ -49,7 +49,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * disable media router and remoting by default
 * disable dynamic module loading
 * show warnings for TLSv1.0/TLSv1.1 pages
-* enable site-per-process isolation for all devices with memory > 1GB
+* enable site-per-process isolation for all devices with memory ≥ 1GB
 * completely remove safe browsing and other privacy-unfriendly features
 * [proxy configuration page](github.com/bromite/bromite/wiki/ProxyConfiguration) with PAC and custom proxy lists support
 * settings to disable custom intents and clear session on exit
