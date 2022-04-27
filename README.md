@@ -196,7 +196,7 @@ You can download csagan5's public GnuPG key from here: [csagan5.asc](./csagan5.a
 
 # How to build
 
-The [Bromite main repository](github.com/bromite/bromite) contains tags for each corresponding Chromium release (see chromium.googlesource.com/chromium/src.git).
+The [Bromite main repository](github.com/bromite/bromite) contains tags for each corresponding Chromium release (see https://chromium.googlesource.com/chromium/src.git).
 
 Please refer to [Official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
 
