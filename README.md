@@ -16,7 +16,7 @@ Bromite is only available for Android Marshmallow (v6.0, API level 23) and above
 
 For the Frequently Asked Questions see [F.A.Q.](./FAQ.md).
 
-For documentation see the [wiki](https://github.com/bromite/bromite/wiki).
+For documentation see The [wiki](https://github.com/bromite/bromite/wiki).
 
 # Goals
 
@@ -64,15 +64,15 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * make all favicon requests on-demand ([supercookie](https://supercookie.me/) mitigation)
 * enable all network isolation features (`PartitionConnectionsByNetworkIsolationKey`, `PartitionHttpServerPropertiesByNetworkIsolationKey`, `SplitHostCacheByNetworkIsolationKey`, `AppendFrameOriginToNetworkIsolationKey`, `SplitCacheByNetworkIsolationKey`, `UseRegistrableDomainInNetworkIsolationKey`, `PartitionSSLSessionsByNetworkIsolationKey`, `PartitionExpectCTStateByNetworkIsolationKey`, `PartitionDomainReliabilityByNetworkIsolationKey`)
 * ignore enterprise policies that disallow secure DNS
-* ask permission to play protected media
+* ask permission to play protected media by default
 * disable the DIAL repeating discovery
 * disable RTCGetCurrentBrowsingContextMedia by default
 * disable FLoC and privacy sandbox by default
 * disable feeds
 * disable reporting of certificate errors
 * use pre-defined phone model for client hints and Javascript
-* site settings to disable images
-* allow forcing external links to open in incognito
+* site setting to disable images
+* allow forcing external links to open in incognito mode
 * disable AGSA by default
 * allow disabling JIT (per-site, disabled by default)
 * flag to enable Certificate Transparency
@@ -125,7 +125,7 @@ You can inspect all functionality/privacy changes by reading the [patches](https
 
 ### Flags
 
-Flags which have been retired from upstream Chromium but are still available in Bromite.
+Flags which have been retired from upstream Chromium but are still available/are not available in Chromium, in Bromite
 
 * `#pull-to-refresh`
 * `#enable-search-ready-omnibox`
@@ -147,7 +147,7 @@ New flags:
 * `#disable-webgl`
 * `#enable-device-motion` and `#enable-device-orientation`
 * `#show-legacy-tls-warnings`
-* `#save-data-header`, disabled by default
+* `#save-data-header`, enabled by default
 * `#export-bookmarks-use-saf`, disabled by default
 * `#allow-user-certificates`, disabled by default
 * `#cleartext-permitted`, enabled by default, can be used to disable all cleartext-HTTP traffic
@@ -220,7 +220,7 @@ For any usage or development discussion please use GitHub Discussions: https://g
 
 # Credits
 
-* [Chromium project](https://www.chromium.org/Home) and developers
+* [Chromium project](https://www.chromium.org/) and developers
 * [Iridium project](https://github.com/iridium-browser) for some patches
 * [ungoogled-chromium](https://github.com/Eloston/ungoogled-chromium) for some patches
 * [ungoogled-chromium-android](https://github.com/ungoogled-software/ungoogled-chromium-android) for some patches
