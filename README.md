@@ -14,9 +14,9 @@ Bromite is only available for Android Marshmallow (v6.0, API level 23) and above
 
 <img src="https://fdroid.bromite.org/fdroid/bromite_bromite_gh_downloads.svg" alt="Downloads on Github" title="Downloads on Github" />
 
-For the Frequently Asked Questions see [F.A.Q.](./FAQ.md).
+For the Frequently Asked Questions see [F.A.Q.](./FAQ.md)
 
-For documentation see The [wiki](https://github.com/bromite/bromite/wiki).
+For documentation see The [Wiki](github.com/bromite/bromite/wiki).
 
 # Goals
 
@@ -35,7 +35,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 
 # Features
 
-* customizable adblock filters via user-provided URL (see https://www.bromite.org/custom-filters)
+* customizable adblock filters via user-provided URL (see www.bromite.org/custom-filters)
 * automatically updated adblock filters
 * remove click-tracking and AMP from search results
 * DNS-over-HTTPS support with any valid IETF DoH endpoint
@@ -113,8 +113,8 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * mobile/desktop user agent customization
 * accessibility preference to force tablet UI
 * use Alt+D to focus address bar
-* allow sharing to Bromite
-* UI for crash information collection
+* Allow opening links by sharing to Bromite
+* UI for crash information collection (disabled by default)
 * allow OpenSearch search engine detection in incognito
 * allow OpenSearch search engine detection with paths
 * keyboard dictionary hints in address bar
@@ -147,10 +147,10 @@ New flags:
 * `#disable-webgl`
 * `#enable-device-motion` and `#enable-device-orientation`
 * `#show-legacy-tls-warnings`
-* `#save-data-header`, enabled by default
+* `#save-data-header`, disabled by default
 * `#export-bookmarks-use-saf`, disabled by default
 * `#allow-user-certificates`, disabled by default
-* `#cleartext-permitted`, enabled by default, can be used to disable all cleartext-HTTP traffic
+* `#cleartext-permitted`, enabled by default, can be used to disable all HTTP traffic
 * `#omnibox-autocomplete-filtering`, can be used to restrict omnibox autocomplete results
 * `#disable-external-intent-requests`
 * `#enable-userscripts-log`, see https://github.com/bromite/bromite/wiki/UserScripts#flags
@@ -196,7 +196,7 @@ You can download csagan5's public GnuPG key from here: [csagan5.asc](./csagan5.a
 
 # How to build
 
-The [Bromite main repository](https://github.com/bromite/bromite) contains tags for each corresponding Chromium release (see https://chromium.googlesource.com/chromium/src.git).
+The [Bromite main repository](github.com/bromite/bromite) contains tags for each corresponding Chromium release (see chromium.googlesource.com/chromium/src.git).
 
 Please refer to [official Chromium build documentation](https://www.chromium.org/developers/how-tos/get-the-code) to get started on how to build Chromium; if you can build Chromium for Android, you can build Bromite.
 
@@ -206,7 +206,7 @@ The patches are to be applied second the order specified in the `bromite_patches
 
 ## How to build the filters
 
-See upstream documentation: https://github.com/chromium/chromium/blob/master/components/subresource_filter/FILTER_LIST_GENERATION.md
+See upstream documentation: https://chromium.googlesource.com/chromium/src/+/refs/heads/main/components/subresource_filter/FILTER_LIST_GENERATION.md
 
 Bromite uses an unindexed filter file, which is periodically published at https://github.com/bromite/filters
 
