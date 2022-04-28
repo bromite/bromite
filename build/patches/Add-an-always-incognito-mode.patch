@@ -45,7 +45,7 @@ See also: https://github.com/bromite/bromite/pull/1427
  ...FragmentTest_HistoryInAlwaysIncognito.java | 120 +++++++
  .../browser/tab/HistoricalTabSaverTest.java   |   2 +-
  ...ite_AppMenuPropertiesDelegateUnitTest.java | 323 ++++++++++++++++++
- .../browser/android/historical_tab_saver.cc   |  27 +-
+ .../browser/android/historical_tab_saver.cc   |  25 +-
  chrome/browser/android/historical_tab_saver.h |  26 +-
  .../android/historical_tab_saver_unittest.cc  | 148 ++++++++
  .../chrome_autocomplete_provider_client.cc    |   7 +
@@ -65,7 +65,7 @@ See also: https://github.com/bromite/bromite/pull/1427
  .../browser/ui/android/native_page/BUILD.gn   |   2 +
  .../browser/ui/native_page/NativePage.java    |  12 +-
  .../ui/native_page/NativePageTest.java        |  26 ++
- .../strings/android_chrome_strings.grd        |  27 ++
+ .../strings/android_chrome_strings.grd        |  21 ++
  chrome/browser/ui/messages/android/BUILD.gn   |   1 +
  .../snackbar/INeedSnackbarManager.java        |  27 ++
  chrome/common/pref_names.cc                   |   6 +
@@ -80,7 +80,7 @@ See also: https://github.com/bromite/bromite/pull/1427
  .../omnibox/browser/base_search_provider.cc   |   2 +-
  components/omnibox/browser/search_provider.cc |   4 +-
  .../host_content_settings_map_factory.cc      |   1 +
- 65 files changed, 1310 insertions(+), 75 deletions(-)
+ 65 files changed, 1300 insertions(+), 77 deletions(-)
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/AlwaysIncognitoLinkInterceptor.java
  create mode 100644 chrome/android/javatests/src/org/chromium/chrome/browser/history/Bromite_HistoryManagerTest.java
  create mode 100644 chrome/android/javatests/src/org/chromium/chrome/browser/privacy/settings/Bromite_PrivacySettingsFragmentTest_HistoryInAlwaysIncognito.java
@@ -626,7 +626,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/native_page/Nat
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/RecentTabsManager.java b/chrome/android/java/src/org/chromium/chrome/browser/ntp/RecentTabsManager.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ntp/RecentTabsManager.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ntp/RecentTabsManager.java
-@@ -74,16 +74,16 @@ public class RecentTabsManager implements SignInStateObserver,
+@@ -73,16 +73,16 @@ public class RecentTabsManager implements AccountsChangeObserver {
       */
      public RecentTabsManager(Tab tab, TabModelSelector tabModelSelector, Profile profile,
              Context context, Runnable showHistoryManager) {
@@ -1577,11 +1577,11 @@ diff --git a/chrome/browser/android/historical_tab_saver.cc b/chrome/browser/and
    if (!tab_android) {
      return;
    }
-@@ -30,9 +35,14 @@ void CreateHistoricalTab(TabAndroid* tab_android) {
+@@ -30,16 +35,21 @@ void CreateHistoricalTab(TabAndroid* tab_android) {
      return;
    }
  
-+  auto* profile = Profile::FromBrowserContext(web_contents->GetBrowserContext());
++  auto* profile = Profile::FromBrowserContext(scoped_web_contents->web_contents()->GetBrowserContext());
 +  if (is_always_incognito) {
 +    if (profile->GetOriginalProfile()->GetPrefs()->GetBoolean(prefs::kIncognitoTabHistoryEnabled))
 +      profile = profile->GetOriginalProfile();
@@ -1590,20 +1590,20 @@ diff --git a/chrome/browser/android/historical_tab_saver.cc b/chrome/browser/and
    sessions::TabRestoreService* service =
 -      TabRestoreServiceFactory::GetForProfile(Profile::FromBrowserContext(
 -          scoped_web_contents->web_contents()->GetBrowserContext()));
-+      TabRestoreServiceFactory::GetForProfile(profile)
++      TabRestoreServiceFactory::GetForProfile(profile);
    if (!service) {
      return;
    }
-@@ -74,11 +84,18 @@ std::unique_ptr<ScopedWebContents> ScopedWebContents::CreateForTab(
  
- // Static JNI methods.
+-  // Index is unimportant on Android.
++  // index is not important on Android
+   service->CreateHistoricalTab(sessions::ContentLiveTab::GetForWebContents(
+-                                   scoped_web_contents->web_contents()),
++                               scoped_web_contents->web_contents()),
+                                /*index=*/-1);
+ }
  
-+// static
-+void CreateHistoricalTabForTest(content::WebContents* web_contents,
-+                                bool is_always_incognito) {
-+  CreateHistoricalTab(web_contents, is_always_incognito);
-+}
-+
+@@ -77,8 +87,9 @@ std::unique_ptr<ScopedWebContents> ScopedWebContents::CreateForTab(
  // static
  static void JNI_HistoricalTabSaver_CreateHistoricalTab(
      JNIEnv* env,
@@ -2334,10 +2334,10 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
 +      <message name="IDS_ALWAYS_INCOGNITO_SUMMARY" desc="Summary for always incognito mode">
 +        Opens links in incognito tabs when you click on new tab or on a link
 +      </message>
-+      <message name="IDS_RELAUNCH" desc="Summary for always incognito mode">
++      <message name="IDS_RELAUNCH" desc="Summary for always incognito mode relaunch prompt">
 +        Relaunch
 +      </message>
-+      <message name="IDS_UI_RELAUNCH_NOTICE" desc="Summary for always incognito mode">
++      <message name="IDS_UI_RELAUNCH_NOTICE" desc="Summary for always incognito mode relaunch prompt description">
 +        Your changes will take effect the next time you relaunch Bromite.
 +      </message>
 +      <message name="IDS_INCOGNITO_HISTORY_ENABLED_TITLE" desc="Title for always enable history in incognito mode">
@@ -2350,19 +2350,6 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
        <message name="IDS_CLEAR_BROWSING_HISTORY_SUMMARY_SYNCED_NO_LINK" desc="A text for the basic tab explaining browsing history for users with history sync. This version is shown when the link to MyActivity is displayed separately.">
          Clears history from all synced devices.
        </message>
-@@ -1113,6 +1134,12 @@ Your Google account may have other forms of browsing history like searches and a
-         <ph name="BEGIN_LINK1">&lt;link1&gt;</ph>Search history<ph name="END_LINK1">&lt;/link1&gt;</ph> and <ph name="BEGIN_LINK2">&lt;link2&gt;</ph>other forms of activity<ph name="END_LINK2">&lt;/link2&gt;</ph> may be saved in your Google Account when you’re signed in. You can delete them anytime.
-       </message>
-       <message name="IDS_CLEAR_SEARCH_HISTORY_LINK_OTHER_FORMS" desc="Text informing the user that they can clear their Google data using MyActivity when their Default Search Engine is not Google.">
-+			<message name="IDS_INCOGNITO_HISTORY_ENABLED_TITLE" desc="Title for always enable history in incognito mode">
-+				Enable history in incognito tabs
-+			</message>
-+			<message name="IDS_INCOGNITO_HISTORY_ENABLED_SUMMARY" desc="Summary for always enable history in incognito mode">
-+				Record history even in incognito mode
-+			</message>
-         <ph name="BEGIN_LINK1">&lt;link1&gt;</ph>Other forms of activity<ph name="END_LINK1">&lt;/link1&gt;</ph> may be saved in your Google Account when you’re signed in. You can delete them anytime.
-       </message>
-       <message name="IDS_CLEAR_SEARCH_HISTORY_NON_GOOGLE_DSE" desc="Text informing the user about the way to clear their search history when their Default Search Engine is not Google.">
 diff --git a/chrome/browser/ui/messages/android/BUILD.gn b/chrome/browser/ui/messages/android/BUILD.gn
 --- a/chrome/browser/ui/messages/android/BUILD.gn
 +++ b/chrome/browser/ui/messages/android/BUILD.gn
