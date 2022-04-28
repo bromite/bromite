@@ -1,3 +1,9 @@
+# 101.0.4951.39
+* save only ContentSettings in always-incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1942)
+* fix a couple issues related to signin and metrics leftover code affecting debug builds (thanks to @uazo)
+* remove some more parameters from the English-version search engine (thanks to @uazo)
+* add welcome screen with mention of privacy statements (fixes https://github.com/bromite/bromite/issues/691)
+
 # 100.0.4896.135
 * remove mremap from seccomp baseline policy
 * add flag to move top toolbar to bottom (thanks to @uazo)
