@@ -1,3 +1,8 @@
+# 101.0.4951.53
+* move incognito settings to separate page (thanks to @uazo)
+* disable automatic offline pages saving by default (thanks to @uazo)
+* make history support and site settings in always incognito mode disabled by default (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1991)
+
 # 101.0.4951.39
 * save only ContentSettings in always-incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1942)
 * fix a couple issues related to signin and metrics leftover code affecting debug builds (thanks to @uazo)
