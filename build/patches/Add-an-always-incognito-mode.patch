@@ -23,7 +23,7 @@ See also: https://github.com/bromite/bromite/pull/1427
  .../AlwaysIncognitoLinkInterceptor.java       |  53 ++++++
  .../chrome/browser/ChromeTabbedActivity.java  |   6 +-
  .../chrome/browser/app/ChromeActivity.java    |   4 +
- .../AppMenuPropertiesDelegateImpl.java        |  33 +++-
+ .../AppMenuPropertiesDelegateImpl.java        |  26 ++-
  .../ChromeContextMenuPopulator.java           |   7 +-
  .../CustomTabActivityLifecycleUmaTracker.java |  25 ---
  .../CustomTabAppMenuPropertiesDelegate.java   |   4 +
@@ -49,7 +49,7 @@ See also: https://github.com/bromite/bromite/pull/1427
  .../host_content_settings_map_factory.cc      |  20 ++-
  chrome/browser/flag_descriptions.cc           |   6 +
  chrome/browser/flag_descriptions.h            |   3 +
- .../flags/android/chrome_feature_list.cc      |   2 +-
+ .../flags/android/chrome_feature_list.cc      |   4 +-
  chrome/browser/history/history_tab_helper.cc  |  18 ++
  chrome/browser/history/history_tab_helper.h   |  10 +-
  .../android/offline_page_bridge.cc            |  13 +-
@@ -78,7 +78,7 @@ See also: https://github.com/bromite/bromite/pull/1427
  .../omnibox/browser/base_search_provider.cc   |   2 +-
  components/omnibox/browser/search_provider.cc |   4 +-
  .../host_content_settings_map_factory.cc      |   1 +
- 62 files changed, 688 insertions(+), 71 deletions(-)
+ 62 files changed, 682 insertions(+), 72 deletions(-)
  create mode 100644 chrome/android/java/res/xml/incognito_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/AlwaysIncognitoLinkInterceptor.java
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/IncognitoSettings.java
@@ -295,21 +295,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/App
  /**
   * Base implementation of {@link AppMenuPropertiesDelegate} that handles hiding and showing menu
   * items based on activity state.
-@@ -156,6 +161,13 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
-     private @StartSurfaceState int mStartSurfaceState;
-     protected Runnable mAppMenuInvalidator;
- 
-+    private PrefService sPrefServiceForTest;
-+
-+    @VisibleForTesting
-+    public void setPrefForTest(PrefService prefService) {
-+        sPrefServiceForTest = prefService;
-+    }
-+
-     /**
-      * Construct a new {@link AppMenuPropertiesDelegateImpl}.
-      * @param context The activity context.
-@@ -524,6 +536,13 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+@@ -524,6 +529,13 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
      }
  
      private void prepareCommonMenuItems(Menu menu, @MenuGroup int menuGroup, boolean isIncognito) {
@@ -323,13 +309,13 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/App
          // We have to iterate all menu items since same menu item ID may be associated with more
          // than one menu items.
          boolean isOverviewModeMenu = menuGroup == MenuGroup.OVERVIEW_MODE_MENU;
-@@ -580,7 +599,15 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+@@ -580,7 +592,15 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
              }
  
              if (item.getItemId() == R.id.recent_tabs_menu_id) {
 -                item.setVisible(!isIncognito);
 +                if (always_incognito) {
-+                    PrefService prefService = sPrefServiceForTest != null ? sPrefServiceForTest :
++                    PrefService prefService =
 +                                                            UserPrefs.get(Profile.getLastUsedRegularProfile());
 +                    boolean historyEnabledInIncognito =
 +                        prefService.getBoolean(Pref.INCOGNITO_TAB_HISTORY_ENABLED);
@@ -340,7 +326,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/App
              }
              if (item.getItemId() == R.id.menu_group_tabs) {
                  item.setVisible(isMenuGroupTabsVisible);
-@@ -817,7 +844,9 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+@@ -817,7 +837,9 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
          //                is not persisted when adding to the homescreen.
          // * If creating shortcuts it not supported by the current home screen.
          return WebappsUtils.isAddToHomeIntentSupported() && !isChromeScheme && !isFileScheme
@@ -1215,11 +1201,13 @@ diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptio
 diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browser/flags/android/chrome_feature_list.cc
 --- a/chrome/browser/flags/android/chrome_feature_list.cc
 +++ b/chrome/browser/flags/android/chrome_feature_list.cc
-@@ -483,7 +483,7 @@ const base::Feature kCCTIncognito{"CCTIncognito",
+@@ -482,8 +482,8 @@ const base::Feature kCCTExternalLinkHandling{"CCTExternalLinkHandling",
+ const base::Feature kCCTIncognito{"CCTIncognito",
                                    base::FEATURE_ENABLED_BY_DEFAULT};
  
- const base::Feature kCCTIncognitoAvailableToThirdParty{
+-const base::Feature kCCTIncognitoAvailableToThirdParty{
 -    "CCTIncognitoAvailableToThirdParty", base::FEATURE_DISABLED_BY_DEFAULT};
++const base::Feature kCCTIncognitoAvailableToThirdParty{                     // Enabled by default in Bromite
 +    "CCTIncognitoAvailableToThirdParty", base::FEATURE_ENABLED_BY_DEFAULT};
  
  const base::Feature kCCTPostMessageAPI{"CCTPostMessageAPI",
@@ -1610,13 +1598,13 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
        </message>
 +      <!-- always incognito -->
 +      <message name="IDS_INCOGNITO_SETTINGS_TITLE" desc="Title for incognito mode settings">
-+        Incognito mode settings
++        Incognito mode
 +      </message>
 +      <message name="IDS_INCOGNITO_SETTINGS_SUMMARY" desc="Summary for incognito mode settings">
-+        Sets the flags of incognito mode
++        Incognito navigation settings
 +      </message>
 +      <message name="IDS_ALWAYS_INCOGNITO_TITLE" desc="Title for always incognito mode">
-+        Open links in incognito tabs always
++        Always open links in incognito
 +      </message>
 +      <message name="IDS_ALWAYS_INCOGNITO_SUMMARY" desc="Summary for always incognito mode">
 +        Opens links in incognito tabs when you click on new tab or on a link
@@ -1627,18 +1615,18 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
 +      <message name="IDS_UI_RELAUNCH_NOTICE" desc="Summary for relaunch message">
 +        Your changes will take effect the next time you relaunch Bromite.
 +      </message>
-+			<message name="IDS_INCOGNITO_HISTORY_ENABLED_TITLE" desc="Title for always enable history in incognito mode">
-+				Enable history in incognito tabs
-+			</message>
-+			<message name="IDS_INCOGNITO_HISTORY_ENABLED_SUMMARY" desc="Summary for always enable history in incognito mode">
-+				Record history even in incognito mode
-+			</message>
-+			<message name="IDS_INCOGNITO_SAVE_SITE_SETTING_ENABLED_TITLE" desc="Title for save site setting flag in incognito mode">
-+				Save site settings in incognito mode
-+			</message>
-+			<message name="IDS_INCOGNITO_SAVE_SITE_SETTING_ENABLED_SUMMARY" desc="Summary for save site setting flag in incognito mode">
-+				Allows to save site settings in incognito mode
-+			</message>
++      <message name="IDS_INCOGNITO_HISTORY_ENABLED_TITLE" desc="Title for enabled history in incognito mode">
++        Enable history
++      </message>
++      <message name="IDS_INCOGNITO_HISTORY_ENABLED_SUMMARY" desc="Summary for enable history in incognito mode">
++        Record history even in incognito mode
++      </message>
++      <message name="IDS_INCOGNITO_SAVE_SITE_SETTING_ENABLED_TITLE" desc="Title for save site setting flag in incognito mode">
++        Remember site settings
++      </message>
++      <message name="IDS_INCOGNITO_SAVE_SITE_SETTING_ENABLED_SUMMARY" desc="Summary for save site setting flag in incognito mode">
++        Remember site settings changes in incognito mode
++      </message>
        <message name="IDS_CLEAR_SEARCH_HISTORY_LINK" desc="Text informing the user that they can clear search history and other data using MyActivity.">
          <ph name="BEGIN_LINK1">&lt;link1&gt;</ph>Search history<ph name="END_LINK1">&lt;/link1&gt;</ph> and <ph name="BEGIN_LINK2">&lt;link2&gt;</ph>other forms of activity<ph name="END_LINK2">&lt;/link2&gt;</ph> may be saved in your Google Account when you’re signed in. You can delete them anytime.
        </message>
@@ -1826,7 +1814,7 @@ diff --git a/components/offline_pages/core/offline_page_feature.cc b/components/
      "OfflinePagesNetworkStateLikelyUnknown", base::FEATURE_DISABLED_BY_DEFAULT};
  
 +const base::Feature kOfflinePagesAutoSaveFeature{
-+    "OfflinePagesAutoSaveEnabled", base::FEATURE_ENABLED_BY_DEFAULT};
++    "OfflinePagesAutoSaveEnabled", base::FEATURE_DISABLED_BY_DEFAULT};
 +
  const char kPrefetchingOfflinePagesExperimentsOption[] = "exp";
  
