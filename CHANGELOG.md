@@ -2,6 +2,9 @@
 * move incognito settings to separate page (thanks to @uazo)
 * disable automatic offline pages saving by default (thanks to @uazo)
 * make history support and site settings in always incognito mode disabled by default (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1991)
+* move pop-up toolbar to the bottom when using bottom navigation bar (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2030)
+* menu does not show all entries (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2011)
+* stray shadow when using bottom toolbar (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1995)
 
 # 101.0.4951.39
 * save only ContentSettings in always-incognito mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1942)
