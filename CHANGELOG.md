@@ -1,3 +1,11 @@
+# 101.0.4951.69
+* flag to toggle site engagement (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2022)
+* site settings to enable webGL (thanks to @uazo)
+* removed flag to disable webGL
+* fix bottom navigation bar search/site suggestions behaviour (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2049)
+* enable process isolation for all iframes
+* add webRTC site settings (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1965)
+
 # 101.0.4951.53
 * move incognito settings to separate page (thanks to @uazo)
 * disable automatic offline pages saving by default (thanks to @uazo)
