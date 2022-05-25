@@ -27,56 +27,56 @@ diff --git a/content/public/common/user_agent.h b/content/public/common/user_age
 -    "Safari/537.36";
 +    "Safari/537.36  Firefox/97.2.0";
  const char kUnifiedPlatformAndroid[] = "Linux; Android 10; K";
- const char kUnifiedPlatformCrOS[] = "X11; CrOS x86_64";
+ const char kUnifiedPlatformCrOS[] = "X11; CrOS x86_64 14541.0.0";
  const char kUnifiedPlatformLinux[] = "X11; Linux x86_64";
 diff --git a/content/common/user_agent.cc b/content/common/user_agent.cc
 --- a/content/common/user_agent.cc
 +++ b/content/common/user_agent.cc
 @@ -36,7 +36,7 @@ std::string GetUserAgentPlatform() {
- #elif defined(USE_OZONE)
+ #elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
    return "X11; ";  // strange, but that's what Firefox uses
- #elif defined(OS_ANDROID)
+ #elif BUILDFLAG(IS_ANDROID)
 -  return "X11; ";
 +  return "Linux; ";
- #elif defined(OS_FUCHSIA)
-   // TODO(https://crbug.com/1225812): Determine what to report for Fuchsia,
-   // considering both backwards compatibility and User-Agent Reduction.
-@@ -49,7 +49,9 @@ std::string GetUserAgentPlatform() {
+ #elif BUILDFLAG(IS_FUCHSIA)
+   return "";
+ #else
+@@ -47,7 +47,9 @@ std::string GetUserAgentPlatform() {
  }  // namespace
 
  std::string GetUnifiedPlatform() {
--#if defined(OS_CHROMEOS)
-+#if defined(OS_ANDROID)
+-#if BUILDFLAG(IS_CHROMEOS)
++#if BUILDFLAG(IS_ANDROID)
 +  return frozen_user_agent_strings::kUnifiedPlatformAndroid;
-+#elif defined(OS_CHROMEOS)
++#elif BUILDFLAG(IS_CHROMEOS)
    return frozen_user_agent_strings::kUnifiedPlatformCrOS;
- #elif defined(OS_MAC)
+ #elif BUILDFLAG(IS_MAC)
    return frozen_user_agent_strings::kUnifiedPlatformMacOS;
-@@ -217,7 +219,7 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
+@@ -215,7 +217,7 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
                                                    const std::string& cpu_type) {
    std::string os_cpu;
 
--#if defined(OS_POSIX) && !defined(OS_MAC)
-+#if !defined(OS_ANDROID) && defined(OS_POSIX) && !defined(OS_MAC)
+-#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_MAC)
++#if !BUILDFLAG(IS_ANDROID) && BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_MAC)
    // Should work on any Posix system.
    struct utsname unixinfo;
    uname(&unixinfo);
-@@ -239,9 +241,7 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
+@@ -238,9 +240,7 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
                        cpu_type.c_str(),  // e.g. i686
                        os_version.c_str()
- #elif defined(OS_ANDROID)
--                       "%s %s",
--                       unixinfo.sysname,  // e.g. Linux
--                       cpu_type.c_str()   // e.g. i686
+ #elif BUILDFLAG(IS_ANDROID)
+-                      "%s %s",
+-                      unixinfo.sysname,  // e.g. Linux
+-                      cpu_type.c_str()   // e.g. i686
 +                      "Android %s", os_version.c_str()
- #elif defined(OS_FUCHSIA)
+ #elif BUILDFLAG(IS_FUCHSIA)
                        "Fuchsia"
- #elif defined(OS_POSIX)
-@@ -257,9 +257,20 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
+ #elif BUILDFLAG(IS_POSIX)
+@@ -256,9 +256,20 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
 
  std::string GetReducedUserAgent(bool mobile, std::string major_version) {
    std::string user_agent;
-+#if defined(OS_ANDROID)
++#if BUILDFLAG(IS_ANDROID)
 +  std::string device_compat;
 +  // Note: The extra space after Mobile is meaningful here, to avoid
 +  // "MobileSafari", but unneeded for non-mobile Android devices.
@@ -110,10 +110,11 @@ diff --git a/content/common/user_agent.cc b/content/common/user_agent.cc
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
-@@ -265,6 +265,17 @@ std::string GetProduct() {
+@@ -347,6 +347,20 @@ std::string GetProduct() {
  }
 
- std::string GetUserAgent() {
+ std::string GetUserAgent(
+     ForceMajorVersionToMinorPosition force_major_to_minor) {
 +  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 +  if (command_line->HasSwitch(kUserAgent)) {
 +    std::string ua = command_line->GetSwitchValueASCII(kUserAgent);
@@ -122,17 +123,19 @@ diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedd
 +    LOG(WARNING) << "Ignored invalid value for flag --" << kUserAgent;
 +  }
 +
-+  if (base::FeatureList::IsEnabled(blink::features::kReduceUserAgent))
-+    return GetReducedUserAgent();
++  if (base::FeatureList::IsEnabled(blink::features::kFullUserAgent))
++    return GetFullUserAgent();
 +
-   return GetFullUserAgent();
++  if (base::FeatureList::IsEnabled(blink::features::kReduceUserAgent))
++    return GetReducedUserAgent(force_major_to_minor);
++
+   return GetFullUserAgent(force_major_to_minor);
  }
-
-@@ -280,5 +291,10 @@ std::string GetReducedUserAgent() {
-
- std::string GetFullUserAgent() {
-   std::string product = GetProduct(/*allow_version_override=*/true);
-+#if defined(OS_ANDROID)
+@@ -368,5 +382,10 @@ std::string GetReducedUserAgent(
+ std::string GetFullUserAgent(
+     ForceMajorVersionToMinorPosition force_major_to_minor) {
+   std::string product = GetProductAndVersion(force_major_to_minor);
++#if BUILDFLAG(IS_ANDROID)
 +  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
 +          switches::kUseMobileUserAgent))
 +    product += " Mobile";

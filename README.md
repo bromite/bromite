@@ -1,3 +1,185 @@
+# Chromium Bromite patches + Promethean additions
+
+This is a fork of the [Bromite repo on Github](https://github.com/bromite/bromite).
+
+It contains a number of patches to Chromium that greatly increase
+security and privacy and fix various annoyances.
+
+One patch has been removed from the original Bromite distribution:
+
+- Automated domain substitution
+
+One patch has been modified:
+
+- The Bromite adblock engine is disabled by default
+
+# Build instructions
+
+## Getting Chromium
+
+Building requires a [properly set up
+environment](https://chromium.googlesource.com/chromium/src/+/refs/tags/95.0.4638.78/docs/android_build_instructions.md#System-requirements). The
+Promethean [builder machine](https://builder.waq.be) has the proper
+dependencies installed.
+
+The builder also has an existing Chromium checkout in
+`/tank/chromium/src` and a checkout of this repo in
+`/tank/chromium/bromite`.  Before starting, you may wish to make a
+clone of `/tank/chromium`:
+
+```
+sudo zfs snapshot tank/chromium@allen
+sudo zfs clone tank/chromium@allen tank/chromium4allen
+```
+
+If you are not using the builder or wish to
+start from scratch, follow the instructions to [install depot_tools]
+and [get the code] but stop before the [Install additional build
+dependencies](https://chromium.googlesource.com/chromium/src/+/refs/tags/95.0.4638.78/docs/android_build_instructions.md#Install-additional-build-dependencies)
+section. If you're building on the builder box, skip that particular
+instruction. Apply the patches before continuing.
+
+## Prepare your environment
+
+All the operations that follow assume you are in an updated checkout
+of Chromium. It's advisable to set your `PATH` to where `gclient` is
+located. For example:
+
+```
+export PATH=/tank/chromium4allen/depot_tools/:$PATH
+cd /tank/chromium4allen/src
+```
+
+## Prepare Chromium
+
+The patches are intended to be applied to the `101.0.4951.69` tag of
+the Chromium repo. Before continuing, make sure you are on that tag in
+the Chromium source repo:
+
+```
+git fetch origin
+git checkout -B promethean-101.0.4951.69 101.0.4951.69
+gclient sync --with_branch_heads --with_tags
+gclient runhooks
+```
+
+Do a quick check to see if there are any new dependencies that might be missing:
+
+```
+./build/install-build-deps.sh --quick-check
+```
+
+Note: this does not do a comprehensive check for missing
+dependencies. If you have troubles with the build, you may wish to run
+`./build/install-build-deps.sh` to make sure dependencies are properly
+installed.
+
+## Applying the patches
+
+Now apply the patches in correct order. Make sure you do this from the
+`src/` directory of the Chromium checkout and set the `BROMITE_REPO`
+variable to the location of this checkout:
+
+```
+export BROMITE_REPO=/tank/chromium4allen/bromite
+for patchName in `cat $BROMITE_REPO/build/bromite_patches_list.txt`; do
+  git am $BROMITE_REPO/build/patches/$patchName || break
+done
+```
+
+All patches should apply cleanly. If they did not, make sure you have
+checked out the proper Chromium tag (101.0.4951.69).
+
+## Getting the third dependencies
+
+If you have added the third dependencies to `third_party/android_deps/build.gradle`,
+you need to run `third_party/android_deps/fetch_all.py` to regenerate libs.
+
+```
+python3 third_party/android_deps/fetch_all.py --android-deps-dir third_party/android_deps/ --ignore-vulnerabilities --ignore-licenses
+```
+
+### How to add third dependencies
+
+First, you need to add the configurations to `third_party/android_deps/build.gradle`,
+like `compile 'com.prometheanworld:telemetry:0.3.2'`.
+Also, if other configurations (such as `resource_overlay = true`, `enable_bytecode_checks = false`) are needed,
+you need to add these configurations to `third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy`.
+
+Secondly, if you want to use these libs on `chrome/android`, you need to add these to `chrome/android/BUILD.gn`.
+If you don't know where to add, maybe you can run the build, the error message will tell you.
+
+Finally, if you don't know how to begin with, maybe `Telemetry-event-video-full-screen.patch` will help you.
+
+## Setting the build arguments
+
+The arguments in `bromite/build/bromite.gn_args` must be used as the Chromium
+build arguments. To do this, run `gn args` with the default args
+file. You can optionally set your preferred editor. This is done from
+the Chromium src directory:
+
+```
+EDITOR=vi gn args out/Default
+```
+
+Replace all the args with the contents of the `build/bromite.gn_args` file in this repo.
+
+## Continuing the build
+
+This command will build Chromium for the Android API 28 target. This
+should produce a package with the highest level of optimization for
+ActivPanel devices:
+
+```
+autoninja -C out/Default monochrome_public_apk
+```
+
+The resulting APK can be found at
+`out/Default/apks/MonochromePublic.apk` in the Chromium source
+directory.
+
+(Original Bromite README follows)
+
+## Merging upstream changes
+
+Periodically the Bromite project will add new patches for
+release. There is a specific process to add these to this repo which
+should be followed to ensure a clean and maintainable Git history.
+
+1. Make sure the upstream remote is established.
+
+If you do not have an upstream remote, add it with:
+
+    git remote add upstream https://github.com/bromite/bromite.git
+
+2. Retrieve the upstream changes
+
+   git fetch upstream
+
+3. Find the latest Bromite release tag
+
+   git describe --tags --abbrev=0 upstream/master
+
+This will give you output like `101.0.4951.69` which we'll use as an example going forward.
+
+4. Create a new branch based on this tag
+
+   git checkout -b upstream-101.0.4951.69 101.0.4951.69
+
+5. Rebase this branch on the current master
+
+   git rebase origin/master
+
+If the rebase complete cleanly, you're done! Push the branch and open
+a PR to master.
+
+If you run into conflicts, there is more work to do. We want to keep
+the upstream commits faithful to their original source. This means
+collecting any conflicts and putting them into a separate commit. The
+procedure is largely the same but start out by adding a commit with
+the conflicts pre-resolved. Then rebase onto `origin/master` and -- if
+the rebase succeeds cleanly -- push the new branch.
+
 # Bromite - Take back your browser
 <a href="https://github.com/bromite/bromite/releases/latest">
   <img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> </a>
