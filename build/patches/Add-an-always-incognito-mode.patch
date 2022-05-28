@@ -38,11 +38,11 @@ See also: https://github.com/bromite/bromite/pull/1427
  .../browser/settings/SettingsActivity.java    |   4 +
  .../HistoricalTabModelObserver.java           |   8 +-
  .../tab/tab_restore/HistoricalTabSaver.java   |   2 +-
- .../tab_restore/HistoricalTabSaverImpl.java   |  12 +-
+ .../tab_restore/HistoricalTabSaverImpl.java   |  16 +-
  .../tabbed_mode/TabbedRootUiCoordinator.java  |   5 +-
  .../browser/tabmodel/ChromeTabCreator.java    |   5 +-
  .../tabmodel/TabModelSelectorImpl.java        |   3 +
- .../browser/tabmodel/TabPersistentStore.java  |  10 ++
+ .../browser/tabmodel/TabPersistentStore.java  |   9 +
  .../webapps/WebappIntentDataProvider.java     |  14 ++
  chrome/browser/about_flags.cc                 |   4 +
  .../browser/android/historical_tab_saver.cc   |  21 ++-
@@ -80,7 +80,7 @@ See also: https://github.com/bromite/bromite/pull/1427
  .../omnibox/browser/base_search_provider.cc   |   2 +-
  components/omnibox/browser/search_provider.cc |   4 +-
  .../host_content_settings_map_factory.cc      |   1 +
- 64 files changed, 686 insertions(+), 74 deletions(-)
+ 64 files changed, 688 insertions(+), 75 deletions(-)
  create mode 100644 chrome/android/java/res/xml/incognito_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/AlwaysIncognitoLinkInterceptor.java
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/IncognitoSettings.java
@@ -885,7 +885,16 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/tab_restore
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/tab_restore/HistoricalTabSaverImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/tab/tab_restore/HistoricalTabSaverImpl.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tab/tab_restore/HistoricalTabSaverImpl.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tab/tab_restore/HistoricalTabSaverImpl.java
-@@ -46,10 +46,10 @@ public class HistoricalTabSaverImpl implements HistoricalTabSaver {
+@@ -25,6 +25,8 @@ import java.util.Arrays;
+ import java.util.Collections;
+ import java.util.List;
+ 
++import org.chromium.chrome.browser.AlwaysIncognitoLinkInterceptor;
++
+ /**
+  * Creates historical entries in TabRestoreService.
+  */
+@@ -46,10 +48,10 @@ public class HistoricalTabSaverImpl implements HistoricalTabSaver {
  
      // HistoricalTabSaver implementation.
      @Override
@@ -898,7 +907,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/tab_restore
      }
  
      @Override
-@@ -90,7 +90,7 @@ public class HistoricalTabSaverImpl implements HistoricalTabSaver {
+@@ -90,7 +92,7 @@ public class HistoricalTabSaverImpl implements HistoricalTabSaver {
  
          // If there is only a single valid tab remaining save it individually.
          if (validEntries.size() == 1 && validEntries.get(0).isSingleTab()) {
@@ -907,7 +916,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/tab_restore
              return;
          }
  
-@@ -107,8 +107,8 @@ public class HistoricalTabSaverImpl implements HistoricalTabSaver {
+@@ -107,8 +109,8 @@ public class HistoricalTabSaverImpl implements HistoricalTabSaver {
                  CollectionUtil.integerListToIntArray(perTabGroupId), allTabs.toArray(new Tab[0]));
      }
  
@@ -918,7 +927,16 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/tab_restore
      }
  
      /**
-@@ -194,7 +194,7 @@ public class HistoricalTabSaverImpl implements HistoricalTabSaver {
+@@ -116,7 +118,7 @@ public class HistoricalTabSaverImpl implements HistoricalTabSaver {
+      * internal Chrome scheme, about:blank, or a native page and it cannot be incognito.
+      */
+     private boolean shouldSave(Tab tab) {
+-        if (tab.isIncognito()) return false;
++        if (tab.isIncognito() && !AlwaysIncognitoLinkInterceptor.isAlwaysIncognito()) return false;
+ 
+         // {@link GURL#getScheme()} is not available in unit tests.
+         if (mIgnoreUrlSchemesForTesting) return true;
+@@ -194,7 +196,7 @@ public class HistoricalTabSaverImpl implements HistoricalTabSaver {
  
      @NativeMethods
      interface Natives {
@@ -998,15 +1016,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabMod
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStore.java b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStore.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStore.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStore.java
-@@ -18,6 +18,7 @@ import androidx.core.util.AtomicFile;
- 
- import org.chromium.base.Callback;
- import org.chromium.base.CallbackController;
-+import org.chromium.base.ContextUtils;
- import org.chromium.base.FeatureList;
- import org.chromium.base.Log;
- import org.chromium.base.ObserverList;
-@@ -58,6 +59,8 @@ import org.chromium.content_public.browser.LoadUrlParams;
+@@ -58,6 +58,8 @@ import org.chromium.content_public.browser.LoadUrlParams;
  import org.chromium.content_public.browser.UiThreadTaskTraits;
  import org.chromium.url.GURL;
  
@@ -1015,7 +1025,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPer
  import java.io.BufferedInputStream;
  import java.io.ByteArrayInputStream;
  import java.io.ByteArrayOutputStream;
-@@ -739,6 +742,13 @@ public class TabPersistentStore {
+@@ -739,6 +741,13 @@ public class TabPersistentStore {
                  }
              }
          }

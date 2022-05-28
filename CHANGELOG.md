@@ -1,3 +1,8 @@
+# 102.0.5005.67
+* dropped patch to disable mobile identity consistency by default
+* fix text for blocked ads (fixes https://github.com/bromite/bromite/issues/2026)
+* fix OpenSeach visited site detection bug (fixes https://github.com/bromite/bromite/issues/1994)
+
 # 101.0.4951.69
 * flag to toggle site engagement (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2022)
 * site settings to enable webGL (thanks to @uazo)
