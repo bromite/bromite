@@ -1,0 +1,503 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Mon, 31 Jan 2022 12:49:39 +0000
+Subject: History number of days privacy setting
+
+Adds a new option in the privacy settings that allows the selection of
+the days to keep in the browsing history.
+Selecting the "Never" item activates the kSavingBrowserHistoryDisabled
+flag and immediately deletes all the history.
+---
+ .../preference_spinner_single_line.xml        | 26 ++++++--
+ .../java/res/xml/privacy_preferences.xml      |  6 ++
+ .../privacy/settings/PrivacySettings.java     | 63 +++++++++++++++++++
+ .../history/history_service_factory.cc        |  2 +
+ chrome/browser/preferences/BUILD.gn           |  1 +
+ chrome/browser/profiles/profile_impl.cc       |  1 +
+ .../strings/android_chrome_strings.grd        | 12 ++++
+ .../java/res/layout/preference_spinner.xml    |  7 +++
+ .../layout/preference_spinner_single_line.xml |  7 +++
+ .../settings/SpinnerPreference.java           |  7 +++
+ .../core/browser/expire_history_backend.cc    | 21 +++++++
+ .../core/browser/expire_history_backend.h     |  2 +
+ .../history/core/browser/history_backend.cc   | 14 +++++
+ .../history/core/browser/history_backend.h    |  2 +
+ .../history/core/browser/history_service.cc   | 33 ++++++++++
+ .../history/core/browser/history_service.h    |  8 +++
+ components/history/core/common/pref_names.cc  |  4 ++
+ components/history/core/common/pref_names.h   |  1 +
+ 18 files changed, 211 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/android/java/res/layout-sw360dp/preference_spinner_single_line.xml b/chrome/android/java/res/layout-sw360dp/preference_spinner_single_line.xml
+--- a/chrome/android/java/res/layout-sw360dp/preference_spinner_single_line.xml
++++ b/chrome/android/java/res/layout-sw360dp/preference_spinner_single_line.xml
+@@ -11,19 +11,33 @@
+     android:layout_height="wrap_content"
+     android:orientation="horizontal"
+     android:paddingEnd="@dimen/pref_spinner_padding_end"
+-    android:paddingTop="12dp"
++    android:paddingTop="0dp"
+     android:paddingBottom="6dp">
+ 
+-    <TextView
+-        android:id="@+id/title"
+-        style="@style/PreferenceTitle"
+-        android:textAppearance="@style/TextAppearance.TextLarge.Secondary"
++    <LinearLayout
++        android:orientation="vertical"
+         android:textAlignment="viewStart"
+         android:layout_height="wrap_content"
+         android:layout_width="0dp"
+         android:layout_weight="1"
+         android:paddingTop="12dp"
+-        android:paddingBottom="12dp"/>
++        android:paddingBottom="12dp">
++
++        <TextView
++            android:id="@+id/title"
++            style="@style/PreferenceTitle"
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:textAppearance="@style/TextAppearance.TextLarge.Secondary" />
++
++        <TextView
++            android:id="@+id/summary"
++            style="@style/PreferenceSummary"
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:visibility="gone" />
++
++    </LinearLayout>
+ 
+     <Spinner
+         android:id="@+id/spinner"
+diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
+--- a/chrome/android/java/res/xml/privacy_preferences.xml
++++ b/chrome/android/java/res/xml/privacy_preferences.xml
+@@ -28,6 +28,12 @@
+         android:title="@string/settings_incognito_tab_lock_title"
+         android:summary="@string/settings_incognito_tab_lock_summary_android_setting_off"
+         android:persistent="false"/>
++    <org.chromium.components.browser_ui.settings.SpinnerPreference
++        android:key="history_expire_days_threshold"
++        android:persistent="false"
++        android:title="@string/history_expire_days_threshold_title"
++        android:summary="@string/history_expire_days_threshold_summary"
++        app:singleLine="true" />
+     <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
+         android:key="can_make_payment"
+         android:title="@string/can_make_payment_title"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
+@@ -37,6 +37,7 @@ import org.chromium.chrome.browser.settings.SettingsLauncherImpl;
+ import org.chromium.chrome.browser.signin.services.IdentityServicesProvider;
+ import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
+ import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
++import org.chromium.components.browser_ui.settings.SpinnerPreference;
+ import org.chromium.components.browser_ui.settings.ManagedPreferenceDelegate;
+ import org.chromium.components.browser_ui.settings.SettingsLauncher;
+ import org.chromium.components.browser_ui.settings.SettingsUtils;
+@@ -51,6 +52,9 @@ import androidx.preference.PreferenceCategory;
+ import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
+ import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
+ 
++import java.util.ArrayList;
++import java.util.List;
++
+ /**
+  * Fragment to keep track of the all the privacy related preferences.
+  */
+@@ -85,6 +89,8 @@ public class PrivacySettings
+     private ChromeSwitchPreference allowCustomTabIntentsPref;
+     private ChromeSwitchPreference openExternalLinksPref;
+ 
++    private static final String PREF_HISTORY_EXPIRE_DAYS_THRESHOLD = "history_expire_days_threshold";
++
+     @Override
+     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
+         PrivacyPreferencesManagerImpl privacyPrefManager =
+@@ -134,6 +140,40 @@ public class PrivacySettings
+         Preference secureDnsPref = findPreference(PREF_SECURE_DNS);
+         secureDnsPref.setVisible(SecureDnsSettings.isUiEnabled());
+ 
++        // set up history expire days threshold preference
++        List<TimeFrequencySpinnerOption> options = new ArrayList<>();
++        options.add(new TimeFrequencySpinnerOption(0,
++                            getActivity().getString(R.string.history_expire_days_no_history)));
++        options.add(new TimeFrequencySpinnerOption(1));
++        options.add(new TimeFrequencySpinnerOption(7));
++        options.add(new TimeFrequencySpinnerOption(15));
++        options.add(new TimeFrequencySpinnerOption(30));
++        options.add(new TimeFrequencySpinnerOption(60));
++        options.add(new TimeFrequencySpinnerOption(90));
++        options.add(new TimeFrequencySpinnerOption(0xFFFF,
++                            getActivity().getString(R.string.history_expire_days_keep_forever)));
++        TimeFrequencySpinnerOption[] spinnerOptions = options.toArray(new TimeFrequencySpinnerOption[0]);
++
++        int selectedTimeFrequency = UserPrefs.get(Profile.getLastUsedRegularProfile())
++                                             .getInteger(Pref.EXPIRE_DAYS_THRESHOLD);
++        int spinnerOptionIndex = -1;
++        for (int i = 0; i < spinnerOptions.length; ++i) {
++            if (spinnerOptions[i].getDays() == selectedTimeFrequency) {
++                spinnerOptionIndex = i;
++                break;
++            }
++        }
++
++        SpinnerPreference spinner = (SpinnerPreference) findPreference(PREF_HISTORY_EXPIRE_DAYS_THRESHOLD);
++        spinner.setOptions(spinnerOptions, spinnerOptionIndex);
++        spinner.setSummary(getResources().getString(R.string.history_expire_days_threshold_summary));
++        spinner.setOnPreferenceChangeListener((preference, newValue) -> {
++            UserPrefs.get(Profile.getLastUsedRegularProfile())
++                                 .setInteger(Pref.EXPIRE_DAYS_THRESHOLD,
++                                        ((TimeFrequencySpinnerOption) newValue).getDays());
++            return true;
++        });
++
+         Preference phoneAsASecurityKey = findPreference(PREF_PHONE_AS_A_SECURITY_KEY);
+         phoneAsASecurityKey.setVisible(
+                 ChromeFeatureList.isEnabled(ChromeFeatureList.WEB_AUTH_PHONE_SUPPORT));
+@@ -237,6 +277,29 @@ public class PrivacySettings
+         };
+     }
+ 
++    class TimeFrequencySpinnerOption {
++        private int mDays;
++        private String mDescription;
++
++        public TimeFrequencySpinnerOption(int days) {
++            this(days, Integer.toString(days));
++        }
++
++        public TimeFrequencySpinnerOption(int days, String description) {
++            mDays = days;
++            mDescription = description;
++        }
++
++        public int getDays() {
++            return mDays;
++        }
++
++        @Override
++        public String toString() {
++            return mDescription;
++        }
++    }
++
+     @Override
+     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+         menu.clear();
+diff --git a/chrome/browser/history/history_service_factory.cc b/chrome/browser/history/history_service_factory.cc
+--- a/chrome/browser/history/history_service_factory.cc
++++ b/chrome/browser/history/history_service_factory.cc
+@@ -30,6 +30,8 @@ std::unique_ptr<KeyedService> BuildHistoryService(
+           history::HistoryDatabaseParamsForPath(context->GetPath()))) {
+     return nullptr;
+   }
++  Profile* profile = Profile::FromBrowserContext(context);
++  history_service->InitFromPreferences(profile->GetPrefs());
+   return history_service;
+ }
+ 
+diff --git a/chrome/browser/preferences/BUILD.gn b/chrome/browser/preferences/BUILD.gn
+--- a/chrome/browser/preferences/BUILD.gn
++++ b/chrome/browser/preferences/BUILD.gn
+@@ -41,6 +41,7 @@ java_cpp_strings("java_pref_names_srcjar") {
+     "//components/safe_browsing/core/common/safe_browsing_prefs.cc",
+     "//components/signin/public/base/signin_pref_names.cc",
+     "//components/translate/core/browser/translate_pref_names.cc",
++    "//components/history/core/common/pref_names.cc",
+   ]
+ 
+   template = "android/java_templates/Pref.java.tmpl"
+diff --git a/chrome/browser/profiles/profile_impl.cc b/chrome/browser/profiles/profile_impl.cc
+--- a/chrome/browser/profiles/profile_impl.cc
++++ b/chrome/browser/profiles/profile_impl.cc
+@@ -373,6 +373,7 @@ std::unique_ptr<Profile> Profile::CreateProfile(const base::FilePath& path,
+ void ProfileImpl::RegisterProfilePrefs(
+     user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(prefs::kSavingBrowserHistoryDisabled, false);
++  registry->RegisterIntegerPref(prefs::kExpireDaysThreshold, 90);
+   registry->RegisterBooleanPref(prefs::kAllowDeletingBrowserHistory, true);
+   registry->RegisterBooleanPref(prefs::kForceGoogleSafeSearch, false);
+   registry->RegisterIntegerPref(prefs::kForceYouTubeRestrict,
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -1055,6 +1055,18 @@ Your Google account may have other forms of browsing history like searches and a
+       <message name="IDS_CLEAR_HISTORY_TITLE" desc="Title for Clear History in Clear Browsing Data dialog">
+         Browsing history
+       </message>
++      <message name="IDS_HISTORY_EXPIRE_DAYS_THRESHOLD_TITLE" desc="Title for history expire days threshold">
++        Expire history days threshold
++      </message>
++      <message name="IDS_HISTORY_EXPIRE_DAYS_NO_HISTORY" desc="Title for history expire days option to keep no navigation history">
++        No history
++      </message>
++      <message name="IDS_HISTORY_EXPIRE_DAYS_KEEP_FOREVER" desc="Title for history expire days option to keep navigation history forever">
++        Forever
++      </message>
++      <message name="IDS_HISTORY_EXPIRE_DAYS_THRESHOLD_SUMMARY" desc="Summary for history expire days threshold">
++        Number of days to keep navigation history
++      </message>
+       <message name="IDS_CLEAR_COOKIES_AND_SITE_DATA_TITLE" desc="Title for Clear Cookies and site data in Clear Browsing Data dialog">
+         Cookies and site data
+       </message>
+diff --git a/components/browser_ui/settings/android/java/res/layout/preference_spinner.xml b/components/browser_ui/settings/android/java/res/layout/preference_spinner.xml
+--- a/components/browser_ui/settings/android/java/res/layout/preference_spinner.xml
++++ b/components/browser_ui/settings/android/java/res/layout/preference_spinner.xml
+@@ -18,6 +18,13 @@
+         android:layout_width="match_parent"
+         style="@style/PreferenceTitle" />
+ 
++    <TextView
++        android:id="@+id/summary"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        style="@style/PreferenceSummary"
++        android:visibility="gone" />
++
+     <Spinner
+         android:id="@+id/spinner"
+         android:layout_height="wrap_content"
+diff --git a/components/browser_ui/settings/android/java/res/layout/preference_spinner_single_line.xml b/components/browser_ui/settings/android/java/res/layout/preference_spinner_single_line.xml
+--- a/components/browser_ui/settings/android/java/res/layout/preference_spinner_single_line.xml
++++ b/components/browser_ui/settings/android/java/res/layout/preference_spinner_single_line.xml
+@@ -20,6 +20,13 @@
+         android:layout_height="wrap_content"
+         android:layout_width="match_parent" />
+ 
++    <TextView
++        android:id="@+id/summary"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        style="@style/PreferenceSummary"
++        android:visibility="gone" />
++
+     <Spinner
+         android:id="@+id/spinner"
+         android:layout_height="wrap_content"
+diff --git a/components/browser_ui/settings/android/widget/java/src/org/chromium/components/browser_ui/settings/SpinnerPreference.java b/components/browser_ui/settings/android/widget/java/src/org/chromium/components/browser_ui/settings/SpinnerPreference.java
+--- a/components/browser_ui/settings/android/widget/java/src/org/chromium/components/browser_ui/settings/SpinnerPreference.java
++++ b/components/browser_ui/settings/android/widget/java/src/org/chromium/components/browser_ui/settings/SpinnerPreference.java
+@@ -6,6 +6,7 @@ package org.chromium.components.browser_ui.settings;
+ 
+ import android.content.Context;
+ import android.content.res.TypedArray;
++import android.text.TextUtils;
+ import android.util.AttributeSet;
+ import android.view.View;
+ import android.widget.AdapterView;
+@@ -98,6 +99,12 @@ public class SpinnerPreference extends Preference {
+         super.onBindViewHolder(holder);
+ 
+         ((TextView) holder.findViewById(R.id.title)).setText(getTitle());
++        CharSequence summary = getSummary();
++        TextView summaryView = ((TextView) holder.findViewById(R.id.summary));
++        if (summaryView != null && !TextUtils.isEmpty(summary)) {
++            summaryView.setText(summary);
++            summaryView.setVisibility(View.VISIBLE);
++        }
+         mSpinner = (Spinner) holder.findViewById(R.id.spinner);
+         mSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+             @Override
+diff --git a/components/history/core/browser/expire_history_backend.cc b/components/history/core/browser/expire_history_backend.cc
+--- a/components/history/core/browser/expire_history_backend.cc
++++ b/components/history/core/browser/expire_history_backend.cc
+@@ -405,6 +405,21 @@ void ExpireHistoryBackend::StartExpiringOldStuff(
+   ScheduleExpire();
+ }
+ 
++bool ExpireHistoryBackend::SetExpireDaysThreshold(
++    base::TimeDelta expiration_threshold) {
++  // no change
++  if (expiration_threshold_ == expiration_threshold)
++    return false;
++  expiration_threshold_ = expiration_threshold;
++  // do not schedule anything for special cases
++  // (0 - no history, 65535 - keep history forever)
++  if (expiration_threshold_ == base::Days(0) ||
++      expiration_threshold_ == base::Days(0xFFFF))
++    return true;
++  ScheduleExpire();
++  return true;
++}
++
+ void ExpireHistoryBackend::DeleteFaviconsIfPossible(DeleteEffects* effects) {
+   if (!favicon_db_)
+     return;
+@@ -606,6 +621,12 @@ void ExpireHistoryBackend::DoExpireIteration() {
+     return;
+   }
+ 
++  // evaluate special cases again in case value was changed while timer was sleeping
++  // (0 - no history, 65535 - keep history forever)
++  if (expiration_threshold_ == base::Days(0) ||
++      expiration_threshold_ == base::Days(0xFFFF))
++    return;
++
+   const ExpiringVisitsReader* reader = work_queue_.front();
+   bool more_to_expire = ExpireSomeOldHistory(
+       GetCurrentExpirationTime(), reader, kNumExpirePerIteration);
+diff --git a/components/history/core/browser/expire_history_backend.h b/components/history/core/browser/expire_history_backend.h
+--- a/components/history/core/browser/expire_history_backend.h
++++ b/components/history/core/browser/expire_history_backend.h
+@@ -79,6 +79,8 @@ class ExpireHistoryBackend {
+   // will continue until the object is deleted.
+   void StartExpiringOldStuff(base::TimeDelta expiration_threshold);
+ 
++  bool SetExpireDaysThreshold(base::TimeDelta expiration_threshold);
++
+   // Deletes everything associated with a URL until `end_time`.
+   void DeleteURL(const GURL& url, base::Time end_time);
+ 
+diff --git a/components/history/core/browser/history_backend.cc b/components/history/core/browser/history_backend.cc
+--- a/components/history/core/browser/history_backend.cc
++++ b/components/history/core/browser/history_backend.cc
+@@ -972,6 +972,20 @@ void HistoryBackend::InitImpl(
+   LOCAL_HISTOGRAM_TIMES("History.InitTime", TimeTicks::Now() - beginning_time);
+ }
+ 
++void HistoryBackend::SetExpireDaysThreshold(int days) {
++  // there are 2 magic values here:
++  // 0 - keep no history
++  // 65535 - keep history forever
++  // they are stored as-is
++  if (expirer_.SetExpireDaysThreshold(base::Days(days))) {
++    if (days == 0) {
++      // erase history only if setting was actually changed
++      task_runner_->PostTask(
++          FROM_HERE, base::BindOnce(&HistoryBackend::DeleteAllHistory, this));
++    }
++  }
++}
++
+ void HistoryBackend::OnMemoryPressure(
+     base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
+   // TODO(sebmarchand): Check if MEMORY_PRESSURE_LEVEL_MODERATE should also be
+diff --git a/components/history/core/browser/history_backend.h b/components/history/core/browser/history_backend.h
+--- a/components/history/core/browser/history_backend.h
++++ b/components/history/core/browser/history_backend.h
+@@ -219,6 +219,8 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
+   void Init(bool force_fail,
+             const HistoryDatabaseParams& history_database_params);
+ 
++  void SetExpireDaysThreshold(int days);
++
+   // Notification that the history system is shutting down. This will break
+   // the refs owned by the delegate and any pending transaction so it will
+   // actually be deleted.
+diff --git a/components/history/core/browser/history_service.cc b/components/history/core/browser/history_service.cc
+--- a/components/history/core/browser/history_service.cc
++++ b/components/history/core/browser/history_service.cc
+@@ -36,6 +36,9 @@
+ #include "base/time/time.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
++#include "components/prefs/pref_service.h"
++#include "components/prefs/pref_change_registrar.h"
++#include "components/history/core/common/pref_names.h"
+ #include "components/history/core/browser/download_row.h"
+ #include "components/history/core/browser/history_backend.h"
+ #include "components/history/core/browser/history_backend_client.h"
+@@ -1064,6 +1067,9 @@ void HistoryService::Cleanup() {
+     return;
+   }
+ 
++  active_user_pref_change_registrar_.reset();
++  active_user_pref_service_ = nullptr;
++
+   NotifyHistoryServiceBeingDeleted();
+ 
+   weak_ptr_factory_.InvalidateWeakPtrs();
+@@ -1128,6 +1134,33 @@ bool HistoryService::Init(
+   return true;
+ }
+ 
++void HistoryService::InitFromPreferences(PrefService* prefs) {
++  DCHECK(prefs);
++
++  active_user_pref_service_ = prefs;
++  OnUserPrefChanged();
++
++  active_user_pref_change_registrar_ = std::make_unique<PrefChangeRegistrar>();
++  active_user_pref_change_registrar_->Init(prefs);
++  active_user_pref_change_registrar_->Add(
++      prefs::kExpireDaysThreshold,
++      base::BindRepeating(
++          &HistoryService::OnUserPrefChanged,
++          base::Unretained(this)));
++}
++
++void HistoryService::OnUserPrefChanged() {
++  DCHECK(active_user_pref_service_);
++
++  int kExpireDaysThreshold =
++        active_user_pref_service_->GetInteger(prefs::kExpireDaysThreshold);
++  // disable history saving when the 0 magic value is used
++  // the current history records are truncated elsewhere
++  active_user_pref_service_->SetBoolean(prefs::kSavingBrowserHistoryDisabled,
++                                (kExpireDaysThreshold == 0));
++  history_backend_->SetExpireDaysThreshold(kExpireDaysThreshold);
++}
++
+ void HistoryService::ScheduleAutocomplete(
+     base::OnceCallback<void(HistoryBackend*, URLDatabase*)> callback) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+diff --git a/components/history/core/browser/history_service.h b/components/history/core/browser/history_service.h
+--- a/components/history/core/browser/history_service.h
++++ b/components/history/core/browser/history_service.h
+@@ -31,6 +31,8 @@
+ #include "build/build_config.h"
+ #include "components/favicon_base/favicon_callback.h"
+ #include "components/favicon_base/favicon_usage_data.h"
++#include "components/prefs/pref_service.h"
++#include "components/prefs/pref_change_registrar.h"
+ #include "components/history/core/browser/history_types.h"
+ #include "components/history/core/browser/keyword_id.h"
+ #include "components/keyed_service/core/keyed_service.h"
+@@ -105,6 +107,8 @@ class HistoryService : public KeyedService {
+     return Init(false, history_database_params);
+   }
+ 
++  void InitFromPreferences(PrefService* prefs);
++
+   // Triggers the backend to load if it hasn't already, and then returns whether
+   // it's finished loading.
+   // Note: Virtual needed for mocking.
+@@ -996,6 +1000,10 @@ class HistoryService : public KeyedService {
+ 
+   base::OnceClosure origin_queried_closure_for_testing_;
+ 
++  void OnUserPrefChanged();
++  PrefService* active_user_pref_service_ = nullptr;
++  std::unique_ptr<PrefChangeRegistrar> active_user_pref_change_registrar_;
++
+   // All vended weak pointers are invalidated in Cleanup().
+   base::WeakPtrFactory<HistoryService> weak_ptr_factory_{this};
+ };
+diff --git a/components/history/core/common/pref_names.cc b/components/history/core/common/pref_names.cc
+--- a/components/history/core/common/pref_names.cc
++++ b/components/history/core/common/pref_names.cc
+@@ -9,4 +9,8 @@ namespace prefs {
+ // Boolean controlling whether history saving is disabled.
+ const char kSavingBrowserHistoryDisabled[] = "history.saving_disabled";
+ 
++// The number of days old a history entry can be before it is considered "old"
++// and is deleted.
++const char kExpireDaysThreshold[] = "history.expire_days_threshold";
++
+ }  // namespace prefs
+diff --git a/components/history/core/common/pref_names.h b/components/history/core/common/pref_names.h
+--- a/components/history/core/common/pref_names.h
++++ b/components/history/core/common/pref_names.h
+@@ -12,6 +12,7 @@
+ namespace prefs {
+ 
+ extern const char kSavingBrowserHistoryDisabled[];
++extern const char kExpireDaysThreshold[];
+ 
+ }  // namespace prefs
+ 
+--
+2.25.1

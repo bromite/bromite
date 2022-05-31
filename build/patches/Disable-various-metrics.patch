@@ -1,19 +1,27 @@
 From: csagan5 <32685696+csagan5@users.noreply.github.com>
-Date: Wed, 16 Feb 2022 11:32:33 +0100
+Date: Wed, 25 Apr 2018 10:23:51 +0200
 Subject: Disable various metrics
 
-Including initial metrics opt-out
+Disable metrics on all I/O threads
+Set initial metrics opt-out
+Disable metrics collection for NTP tiles
+Fix startup crash for debug builds (uazo)
 ---
- .../browser/firstrun/FirstRunActivityBase.java    |  2 +-
- chrome/browser/chrome_content_browser_client.cc   | 15 ---------------
- .../chrome_metrics_services_manager_client.cc     |  2 +-
- services/metrics/public/cpp/ukm_recorder.cc       |  2 +-
- 4 files changed, 3 insertions(+), 18 deletions(-)
+ .../browser/firstrun/FirstRunActivityBase.java  |  2 +-
+ .../browser/init/StartupTabPreloader.java       | 10 ----------
+ .../android/ntp/most_visited_sites_bridge.cc    | 17 -----------------
+ chrome/browser/browser_process_impl.cc          |  2 +-
+ chrome/browser/chrome_content_browser_client.cc | 15 ---------------
+ .../chrome_metrics_services_manager_client.cc   |  2 +-
+ components/ntp_tiles/BUILD.gn                   |  3 ---
+ components/ntp_tiles/most_visited_sites.cc      |  2 --
+ services/metrics/public/cpp/ukm_recorder.cc     |  2 +-
+ 9 files changed, 4 insertions(+), 51 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunActivityBase.java b/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunActivityBase.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunActivityBase.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunActivityBase.java
-@@ -46,7 +46,7 @@ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
+@@ -45,7 +45,7 @@ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
  
      static final String OPEN_ADVANCED_SYNC_SETTINGS = "OpenAdvancedSyncSettings";
  
@@ -22,10 +30,97 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstR
  
      private boolean mNativeInitialized;
  
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/init/StartupTabPreloader.java b/chrome/android/java/src/org/chromium/chrome/browser/init/StartupTabPreloader.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/init/StartupTabPreloader.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/init/StartupTabPreloader.java
+@@ -170,16 +170,6 @@ public class StartupTabPreloader implements ProfileManager.Observer, DestroyObse
+ 
+     @Override
+     public void onFirstNavigationCommit() {
+-        recordDurationFromLoadDecisionIntoPostTabMatchHistogram(
+-                "Android.StartupTabPreloader.LoadDecisionToFirstNavigationCommit");
+-
+-        // We record the metric for navigation start here as well, as we want that metric to be
+-        // recorded only for navigations that result in the first navigation commit startup metric
+-        // being recorded.
+-        assert mFirstNavigationStartMs > 0;
+-        recordDurationFromLoadDecisionToEventTimeIntoPreTabMatchHistogram(
+-                "Android.StartupTabPreloader.LoadDecisionToFirstNavigationStart",
+-                mFirstNavigationStartMs);
+     }
+ 
+     @Override
+diff --git a/chrome/browser/android/ntp/most_visited_sites_bridge.cc b/chrome/browser/android/ntp/most_visited_sites_bridge.cc
+--- a/chrome/browser/android/ntp/most_visited_sites_bridge.cc
++++ b/chrome/browser/android/ntp/most_visited_sites_bridge.cc
+@@ -26,7 +26,6 @@
+ #include "chrome/browser/profiles/profile_android.h"
+ #include "components/favicon_base/favicon_types.h"
+ #include "components/history/core/browser/history_service.h"
+-#include "components/ntp_tiles/metrics.h"
+ #include "components/ntp_tiles/most_visited_sites.h"
+ #include "components/ntp_tiles/section_type.h"
+ #include "ui/gfx/android/java_bitmap.h"
+@@ -46,7 +45,6 @@ using ntp_tiles::NTPTilesVector;
+ using ntp_tiles::SectionType;
+ using ntp_tiles::TileTitleSource;
+ using ntp_tiles::TileSource;
+-using ntp_tiles::TileVisualType;
+ 
+ namespace {
+ 
+@@ -233,7 +231,6 @@ void MostVisitedSitesBridge::RecordPageImpression(
+     JNIEnv* env,
+     const JavaParamRef<jobject>& obj,
+     jint jtiles_count) {
+-  ntp_tiles::metrics::RecordPageImpression(jtiles_count);
+ }
+ 
+ void MostVisitedSitesBridge::RecordTileImpression(
+@@ -245,15 +242,6 @@ void MostVisitedSitesBridge::RecordTileImpression(
+     jint jtitle_source,
+     jint jsource,
+     const JavaParamRef<jobject>& jurl) {
+-  std::unique_ptr<GURL> url = url::GURLAndroid::ToNativeGURL(env, jurl);
+-  TileTitleSource title_source = static_cast<TileTitleSource>(jtitle_source);
+-  TileSource source = static_cast<TileSource>(jsource);
+-  TileVisualType visual_type = static_cast<TileVisualType>(jvisual_type);
+-  favicon_base::IconType icon_type =
+-      static_cast<favicon_base::IconType>(jicon_type);
+-
+-  ntp_tiles::metrics::RecordTileImpression(ntp_tiles::NTPTileImpression(
+-      jindex, source, title_source, visual_type, icon_type, *url));
+ }
+ 
+ void MostVisitedSitesBridge::RecordOpenedMostVisitedItem(
+@@ -263,11 +251,6 @@ void MostVisitedSitesBridge::RecordOpenedMostVisitedItem(
+     jint tile_type,
+     jint title_source,
+     jint source) {
+-  ntp_tiles::metrics::RecordTileClick(ntp_tiles::NTPTileImpression(
+-      index, static_cast<TileSource>(source),
+-      static_cast<TileTitleSource>(title_source),
+-      static_cast<TileVisualType>(tile_type), favicon_base::IconType::kInvalid,
+-      /*url_for_rappor=*/GURL()));
+ }
+ 
+ static jlong JNI_MostVisitedSitesBridge_Init(
+diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_process_impl.cc
+--- a/chrome/browser/browser_process_impl.cc
++++ b/chrome/browser/browser_process_impl.cc
+@@ -985,7 +985,7 @@ void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
+ #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+ 
+   registry->RegisterBooleanPref(metrics::prefs::kMetricsReportingEnabled,
+-                                GoogleUpdateSettings::GetCollectStatsConsent());
++                                false);
+   registry->RegisterBooleanPref(prefs::kDevToolsRemoteDebuggingAllowed, true);
+ }
+ 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -61,7 +61,6 @@
+@@ -60,7 +60,6 @@
  #include "chrome/browser/hid/chrome_hid_delegate.h"
  #include "chrome/browser/interstitials/enterprise_util.h"
  #include "chrome/browser/lifetime/browser_shutdown.h"
@@ -33,7 +128,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  #include "chrome/browser/media/audio_service_util.h"
  #include "chrome/browser/media/router/media_router_feature.h"
  #include "chrome/browser/media/webrtc/audio_debug_recordings_handler.h"
-@@ -4114,16 +4113,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
+@@ -4167,16 +4166,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
      content::NavigationHandle* handle) {
    std::vector<std::unique_ptr<content::NavigationThrottle>> throttles;
  
@@ -50,9 +145,9 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  #if BUILDFLAG(IS_CHROMEOS_ASH)
    MaybeAddThrottle(
        ash::WebTimeLimitNavigationThrottle::MaybeCreateThrottleFor(handle),
-@@ -4221,10 +4210,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
-                    &throttles);
- #endif
+@@ -4269,10 +4258,6 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
+     throttle_manager->MaybeAppendNavigationThrottles(handle, &throttles);
+   }
  
 -  MaybeAddThrottle(
 -      LookalikeUrlNavigationThrottle::MaybeCreateNavigationThrottle(handle),
@@ -64,7 +159,7 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
 diff --git a/chrome/browser/metrics/chrome_metrics_services_manager_client.cc b/chrome/browser/metrics/chrome_metrics_services_manager_client.cc
 --- a/chrome/browser/metrics/chrome_metrics_services_manager_client.cc
 +++ b/chrome/browser/metrics/chrome_metrics_services_manager_client.cc
-@@ -74,7 +74,7 @@ namespace internal {
+@@ -75,7 +75,7 @@ namespace internal {
  // recording and reporting are enabled. If the feature is enabled, but no
  // consent is given, then there will be no recording or reporting.
  const base::Feature kMetricsReportingFeature{"MetricsReporting",
@@ -73,6 +168,38 @@ diff --git a/chrome/browser/metrics/chrome_metrics_services_manager_client.cc b/
  
  }  // namespace internal
  }  // namespace metrics
+diff --git a/components/ntp_tiles/BUILD.gn b/components/ntp_tiles/BUILD.gn
+--- a/components/ntp_tiles/BUILD.gn
++++ b/components/ntp_tiles/BUILD.gn
+@@ -23,8 +23,6 @@ static_library("ntp_tiles") {
+     "icon_cacher.h",
+     "icon_cacher_impl.cc",
+     "icon_cacher_impl.h",
+-    "metrics.cc",
+-    "metrics.h",
+     "most_visited_sites.cc",
+     "most_visited_sites.h",
+     "ntp_tile.cc",
+@@ -92,7 +90,6 @@ source_set("unit_tests") {
+     "custom_links_manager_impl_unittest.cc",
+     "custom_links_store_unittest.cc",
+     "icon_cacher_impl_unittest.cc",
+-    "metrics_unittest.cc",
+     "most_visited_sites_unittest.cc",
+     "popular_sites_impl_unittest.cc",
+   ]
+diff --git a/components/ntp_tiles/most_visited_sites.cc b/components/ntp_tiles/most_visited_sites.cc
+--- a/components/ntp_tiles/most_visited_sites.cc
++++ b/components/ntp_tiles/most_visited_sites.cc
+@@ -730,8 +730,6 @@ void MostVisitedSites::SaveTilesAndNotify(
+                                    : new_tiles;
+ 
+   if (fixed_tiles.size() != new_tiles.size()) {
+-    metrics::RecordsMigratedDefaultAppDeleted(
+-        DeletedTileType::kMostVisitedSite);
+   }
+   if (!current_tiles_.has_value() || (*current_tiles_ != fixed_tiles)) {
+     current_tiles_.emplace(std::move(fixed_tiles));
 diff --git a/services/metrics/public/cpp/ukm_recorder.cc b/services/metrics/public/cpp/ukm_recorder.cc
 --- a/services/metrics/public/cpp/ukm_recorder.cc
 +++ b/services/metrics/public/cpp/ukm_recorder.cc

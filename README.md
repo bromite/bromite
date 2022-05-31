@@ -7,11 +7,11 @@ security and privacy and fix various annoyances.
 
 One patch has been removed from the original Bromite distribution:
 
-  - Automated domain substitution
+- Automated domain substitution
 
 One patch has been modified:
 
-  - The Bromite adblock engine is disabled by default
+- The Bromite adblock engine is disabled by default
 
 # Build instructions
 
@@ -52,13 +52,13 @@ cd /tank/chromium4allen/src
 
 ## Prepare Chromium
 
-The patches are intended to be applied to the `98.0.4758.108` tag of
+The patches are intended to be applied to the `101.0.4951.69` tag of
 the Chromium repo. Before continuing, make sure you are on that tag in
 the Chromium source repo:
 
 ```
 git fetch origin
-git checkout -B promethean-98.0.4758.108 98.0.4758.108
+git checkout -B promethean-101.0.4951.69 101.0.4951.69
 gclient sync --with_branch_heads --with_tags
 gclient runhooks
 ```
@@ -88,7 +88,7 @@ done
 ```
 
 All patches should apply cleanly. If they did not, make sure you have
-checked out the proper Chromium tag (98.0.4758.108).
+checked out the proper Chromium tag (101.0.4951.69).
 
 ## Getting the third dependencies
 
@@ -154,21 +154,21 @@ If you do not have an upstream remote, add it with:
 
 2. Retrieve the upstream changes
 
-    git fetch upstream
+   git fetch upstream
 
 3. Find the latest Bromite release tag
 
-    git describe --tags --abbrev=0 upstream/master
+   git describe --tags --abbrev=0 upstream/master
 
-This will give you output like `98.0.4758.108` which we'll use as an example going forward.
+This will give you output like `101.0.4951.69` which we'll use as an example going forward.
 
 4. Create a new branch based on this tag
 
-    git checkout -b upstream-98.0.4758.108 98.0.4758.108
+   git checkout -b upstream-101.0.4951.69 101.0.4951.69
 
 5. Rebase this branch on the current master
 
-    git rebase origin/master
+   git rebase origin/master
 
 If the rebase complete cleanly, you're done! Push the branch and open
 a PR to master.
@@ -224,9 +224,10 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * always-incognito mode
 * disable all field trials permanently
 * disable smart search by default, allow web search from incognito mode
-* always-visible cookies, javascript and ads site settings
+* always-visible cookies, javascript and ads site settings from address bar popup
 * remove Play integration binary blobs
 * use [CFI](https://en.wikipedia.org/wiki/Control-flow_integrity) on all architectures except x86
+* enable trivial auto var init
 * disable media router and remoting by default
 * disable dynamic module loading
 * show warnings for TLSv1.0/TLSv1.1 pages
@@ -240,7 +241,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * security enhancement patches from [GrapheneOS](https://github.com/GrapheneOS) project
 * disable scroll-to-text-fragment
 * reduced referer granularity
-* block gateway attacks via websockets
+* block gateway attacks via websockets (partial fix, see [this upstream issue](https://bugs.chromium.org/p/chromium/issues/detail?id=590714))
 * use 64-bit ABI for webview processes
 * make all favicon requests on-demand ([supercookie](https://supercookie.me/) mitigation)
 * enable all network isolation features (`PartitionConnectionsByNetworkIsolationKey`, `PartitionHttpServerPropertiesByNetworkIsolationKey`, `SplitHostCacheByNetworkIsolationKey`, `AppendFrameOriginToNetworkIsolationKey`, `SplitCacheByNetworkIsolationKey`, `UseRegistrableDomainInNetworkIsolationKey`, `PartitionSSLSessionsByNetworkIsolationKey`, `PartitionExpectCTStateByNetworkIsolationKey`, `PartitionDomainReliabilityByNetworkIsolationKey`)
@@ -248,21 +249,32 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * ask permission to play protected media
 * disable the DIAL repeating discovery
 * disable RTCGetCurrentBrowsingContextMedia by default
-* disable FLoC by default
+* disable FLoC and privacy sandbox by default
 * disable feeds
 * disable reporting of certificate errors
 * use pre-defined phone model for client hints and Javascript
-* site settings to disable images
 * allow forcing external links to open in incognito
 * disable AGSA by default
-* allow disabling JIT
+* flag to enable Certificate Transparency
+* allow adding search engines from incognito mode
+* disable predictors
+* disable supervised users
+* disable safety check
+* disable capability to block `view-source:` URLs
+* disable `SegmentationPlatformFeature`, `OptimizationHints`, client hint headers
+* disable `AsyncDNS` by default
+* customize history expiration threshold
+* disable idle detection
+* HTTPS-only mode enabled by default
+* disable TLS resumption by default
+* partition DoH requests by top-frame NIK
+* add option to use home page as NTP
 
 ## Features not related to privacy
 * browser automatic updates, enabled by default
 * native Android autofill support
 * import/export bookmarks
 * bookmark all tabs from tabs regroup menu
-* flag to allow screenshots of incognito tabs
 * allow playing videos in background tabs and disable pause on switching tabs
 * all codecs included (proprietary, open H.264 etc.)
 * [AV1 codec support](https://github.com/bromite/bromite/wiki/AV1-support)
@@ -275,14 +287,17 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * adding an URL as bookmark will clear its blocked status for the NTP tiles
 * history support in incognito mode
 * view source of pages
-* timezone customization
 * sticky desktop mode setting
-* disable video autoplay by default, reintroduce site settings
 * mobile/desktop user agent customization
 * accessibility preference to force tablet UI
 * use Alt+D to focus address bar
 * allow sharing to Bromite
 * UI for crash information collection
+* allow OpenSearch search engine detection in incognito
+* allow OpenSearch search engine detection with paths
+* keyboard dictionary hints in address bar
+* always allow `view-source:` URLs
+* allow moving navigation bar to bottom
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 
@@ -307,7 +322,6 @@ New flags:
 * `#max-connections-per-host`
 * `#resume-background-video`
 * `#ipv6-probing`
-* `#disable-webgl`
 * `#enable-device-motion` and `#enable-device-orientation`
 * `#show-legacy-tls-warnings`
 * `#save-data-header`, disabled by default
@@ -316,6 +330,19 @@ New flags:
 * `#cleartext-permitted`, enabled by default, can be used to disable all cleartext-HTTP traffic
 * `#omnibox-autocomplete-filtering`, can be used to restrict omnibox autocomplete results
 * `#disable-external-intent-requests`
+* `#enable-userscripts-log`, see https://github.com/bromite/bromite/wiki/UserScripts#flags
+* `#certificate-transparency-enabled`, enabled by default; see https://chromium.googlesource.com/chromium/src/+/master/net/docs/certificate-transparency.md
+* `#move-top-toolbar-to-bottom`, disabled by default
+* `#site-engagement`, enabled by default
+
+### Site settings
+
+* webGL, disabled by default
+* images, enabled by default
+* Javascript JIT, disabled by default
+* timezone customization override
+* autoplay, disabled by default
+* webRTC, disabled by default
 
 # Privacy limitations
 

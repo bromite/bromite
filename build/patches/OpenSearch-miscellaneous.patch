@@ -1,0 +1,229 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sun, 6 Mar 2022 18:55:58 +0100
+Subject: OpenSearch: miscellaneous
+
+Fix upstream bug with recently added engines prematurely discarded
+because they have no last-visit timestamp
+Fix upstream bug with visited engines visit time not updated
+Allow adding search engines in incognito mode
+Allow using search engine URLs with non-empty paths
+Add verbose logging
+---
+ .../settings/SearchEngineAdapter.java         |  4 ++-
+ .../search_engine_tab_helper.cc               | 34 +++++++++++++------
+ .../renderer/chrome_render_frame_observer.cc  |  2 ++
+ .../search_engines/template_url_fetcher.cc    | 23 ++++++++++---
+ .../search_engines/template_url_service.cc    |  1 -
+ .../search_engines/template_url_service.h     |  8 ++---
+ 6 files changed, 51 insertions(+), 21 deletions(-)
+
+diff --git a/chrome/browser/search_engines/android/java/src/org/chromium/chrome/browser/search_engines/settings/SearchEngineAdapter.java b/chrome/browser/search_engines/android/java/src/org/chromium/chrome/browser/search_engines/settings/SearchEngineAdapter.java
+--- a/chrome/browser/search_engines/android/java/src/org/chromium/chrome/browser/search_engines/settings/SearchEngineAdapter.java
++++ b/chrome/browser/search_engines/android/java/src/org/chromium/chrome/browser/search_engines/settings/SearchEngineAdapter.java
+@@ -247,7 +247,9 @@ public class SearchEngineAdapter extends BaseAdapter
+                 continue;
+             }
+             if (recentEngineNum < MAX_RECENT_ENGINE_NUM
+-                    && templateUrl.getLastVisitedTime() > displayTime) {
++                    // just-added search engines have never been visited
++                    && (templateUrl.getLastVisitedTime() == 0 ||
++                        templateUrl.getLastVisitedTime() > displayTime)) {
+                 recentEngineNum++;
+             } else {
+                 iterator.remove();
+diff --git a/chrome/browser/ui/search_engines/search_engine_tab_helper.cc b/chrome/browser/ui/search_engines/search_engine_tab_helper.cc
+--- a/chrome/browser/ui/search_engines/search_engine_tab_helper.cc
++++ b/chrome/browser/ui/search_engines/search_engine_tab_helper.cc
+@@ -6,6 +6,8 @@
+ 
+ #include <memory>
+ 
++#include "base/logging.h"
++#include "base/logging.h"
+ #include "base/metrics/histogram_macros.h"
+ #include "chrome/browser/favicon/favicon_utils.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -69,16 +71,20 @@ std::u16string SearchEngineTabHelper::GenerateKeywordFromNavigationEntry(
+     NavigationEntry* entry) {
+   // Don't autogenerate keywords for pages that are the result of form
+   // submissions.
+-  if (IsFormSubmit(entry))
++  if (IsFormSubmit(entry)) {
++    LOG(INFO) << "OpenSearch: cannot generate keyword for a form submission";
+     return std::u16string();
++  }
+ 
+   // We want to use the user typed URL if available since that represents what
+   // the user typed to get here, and fall back on the regular URL if not.
+   GURL url = entry->GetUserTypedURL();
+   if (!url.is_valid()) {
+     url = entry->GetURL();
+-    if (!url.is_valid())
++    if (!url.is_valid()) {
++      LOG(INFO) << "OpenSearch: user-typed/entry URL are invalid";
+       return std::u16string();
++    }
+   }
+ 
+   // Don't autogenerate keywords for referrers that
+@@ -86,10 +92,10 @@ std::u16string SearchEngineTabHelper::GenerateKeywordFromNavigationEntry(
+   // b) have a path.
+   //
+   // If we relax the path constraint, we need to be sure to sanitize the path
+-  // elements and update AutocompletePopup to look for keywords using the path.
++  // elements and update TemplateURL to look for keywords using the path.
+   // See http://b/issue?id=863583.
+-  if (!(url.SchemeIs(url::kHttpScheme) || url.SchemeIs(url::kHttpsScheme)) ||
+-      (url.path().length() > 1)) {
++  if (!(url.SchemeIs(url::kHttpScheme) || url.SchemeIs(url::kHttpsScheme))) {
++    LOG(INFO) << "OpenSearch: invalid scheme";
+     return std::u16string();
+   }
+ 
+@@ -116,22 +122,27 @@ void SearchEngineTabHelper::PageHasOpenSearchDescriptionDocument(
+ 
+   // Only accept messages from the main frame.
+   if (osdd_handler_receivers_.GetCurrentTargetFrame() !=
+-      web_contents()->GetMainFrame())
++      web_contents()->GetMainFrame()) {
++    LOG(INFO) << "OpenSearch: frame mismatch";
+     return;
++  }
+ 
+   // Make sure that the page is the current page and other basic checks.
+   // When |page_url| has file: scheme, this method doesn't work because of
+   // http://b/issue?id=863583. For that reason, this doesn't check and allow
+   // urls referring to osdd urls with same schemes.
+-  if (!osdd_url.is_valid() || !osdd_url.SchemeIsHTTPOrHTTPS())
++  if (!osdd_url.is_valid() || !osdd_url.SchemeIsHTTPOrHTTPS()) {
++    LOG(INFO) << "OpenSearch: not a valid OSDD URL";
+     return;
++  }
+ 
+   Profile* profile =
+       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
+   if (page_url != web_contents()->GetLastCommittedURL() ||
+-      !TemplateURLFetcherFactory::GetForProfile(profile) ||
+-      profile->IsOffTheRecord())
++      !TemplateURLFetcherFactory::GetForProfile(profile)) {
++    LOG(INFO) << "OpenSearch: page URL mismatch";
+     return;
++  }
+ 
+   // If the current page is a form submit, find the last page that was not a
+   // form submit and use its url to generate the keyword from.
+@@ -141,8 +152,10 @@ void SearchEngineTabHelper::PageHasOpenSearchDescriptionDocument(
+        (index > 0) && IsFormSubmit(entry);
+        entry = controller.GetEntryAtIndex(index))
+     --index;
+-  if (!entry || IsFormSubmit(entry))
++  if (!entry || IsFormSubmit(entry)) {
++    LOG(INFO) << "OpenSearch: cannot find form submission";
+     return;
++  }
+ 
+   // Autogenerate a keyword for the autodetected case; in the other cases we'll
+   // generate a keyword later after fetching the OSDD.
+@@ -157,6 +170,7 @@ void SearchEngineTabHelper::PageHasOpenSearchDescriptionDocument(
+ 
+   // Download the OpenSearch description document. If this is successful, a
+   // new keyword will be created when done.
++  // NOTE: for search pages under the same domain only 1 keyword is supported
+   TemplateURLFetcherFactory::GetForProfile(profile)->ScheduleDownload(
+       keyword, osdd_url, entry->GetFavicon().url,
+       frame->GetLastCommittedOrigin(), url_loader_factory.get(),
+diff --git a/chrome/renderer/chrome_render_frame_observer.cc b/chrome/renderer/chrome_render_frame_observer.cc
+--- a/chrome/renderer/chrome_render_frame_observer.cc
++++ b/chrome/renderer/chrome_render_frame_observer.cc
+@@ -13,6 +13,7 @@
+ 
+ #include "base/bind.h"
+ #include "base/command_line.h"
++#include "base/logging.h"
+ #include "base/metrics/histogram_macros.h"
+ #include "base/no_destructor.h"
+ #include "base/strings/string_number_conversions.h"
+@@ -202,6 +203,7 @@ void ChromeRenderFrameObserver::DidFinishLoad() {
+ 
+   GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
+   if (!osdd_url.is_empty()) {
++    LOG(INFO) << "OpenSearch: found OSDD URL: " << osdd_url;
+     mojo::AssociatedRemote<chrome::mojom::OpenSearchDescriptionDocumentHandler>
+         osdd_handler;
+     render_frame()->GetRemoteAssociatedInterfaces()->GetInterface(
+diff --git a/components/search_engines/template_url_fetcher.cc b/components/search_engines/template_url_fetcher.cc
+--- a/components/search_engines/template_url_fetcher.cc
++++ b/components/search_engines/template_url_fetcher.cc
+@@ -258,16 +258,29 @@ void TemplateURLFetcher::ScheduleDownload(
+     return;
+   }
+ 
+-  const TemplateURL* template_url =
++  TemplateURL* template_url =
+       template_url_service_->GetTemplateURLForKeyword(keyword);
+-  if (template_url && (!template_url->safe_for_autoreplace() ||
+-                       template_url->originating_url() == osdd_url))
+-    return;
++  if (template_url) {
++    if (!template_url->safe_for_autoreplace()) {
++      LOG(INFO) << "OpenSearch: OSDD URL not safe for autoreplace: " << osdd_url;
++      return;
++    }
++    if (template_url->originating_url() == osdd_url) {
++      // Either there is a user created TemplateURL for this keyword, or the
++      // keyword has the same OSDD url and we've parsed it.
++      LOG(INFO) << "OpenSearch: OSDD URL was already parsed: " << osdd_url;
++      // always update the visit timestamp
++      template_url_service_->UpdateTemplateURLVisitTime(template_url);
++      return;
++    }
++  }
+ 
+   // Make sure we aren't already downloading this request.
+   for (const auto& request : requests_) {
+-    if ((request->url() == osdd_url) || (request->keyword() == keyword))
++    if ((request->url() == osdd_url) || (request->keyword() == keyword)) {
++      LOG(INFO) << "OpenSearch: already downloading OSDD URL: " << osdd_url;
+       return;
++    }
+   }
+ 
+   requests_.push_back(std::make_unique<RequestDelegate>(
+diff --git a/components/search_engines/template_url_service.cc b/components/search_engines/template_url_service.cc
+--- a/components/search_engines/template_url_service.cc
++++ b/components/search_engines/template_url_service.cc
+@@ -463,7 +463,6 @@ TemplateURL* TemplateURLService::Add(
+       (!FindTemplateURLForExtension(template_url->extension_info_->extension_id,
+                                     template_url->type()) &&
+        template_url->id() == kInvalidTemplateURLID));
+-
+   return Add(std::move(template_url), true);
+ }
+ 
+diff --git a/components/search_engines/template_url_service.h b/components/search_engines/template_url_service.h
+--- a/components/search_engines/template_url_service.h
++++ b/components/search_engines/template_url_service.h
+@@ -277,7 +277,10 @@ class TemplateURLService : public WebDataServiceConsumer,
+   void UpdateProviderFavicons(const GURL& potential_search_url,
+                               const GURL& favicon_url);
+ 
+-  // Return true if the given |url| can be made the default. This returns false
++   // Updates the last_visited time of |url| to the current time.
++  void UpdateTemplateURLVisitTime(TemplateURL* url);
++
++ // Return true if the given |url| can be made the default. This returns false
+   // regardless of |url| if the default search provider is managed by policy or
+   // controlled by an extension.
+   bool CanMakeDefault(const TemplateURL* url) const;
+@@ -607,9 +610,6 @@ class TemplateURLService : public WebDataServiceConsumer,
+   // SetKeywordSearchTermsForURL is invoked.
+   void UpdateKeywordSearchTermsForURL(const URLVisitedDetails& details);
+ 
+-  // Updates the last_visited time of |url| to the current time.
+-  void UpdateTemplateURLVisitTime(TemplateURL* url);
+-
+   // If necessary, generates a visit for the site http:// + t_url.keyword().
+   void AddTabToSearchVisit(const TemplateURL& t_url);
+ 
+--
+2.25.1
