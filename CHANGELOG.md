@@ -1,3 +1,6 @@
+# 102.0.5005.92
+* restore offline-indicator-v2 flag functionality (thanks to @Zelda189)
+
 # 102.0.5005.67
 * dropped patch to disable mobile identity consistency by default
 * fix text for blocked ads (fixes https://github.com/bromite/bromite/issues/2026)
