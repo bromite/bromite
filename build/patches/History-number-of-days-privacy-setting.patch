@@ -17,15 +17,15 @@ flag and immediately deletes all the history.
  .../java/res/layout/preference_spinner.xml    |  7 +++
  .../layout/preference_spinner_single_line.xml |  7 +++
  .../settings/SpinnerPreference.java           |  7 +++
- .../core/browser/expire_history_backend.cc    | 21 +++++++
+ .../core/browser/expire_history_backend.cc    | 13 +++-
  .../core/browser/expire_history_backend.h     |  2 +
- .../history/core/browser/history_backend.cc   | 14 +++++
+ .../history/core/browser/history_backend.cc   | 15 ++++-
  .../history/core/browser/history_backend.h    |  2 +
  .../history/core/browser/history_service.cc   | 33 ++++++++++
  .../history/core/browser/history_service.h    |  8 +++
  components/history/core/common/pref_names.cc  |  4 ++
  components/history/core/common/pref_names.h   |  1 +
- 18 files changed, 211 insertions(+), 6 deletions(-)
+ 18 files changed, 202 insertions(+), 8 deletions(-)
 
 diff --git a/chrome/android/java/res/layout-sw360dp/preference_spinner_single_line.xml b/chrome/android/java/res/layout-sw360dp/preference_spinner_single_line.xml
 --- a/chrome/android/java/res/layout-sw360dp/preference_spinner_single_line.xml
@@ -304,29 +304,28 @@ diff --git a/components/browser_ui/settings/android/widget/java/src/org/chromium
 diff --git a/components/history/core/browser/expire_history_backend.cc b/components/history/core/browser/expire_history_backend.cc
 --- a/components/history/core/browser/expire_history_backend.cc
 +++ b/components/history/core/browser/expire_history_backend.cc
-@@ -405,6 +405,21 @@ void ExpireHistoryBackend::StartExpiringOldStuff(
+@@ -389,7 +389,7 @@ const ExpiringVisitsReader*
+ 
+ void ExpireHistoryBackend::StartExpiringOldStuff(
+     base::TimeDelta expiration_threshold) {
+-  expiration_threshold_ = expiration_threshold;
++  SetExpireDaysThreshold(expiration_threshold);
+ 
+   // Remove all readers, just in case this was method was called before.
+   readers_.clear();
+@@ -405,6 +405,11 @@ void ExpireHistoryBackend::StartExpiringOldStuff(
    ScheduleExpire();
  }
  
-+bool ExpireHistoryBackend::SetExpireDaysThreshold(
++void ExpireHistoryBackend::SetExpireDaysThreshold(
 +    base::TimeDelta expiration_threshold) {
-+  // no change
-+  if (expiration_threshold_ == expiration_threshold)
-+    return false;
 +  expiration_threshold_ = expiration_threshold;
-+  // do not schedule anything for special cases
-+  // (0 - no history, 65535 - keep history forever)
-+  if (expiration_threshold_ == base::Days(0) ||
-+      expiration_threshold_ == base::Days(0xFFFF))
-+    return true;
-+  ScheduleExpire();
-+  return true;
 +}
 +
  void ExpireHistoryBackend::DeleteFaviconsIfPossible(DeleteEffects* effects) {
    if (!favicon_db_)
      return;
-@@ -606,6 +621,12 @@ void ExpireHistoryBackend::DoExpireIteration() {
+@@ -606,6 +611,12 @@ void ExpireHistoryBackend::DoExpireIteration() {
      return;
    }
  
@@ -346,7 +345,7 @@ diff --git a/components/history/core/browser/expire_history_backend.h b/componen
    // will continue until the object is deleted.
    void StartExpiringOldStuff(base::TimeDelta expiration_threshold);
  
-+  bool SetExpireDaysThreshold(base::TimeDelta expiration_threshold);
++  void SetExpireDaysThreshold(base::TimeDelta expiration_threshold);
 +
    // Deletes everything associated with a URL until `end_time`.
    void DeleteURL(const GURL& url, base::Time end_time);
@@ -354,7 +353,16 @@ diff --git a/components/history/core/browser/expire_history_backend.h b/componen
 diff --git a/components/history/core/browser/history_backend.cc b/components/history/core/browser/history_backend.cc
 --- a/components/history/core/browser/history_backend.cc
 +++ b/components/history/core/browser/history_backend.cc
-@@ -973,6 +973,20 @@ void HistoryBackend::InitImpl(
+@@ -148,7 +148,7 @@ const int kMaxRedirectCount = 32;
+ 
+ // The number of days old a history entry can be before it is considered "old"
+ // and is deleted.
+-const int kExpireDaysThreshold = 90;
++int kExpireDaysThreshold = 90;
+ 
+ // The maximum number of days for which domain visit metrics are computed
+ // each time HistoryBackend::GetDomainDiversity() is called.
+@@ -973,6 +973,19 @@ void HistoryBackend::InitImpl(
    LOCAL_HISTOGRAM_TIMES("History.InitTime", TimeTicks::Now() - beginning_time);
  }
  
@@ -363,12 +371,11 @@ diff --git a/components/history/core/browser/history_backend.cc b/components/his
 +  // 0 - keep no history
 +  // 65535 - keep history forever
 +  // they are stored as-is
-+  if (expirer_.SetExpireDaysThreshold(base::Days(days))) {
-+    if (days == 0) {
-+      // erase history only if setting was actually changed
-+      task_runner_->PostTask(
-+          FROM_HERE, base::BindOnce(&HistoryBackend::DeleteAllHistory, this));
-+    }
++  kExpireDaysThreshold = days;
++  expirer_.SetExpireDaysThreshold(base::Days(days));
++  if (days == 0) {
++    task_runner_->PostTask(
++        FROM_HERE, base::BindOnce(&HistoryBackend::DeleteAllHistory, this));
 +  }
 +}
 +
