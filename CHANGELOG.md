@@ -1,3 +1,9 @@
+# 102.0.5005.96
+* fix history expiration bug (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2104)
+* fix category setting activation (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2091)
+* improve plain text rendering on mobile
+* rewritten certificate transparency patch (fixes https://github.com/bromite/bromite/issues/2101)
+
 # 102.0.5005.92
 * restore offline-indicator-v2 flag functionality (thanks to @Zelda189)
 
