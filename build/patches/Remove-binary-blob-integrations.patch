@@ -62,9 +62,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  chrome/test/android/BUILD.gn                  |   2 -
  components/background_task_scheduler/BUILD.gn |   5 -
  .../internal/BUILD.gn                         |  10 -
- .../BackgroundTaskGcmTaskService.java         | 160 ------
  ...ackgroundTaskSchedulerFactoryInternal.java |   6 +-
- ...kgroundTaskSchedulerGcmNetworkManager.java | 257 ---------
  .../component_updater/UpdateScheduler.java    |   1 -
  components/externalauth/android/BUILD.gn      |   3 -
  .../externalauth/ExternalAuthUtils.java       |  19 +-
@@ -111,9 +109,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  third_party/android_deps/BUILD.gn             | 540 +-----------------
  .../preconditions/javatests/BUILD.gn          |   1 -
  .../gms/ChromiumPlayServicesAvailability.java |  10 +-
- 87 files changed, 83 insertions(+), 2416 deletions(-)
- delete mode 100644 components/background_task_scheduler/internal/android/java/src/org/chromium/components/background_task_scheduler/internal/BackgroundTaskGcmTaskService.java
- delete mode 100644 components/background_task_scheduler/internal/android/java/src/org/chromium/components/background_task_scheduler/internal/BackgroundTaskSchedulerGcmNetworkManager.java
+ 85 files changed, 83 insertions(+), 1999 deletions(-)
 
 diff --git a/android_webview/expectations/system_webview_bundle.AndroidManifest.expected b/android_webview/expectations/system_webview_bundle.AndroidManifest.expected
 --- a/android_webview/expectations/system_webview_bundle.AndroidManifest.expected
@@ -886,7 +882,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/omaha/UpdateSta
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/password_manager/settings/PasswordSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/password_manager/settings/PasswordSettings.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/password_manager/settings/PasswordSettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/password_manager/settings/PasswordSettings.java
-@@ -139,7 +139,6 @@ public class PasswordSettings extends PreferenceFragmentCompat
+@@ -140,7 +140,6 @@ public class PasswordSettings extends PreferenceFragmentCompat
      private boolean mSearchRecorded;
      private Menu mMenu;
  
@@ -894,7 +890,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/password_manage
      private @ManagePasswordsReferrer int mManagePasswordsReferrer;
  
      /**
-@@ -202,7 +201,6 @@ public class PasswordSettings extends PreferenceFragmentCompat
+@@ -203,7 +202,6 @@ public class PasswordSettings extends PreferenceFragmentCompat
      @Override
      public void onCreate(Bundle savedInstanceState) {
          super.onCreate(savedInstanceState);
@@ -902,7 +898,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/password_manage
          computeTrustedVaultBannerState();
      }
  
-@@ -308,9 +306,6 @@ public class PasswordSettings extends PreferenceFragmentCompat
+@@ -309,9 +307,6 @@ public class PasswordSettings extends PreferenceFragmentCompat
          createSavePasswordsSwitch();
          createEnableAndroidAutofillSwitch();
          createAutoSignInCheckbox();
@@ -912,7 +908,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/password_manage
  
          if (mTrustedVaultBannerState == TrustedVaultBannerState.OPTED_IN) {
              createTrustedVaultBanner(R.string.android_trusted_vault_banner_sub_label_opted_in,
-@@ -485,10 +480,6 @@ public class PasswordSettings extends PreferenceFragmentCompat
+@@ -486,10 +481,6 @@ public class PasswordSettings extends PreferenceFragmentCompat
          // by the system.
          if (getActivity().isFinishing()) {
              PasswordManagerHandlerProvider.getInstance().removeObserver(this);
@@ -946,7 +942,7 @@ diff --git a/chrome/android/modules/chrome_feature_modules.gni b/chrome/android/
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -6830,8 +6830,6 @@ static_library("browser") {
+@@ -6786,8 +6786,6 @@ static_library("browser") {
        "offline_pages/offliner_helper.h",
        "offline_pages/offliner_user_data.cc",
        "offline_pages/offliner_user_data.h",
@@ -1435,171 +1431,6 @@ diff --git a/components/background_task_scheduler/internal/BUILD.gn b/components
        "//base:base_java_test_support",
        "//build/android:build_java",
        "//components/background_task_scheduler:background_task_scheduler_task_ids_java",
-diff --git a/components/background_task_scheduler/internal/android/java/src/org/chromium/components/background_task_scheduler/internal/BackgroundTaskGcmTaskService.java b/components/background_task_scheduler/internal/android/java/src/org/chromium/components/background_task_scheduler/internal/BackgroundTaskGcmTaskService.java
-deleted file mode 100644
---- a/components/background_task_scheduler/internal/android/java/src/org/chromium/components/background_task_scheduler/internal/BackgroundTaskGcmTaskService.java
-+++ /dev/null
-@@ -1,160 +0,0 @@
--// Copyright 2017 The Chromium Authors. All rights reserved.
--// Use of this source code is governed by a BSD-style license that can be
--// found in the LICENSE file.
--
--package org.chromium.components.background_task_scheduler.internal;
--
--import android.os.Build;
--
--import androidx.annotation.VisibleForTesting;
--
--import com.google.android.gms.gcm.GcmNetworkManager;
--import com.google.android.gms.gcm.GcmTaskService;
--import com.google.android.gms.gcm.TaskParams;
--
--import org.chromium.base.ContextUtils;
--import org.chromium.base.Log;
--import org.chromium.base.ThreadUtils;
--import org.chromium.components.background_task_scheduler.BackgroundTask;
--import org.chromium.components.background_task_scheduler.TaskParameters;
--
--import java.util.concurrent.CountDownLatch;
--import java.util.concurrent.TimeUnit;
--import java.util.concurrent.atomic.AtomicBoolean;
--
--/** Delegates calls out to various tasks that need to run in the background. */
--public class BackgroundTaskGcmTaskService extends GcmTaskService {
--    private static final String TAG = "BkgrdTaskGcmTS";
--
--    private BackgroundTaskSchedulerGcmNetworkManager.Clock mClock = System::currentTimeMillis;
--
--    @VisibleForTesting
--    void setClockForTesting(BackgroundTaskSchedulerGcmNetworkManager.Clock clock) {
--        mClock = clock;
--    }
--
--    /** Class that waits for the processing to be done. */
--    private static class Waiter {
--        // Wakelock is only held for 3 minutes by default for GcmTaskService.
--        private static final long MAX_TIMEOUT_SECONDS = 179;
--        private final CountDownLatch mLatch;
--        private long mWaiterTimeoutSeconds;
--        private boolean mIsRescheduleNeeded;
--        private boolean mHasTaskTimedOut;
--
--        public Waiter(long waiterTimeoutSeconds) {
--            mLatch = new CountDownLatch(1);
--            mWaiterTimeoutSeconds = Math.min(waiterTimeoutSeconds, MAX_TIMEOUT_SECONDS);
--        }
--
--        /** Start waiting for the processing to finish. */
--        public void startWaiting() {
--            try {
--                mHasTaskTimedOut = !mLatch.await(mWaiterTimeoutSeconds, TimeUnit.SECONDS);
--            } catch (InterruptedException e) {
--                Log.d(TAG, "Waiter interrupted while waiting.");
--            }
--        }
--
--        /** Called to finish waiting. */
--        public void onWaitDone(boolean needsRescheduling) {
--            mIsRescheduleNeeded = needsRescheduling;
--            mLatch.countDown();
--        }
--
--        /** @return Whether last task timed out. */
--        public boolean hasTaskTimedOut() {
--            return mHasTaskTimedOut;
--        }
--
--        /** @return Whether task needs to be rescheduled. */
--        public boolean isRescheduleNeeded() {
--            return mIsRescheduleNeeded;
--        }
--    }
--
--    private static class TaskFinishedCallbackGcmTaskService
--            implements BackgroundTask.TaskFinishedCallback {
--        private final Waiter mWaiter;
--
--        public TaskFinishedCallbackGcmTaskService(Waiter waiter) {
--            mWaiter = waiter;
--        }
--
--        @Override
--        public void taskFinished(final boolean needsReschedule) {
--            ThreadUtils.runOnUiThreadBlocking(new Runnable() {
--                @Override
--                public void run() {
--                    mWaiter.onWaitDone(needsReschedule);
--                }
--            });
--        }
--    }
--
--    @Override
--    public int onRunTask(TaskParams params) {
--        final TaskParameters taskParams =
--                BackgroundTaskSchedulerGcmNetworkManager.getTaskParametersFromTaskParams(params);
--
--        final BackgroundTask backgroundTask =
--                BackgroundTaskSchedulerFactoryInternal.getBackgroundTaskFromTaskId(
--                        taskParams.getTaskId());
--        if (backgroundTask == null) {
--            Log.w(TAG, "Failed to start task. Could not instantiate BackgroundTask class.");
--            // Cancel task if the BackgroundTask class is not found anymore. We assume this means
--            // that the task has been deprecated.
--            BackgroundTaskSchedulerFactoryInternal.getScheduler().cancel(
--                    ContextUtils.getApplicationContext(), taskParams.getTaskId());
--            return GcmNetworkManager.RESULT_FAILURE;
--        }
--
--        if (BackgroundTaskSchedulerGcmNetworkManager.didTaskExpire(
--                    params, mClock.currentTimeMillis())) {
--            BackgroundTaskSchedulerUma.getInstance().reportTaskExpired(taskParams.getTaskId());
--            return GcmNetworkManager.RESULT_FAILURE;
--        }
--
--        final Waiter waiter = new Waiter(Waiter.MAX_TIMEOUT_SECONDS);
--
--        final AtomicBoolean taskNeedsBackgroundProcessing = new AtomicBoolean();
--        ThreadUtils.runOnUiThreadBlocking(new Runnable() {
--            @Override
--            public void run() {
--                BackgroundTaskSchedulerUma.getInstance().reportTaskStarted(taskParams.getTaskId());
--                taskNeedsBackgroundProcessing.set(
--                        backgroundTask.onStartTask(ContextUtils.getApplicationContext(), taskParams,
--                                new TaskFinishedCallbackGcmTaskService(waiter)));
--            }
--        });
--
--        if (!taskNeedsBackgroundProcessing.get()) return GcmNetworkManager.RESULT_SUCCESS;
--
--        waiter.startWaiting();
--
--        if (waiter.isRescheduleNeeded()) return GcmNetworkManager.RESULT_RESCHEDULE;
--        if (!waiter.hasTaskTimedOut()) return GcmNetworkManager.RESULT_SUCCESS;
--
--        final AtomicBoolean taskNeedsRescheduling = new AtomicBoolean();
--        ThreadUtils.runOnUiThreadBlocking(new Runnable() {
--            @Override
--            public void run() {
--                BackgroundTaskSchedulerUma.getInstance().reportTaskStopped(taskParams.getTaskId());
--                taskNeedsRescheduling.set(backgroundTask.onStopTask(
--                        ContextUtils.getApplicationContext(), taskParams));
--            }
--        });
--
--        if (taskNeedsRescheduling.get()) return GcmNetworkManager.RESULT_RESCHEDULE;
--
--        return GcmNetworkManager.RESULT_SUCCESS;
--    }
--
--    @Override
--    public void onInitializeTasks() {
--        // Ignore the event on OSs supporting JobScheduler.
--        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) return;
--        BackgroundTaskSchedulerFactoryInternal.getScheduler().reschedule(
--                ContextUtils.getApplicationContext());
--    }
--}
 diff --git a/components/background_task_scheduler/internal/android/java/src/org/chromium/components/background_task_scheduler/internal/BackgroundTaskSchedulerFactoryInternal.java b/components/background_task_scheduler/internal/android/java/src/org/chromium/components/background_task_scheduler/internal/BackgroundTaskSchedulerFactoryInternal.java
 --- a/components/background_task_scheduler/internal/android/java/src/org/chromium/components/background_task_scheduler/internal/BackgroundTaskSchedulerFactoryInternal.java
 +++ b/components/background_task_scheduler/internal/android/java/src/org/chromium/components/background_task_scheduler/internal/BackgroundTaskSchedulerFactoryInternal.java
@@ -1616,268 +1447,6 @@ diff --git a/components/background_task_scheduler/internal/android/java/src/org/
      }
  
      /**
-diff --git a/components/background_task_scheduler/internal/android/java/src/org/chromium/components/background_task_scheduler/internal/BackgroundTaskSchedulerGcmNetworkManager.java b/components/background_task_scheduler/internal/android/java/src/org/chromium/components/background_task_scheduler/internal/BackgroundTaskSchedulerGcmNetworkManager.java
-deleted file mode 100644
---- a/components/background_task_scheduler/internal/android/java/src/org/chromium/components/background_task_scheduler/internal/BackgroundTaskSchedulerGcmNetworkManager.java
-+++ /dev/null
-@@ -1,257 +0,0 @@
--// Copyright 2017 The Chromium Authors. All rights reserved.
--// Use of this source code is governed by a BSD-style license that can be
--// found in the LICENSE file.
--
--package org.chromium.components.background_task_scheduler.internal;
--
--import android.content.Context;
--import android.os.Bundle;
--
--import androidx.annotation.NonNull;
--import androidx.annotation.VisibleForTesting;
--
--import com.google.android.gms.gcm.GcmNetworkManager;
--import com.google.android.gms.gcm.OneoffTask;
--import com.google.android.gms.gcm.PeriodicTask;
--import com.google.android.gms.gcm.Task;
--import com.google.android.gms.gcm.TaskParams;
--
--import org.chromium.base.Log;
--import org.chromium.base.ThreadUtils;
--import org.chromium.components.background_task_scheduler.TaskInfo;
--import org.chromium.components.background_task_scheduler.TaskParameters;
--import org.chromium.gms.ChromiumPlayServicesAvailability;
--
--import java.util.concurrent.TimeUnit;
--
--/**
-- * An implementation of {@link BackgroundTaskSchedulerDelegate} that uses the Play Services
-- * {@link GcmNetworkManager} to schedule jobs.
-- */
--class BackgroundTaskSchedulerGcmNetworkManager implements BackgroundTaskSchedulerDelegate {
--    private static final String TAG = "BkgrdTaskSchedGcmNM";
--
--    /** Delta time for expiration checks, after the end time. */
--    static final long DEADLINE_DELTA_MS = 1000;
--
--    /** Clock to use so we can mock time in tests. */
--    public interface Clock { long currentTimeMillis(); }
--
--    private static Clock sClock = System::currentTimeMillis;
--
--    @VisibleForTesting
--    static void setClockForTesting(Clock clock) {
--        sClock = clock;
--    }
--
--    /**
--     * Checks if a task expired, based on the current time of the service.
--     *
--     * @param taskParams parameters sent to the service, which contain the scheduling information
--     * regarding expiration.
--     * @param currentTimeMs the current time of the service.
--     * @return true if the task expired and false otherwise.
--     */
--    static boolean didTaskExpire(TaskParams taskParams, long currentTimeMs) {
--        Bundle extras = taskParams.getExtras();
--        if (extras == null || !extras.containsKey(BACKGROUND_TASK_SCHEDULE_TIME_KEY)) {
--            return false;
--        }
--
--        long scheduleTimeMs = extras.getLong(BACKGROUND_TASK_SCHEDULE_TIME_KEY);
--        if (extras.containsKey(BACKGROUND_TASK_END_TIME_KEY)) {
--            long endTimeMs =
--                    extras.getLong(BackgroundTaskSchedulerDelegate.BACKGROUND_TASK_END_TIME_KEY);
--            return TaskInfo.OneOffInfo.getExpirationStatus(
--                    scheduleTimeMs, endTimeMs, currentTimeMs);
--        } else {
--            long intervalTimeMs = extras.getLong(BACKGROUND_TASK_INTERVAL_TIME_KEY);
--
--            // If flex is never set, it is given a default value of 10% of the period time, as
--            // per the GcmNetworkManager behaviour. This default value is set in
--            // https://developers.google.com/android/reference/com/google/android/gms/gcm/PeriodicTask.
--            double defaultFlexAsFractionOfInterval = 0.1f;
--
--            long flexTimeMs = extras.getLong(BACKGROUND_TASK_FLEX_TIME_KEY,
--                    /*defaultValue=*/(long) (defaultFlexAsFractionOfInterval * intervalTimeMs));
--
--            return TaskInfo.PeriodicInfo.getExpirationStatus(
--                    scheduleTimeMs, intervalTimeMs, flexTimeMs, currentTimeMs);
--        }
--    }
--
--    /**
--     * Retrieves the {@link TaskParameters} from the {@link TaskParams}, which are passed as
--     * one of the keys. Only values valid for {@link android.os.BaseBundle} are supported, and other
--     * values are stripped at the time when the task is scheduled.
--     *
--     * @param taskParams the {@link TaskParams} to extract the {@link TaskParameters} from.
--     * @return the {@link TaskParameters} for the current job.
--     */
--    static TaskParameters getTaskParametersFromTaskParams(@NonNull TaskParams taskParams) {
--        int taskId;
--        try {
--            taskId = Integer.parseInt(taskParams.getTag());
--        } catch (NumberFormatException e) {
--            Log.e(TAG, "Cound not parse task ID from task tag: " + taskParams.getTag());
--            return null;
--        }
--
--        TaskParameters.Builder builder = TaskParameters.create(taskId);
--
--        Bundle extras = taskParams.getExtras();
--        Bundle taskExtras = extras.getBundle(BACKGROUND_TASK_EXTRAS_KEY);
--        builder.addExtras(taskExtras);
--
--        return builder.build();
--    }
--
--    @VisibleForTesting
--    static Task createTaskFromTaskInfo(@NonNull TaskInfo taskInfo) {
--        Bundle taskExtras = new Bundle();
--        taskExtras.putBundle(BACKGROUND_TASK_EXTRAS_KEY, taskInfo.getExtras());
--
--        TaskBuilderVisitor taskBuilderVisitor = new TaskBuilderVisitor(taskExtras);
--        taskInfo.getTimingInfo().accept(taskBuilderVisitor);
--        Task.Builder builder = taskBuilderVisitor.getBuilder();
--
--        builder.setPersisted(taskInfo.isPersisted())
--                .setRequiredNetwork(getGcmNetworkManagerNetworkTypeFromTypeFromTaskNetworkType(
--                        taskInfo.getRequiredNetworkType()))
--                .setRequiresCharging(taskInfo.requiresCharging())
--                .setService(BackgroundTaskGcmTaskService.class)
--                .setTag(taskIdToTaskTag(taskInfo.getTaskId()))
--                .setUpdateCurrent(taskInfo.shouldUpdateCurrent());
--
--        return builder.build();
--    }
--
--    private static class TaskBuilderVisitor implements TaskInfo.TimingInfoVisitor {
--        private Task.Builder mBuilder;
--        private final Bundle mTaskExtras;
--
--        TaskBuilderVisitor(Bundle taskExtras) {
--            mTaskExtras = taskExtras;
--        }
--
--        // Only valid after a TimingInfo object was visited.
--        Task.Builder getBuilder() {
--            return mBuilder;
--        }
--
--        @Override
--        public void visit(TaskInfo.OneOffInfo oneOffInfo) {
--            if (oneOffInfo.expiresAfterWindowEndTime()) {
--                mTaskExtras.putLong(BACKGROUND_TASK_SCHEDULE_TIME_KEY, sClock.currentTimeMillis());
--                mTaskExtras.putLong(BACKGROUND_TASK_END_TIME_KEY, oneOffInfo.getWindowEndTimeMs());
--            }
--
--            OneoffTask.Builder builder = new OneoffTask.Builder();
--            long windowStartSeconds = oneOffInfo.hasWindowStartTimeConstraint()
--                    ? TimeUnit.MILLISECONDS.toSeconds(oneOffInfo.getWindowStartTimeMs())
--                    : 0;
--            long windowEndTimeMs = oneOffInfo.getWindowEndTimeMs();
--            if (oneOffInfo.expiresAfterWindowEndTime()) {
--                windowEndTimeMs += DEADLINE_DELTA_MS;
--            }
--            builder.setExecutionWindow(
--                    windowStartSeconds, TimeUnit.MILLISECONDS.toSeconds(windowEndTimeMs));
--            builder.setExtras(mTaskExtras);
--            mBuilder = builder;
--        }
--
--        @Override
--        public void visit(TaskInfo.PeriodicInfo periodicInfo) {
--            if (periodicInfo.expiresAfterWindowEndTime()) {
--                mTaskExtras.putLong(BACKGROUND_TASK_SCHEDULE_TIME_KEY, sClock.currentTimeMillis());
--                mTaskExtras.putLong(
--                        BACKGROUND_TASK_INTERVAL_TIME_KEY, periodicInfo.getIntervalMs());
--                if (periodicInfo.hasFlex()) {
--                    mTaskExtras.putLong(BACKGROUND_TASK_FLEX_TIME_KEY, periodicInfo.getFlexMs());
--                }
--            }
--
--            PeriodicTask.Builder builder = new PeriodicTask.Builder();
--            builder.setPeriod(TimeUnit.MILLISECONDS.toSeconds(periodicInfo.getIntervalMs()));
--            if (periodicInfo.hasFlex()) {
--                builder.setFlex(TimeUnit.MILLISECONDS.toSeconds(periodicInfo.getFlexMs()));
--            }
--            builder.setExtras(mTaskExtras);
--            mBuilder = builder;
--        }
--
--        @Override
--        public void visit(TaskInfo.ExactInfo exactInfo) {
--            throw new RuntimeException("Exact tasks should not be scheduled with "
--                    + "GcmNetworkManager.");
--        }
--    }
--
--    private static int getGcmNetworkManagerNetworkTypeFromTypeFromTaskNetworkType(
--            @TaskInfo.NetworkType int networkType) {
--        switch (networkType) {
--            // This is correct: GcmNM ANY means no network is guaranteed.
--            case TaskInfo.NetworkType.NONE:
--                return Task.NETWORK_STATE_ANY;
--            case TaskInfo.NetworkType.ANY:
--                return Task.NETWORK_STATE_CONNECTED;
--            case TaskInfo.NetworkType.UNMETERED:
--                return Task.NETWORK_STATE_UNMETERED;
--            default:
--                assert false;
--        }
--        return Task.NETWORK_STATE_ANY;
--    }
--
--    @Override
--    public boolean schedule(Context context, @NonNull TaskInfo taskInfo) {
--        ThreadUtils.assertOnUiThread();
--
--        GcmNetworkManager gcmNetworkManager = getGcmNetworkManager(context);
--        if (gcmNetworkManager == null) {
--            Log.e(TAG, "GcmNetworkManager is not available.");
--            return false;
--        }
--
--        try {
--            Task task = createTaskFromTaskInfo(taskInfo);
--            gcmNetworkManager.schedule(task);
--        } catch (IllegalArgumentException e) {
--            String gcmErrorMessage = e.getMessage() == null ? "null." : e.getMessage();
--            Log.e(TAG,
--                    "GcmNetworkManager failed to schedule task, gcm message: " + gcmErrorMessage);
--            return false;
--        }
--
--        return true;
--    }
--
--    @Override
--    public void cancel(Context context, int taskId) {
--        ThreadUtils.assertOnUiThread();
--
--        GcmNetworkManager gcmNetworkManager = getGcmNetworkManager(context);
--        if (gcmNetworkManager == null) {
--            Log.e(TAG, "GcmNetworkManager is not available.");
--            return;
--        }
--
--        try {
--            gcmNetworkManager.cancelTask(
--                    taskIdToTaskTag(taskId), BackgroundTaskGcmTaskService.class);
--        } catch (IllegalArgumentException e) {
--            Log.e(TAG, "GcmNetworkManager failed to cancel task.");
--        }
--    }
--
--    private GcmNetworkManager getGcmNetworkManager(Context context) {
--        if (ChromiumPlayServicesAvailability.isGooglePlayServicesAvailable(context)) {
--            return GcmNetworkManager.getInstance(context);
--        }
--        return null;
--    }
--
--    private static String taskIdToTaskTag(int taskId) {
--        return Integer.toString(taskId);
--    }
--}
 diff --git a/components/component_updater/android/java/src/org/chromium/components/component_updater/UpdateScheduler.java b/components/component_updater/android/java/src/org/chromium/components/component_updater/UpdateScheduler.java
 --- a/components/component_updater/android/java/src/org/chromium/components/component_updater/UpdateScheduler.java
 +++ b/components/component_updater/android/java/src/org/chromium/components/component_updater/UpdateScheduler.java
