@@ -75,7 +75,8 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../tabbed_mode/TabbedRootUiCoordinator.java  |  19 --
  .../browser/tasks/ReturnToChromeUtil.java     |   9 +-
  chrome/browser/BUILD.gn                       | 150 -------------
- .../chrome_autocomplete_provider_client.cc    |  17 +-
+ .../chrome_autocomplete_provider_client.cc    |  21 +-
+ .../chrome_autocomplete_provider_client.h     |   1 -
  .../document_suggestions_service_factory.cc   |   6 +-
  .../autofill/personal_data_manager_factory.cc |   4 +-
  .../common_dependencies_chrome.cc             |  13 --
@@ -84,17 +85,22 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../counters/browsing_data_counter_utils.cc   |   6 -
  chrome/browser/chrome_browser_field_trials.cc |   6 +-
  .../endpoint_fetcher/endpoint_fetcher.cc      |   2 +-
+ .../profile_report_generator_delegate_base.cc |  11 -
  ...tory_ui_favicon_request_handler_factory.cc |   1 -
  chrome/browser/feed/android/BUILD.gn          |   1 -
  .../chrome/browser/feed/FeedFeatures.java     |   2 -
+ chrome/browser/feed/feed_service_factory.cc   |   6 +-
  .../browser/firstrun/MobileFreProgress.java   |   4 +-
+ .../gcm/gcm_profile_service_factory.cc        |   4 +-
+ .../profile_invalidation_provider_factory.cc  |  48 +---
  .../router/discovery/access_code/BUILD.gn     |   1 -
  .../metrics/chrome_metrics_service_client.cc  |   6 -
  .../browser/password_manager/android/BUILD.gn |   6 -
  .../PasswordManagerHelper.java                |  94 +-------
  ...swordSyncControllerDelegateBridgeImpl.java |   7 -
- .../chrome_password_manager_client.cc         |  30 +--
- .../chrome_password_manager_client.h          |   1 -
+ .../chrome_password_manager_client.cc         | 120 +---------
+ .../chrome_password_manager_client.h          |  25 ---
+ ...ssword_manager_settings_service_factory.cc |   6 -
  chrome/browser/privacy/BUILD.gn               |   2 -
  .../res/layout/privacy_review_msbb_step.xml   |   8 -
  chrome/browser/profiles/profile_impl.cc       |  15 +-
@@ -111,16 +117,19 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../browser/common_dependencies.h             |   3 -
  .../browser/headless/client_headless.cc       |  17 --
  .../browser/headless/client_headless.h        |   1 -
+ .../browser/autocomplete_provider_client.h    |   7 -
+ .../password_manager/core/browser/BUILD.gn    |   9 -
  .../core/browser/leak_detection_delegate.cc   |   2 +-
  .../core/browser/password_form_manager.cc     |  34 +--
- .../core/browser/password_manager_client.h    |   3 -
+ .../core/browser/password_manager.cc          |  82 -------
+ .../core/browser/password_manager_client.h    |  20 --
  .../browser/password_manager_client_helper.cc |  43 +---
  .../core/browser/sync_credentials_filter.cc   |  48 +---
  components/signin/features.gni                |   4 +-
  .../signin/SystemAccountManagerDelegate.java  |  25 +--
  .../net/HttpNegotiateAuthenticator.java       |  88 +-------
  .../chromoting/base/OAuthTokenFetcher.java    |   2 -
- 101 files changed, 84 insertions(+), 2313 deletions(-)
+ 110 files changed, 90 insertions(+), 2616 deletions(-)
 
 diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
 --- a/chrome/android/BUILD.gn
@@ -3750,15 +3759,16 @@ diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
 diff --git a/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc b/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc
 --- a/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc
 +++ b/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc
-@@ -34,7 +34,6 @@
+@@ -34,8 +34,6 @@
  #include "chrome/browser/profiles/profile_key.h"
  #include "chrome/browser/query_tiles/tile_service_factory.h"
  #include "chrome/browser/search_engines/template_url_service_factory.h"
 -#include "chrome/browser/signin/identity_manager_factory.h"
- #include "chrome/browser/sync/sync_service_factory.h"
+-#include "chrome/browser/sync/sync_service_factory.h"
  #include "chrome/browser/translate/chrome_translate_client.h"
  #include "chrome/browser/ui/browser_command_controller.h"
-@@ -55,9 +54,6 @@
+ #include "chrome/browser/ui/browser_finder.h"
+@@ -55,9 +53,6 @@
  #include "components/omnibox/browser/tab_matcher.h"
  #include "components/omnibox/common/omnibox_features.h"
  #include "components/prefs/pref_service.h"
@@ -3768,7 +3778,17 @@ diff --git a/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc 
  #include "components/translate/core/browser/translate_manager.h"
  #include "components/unified_consent/url_keyed_data_collection_consent_helper.h"
  #include "content/public/browser/navigation_entry.h"
-@@ -300,11 +296,6 @@ ChromeAutocompleteProviderClient::GetOmniboxTriggeredFeatureService() const {
+@@ -109,8 +104,7 @@ ChromeAutocompleteProviderClient::ChromeAutocompleteProviderClient(
+     : profile_(profile),
+       scheme_classifier_(profile),
+       url_consent_helper_(unified_consent::UrlKeyedDataCollectionConsentHelper::
+-                              NewPersonalizedDataCollectionConsentHelper(
+-                                  SyncServiceFactory::GetForProfile(profile_))),
++                              NewPersonalizedDataCollectionConsentHelper(nullptr)),
+       tab_matcher_(*this, profile_),
+       storage_partition_(nullptr),
+       omnibox_triggered_feature_service_(
+@@ -300,11 +294,6 @@ ChromeAutocompleteProviderClient::GetOmniboxTriggeredFeatureService() const {
    return omnibox_triggered_feature_service_.get();
  }
  
@@ -3780,7 +3800,7 @@ diff --git a/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc 
  bool ChromeAutocompleteProviderClient::IsAlwaysIncognitoEnabled() const {
    if (profile_->GetPrefs()->GetBoolean(prefs::kAlwaysIncognitoEnabled)) {
      return true;
-@@ -330,15 +321,11 @@ bool ChromeAutocompleteProviderClient::IsPersonalizedUrlDataCollectionActive()
+@@ -330,15 +319,11 @@ bool ChromeAutocompleteProviderClient::IsPersonalizedUrlDataCollectionActive()
  }
  
  bool ChromeAutocompleteProviderClient::IsAuthenticated() const {
@@ -3798,6 +3818,17 @@ diff --git a/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc 
  }
  
  std::string ChromeAutocompleteProviderClient::ProfileUserName() const {
+diff --git a/chrome/browser/autocomplete/chrome_autocomplete_provider_client.h b/chrome/browser/autocomplete/chrome_autocomplete_provider_client.h
+--- a/chrome/browser/autocomplete/chrome_autocomplete_provider_client.h
++++ b/chrome/browser/autocomplete/chrome_autocomplete_provider_client.h
+@@ -76,7 +76,6 @@ class ChromeAutocompleteProviderClient : public AutocompleteProviderClient {
+   query_tiles::TileService* GetQueryTileService() const override;
+   OmniboxTriggeredFeatureService* GetOmniboxTriggeredFeatureService()
+       const override;
+-  signin::IdentityManager* GetIdentityManager() const override;
+   bool IsOffTheRecord() const override;
+   bool IsAlwaysIncognitoEnabled() const override;
+   bool SearchSuggestEnabled() const override;
 diff --git a/chrome/browser/autocomplete/document_suggestions_service_factory.cc b/chrome/browser/autocomplete/document_suggestions_service_factory.cc
 --- a/chrome/browser/autocomplete/document_suggestions_service_factory.cc
 +++ b/chrome/browser/autocomplete/document_suggestions_service_factory.cc
@@ -3986,6 +4017,38 @@ diff --git a/chrome/browser/endpoint_fetcher/endpoint_fetcher.cc b/chrome/browse
  
  EndpointFetcher::EndpointFetcher(
      Profile* const profile,
+diff --git a/chrome/browser/enterprise/reporting/profile_report_generator_delegate_base.cc b/chrome/browser/enterprise/reporting/profile_report_generator_delegate_base.cc
+--- a/chrome/browser/enterprise/reporting/profile_report_generator_delegate_base.cc
++++ b/chrome/browser/enterprise/reporting/profile_report_generator_delegate_base.cc
+@@ -13,13 +13,10 @@
+ #include "chrome/browser/policy/chrome_browser_policy_connector.h"
+ #include "chrome/browser/policy/chrome_policy_conversions_client.h"
+ #include "chrome/browser/profiles/profile_manager.h"
+-#include "chrome/browser/signin/identity_manager_factory.h"
+ #include "components/enterprise/browser/reporting/profile_report_generator.h"
+ #include "components/policy/core/browser/policy_conversions.h"
+ #include "components/policy/core/browser/policy_conversions_client.h"
+ #include "components/policy/proto/device_management_backend.pb.h"
+-#include "components/signin/public/identity_manager/account_info.h"
+-#include "components/signin/public/identity_manager/identity_manager.h"
+ 
+ namespace enterprise_reporting {
+ 
+@@ -37,14 +34,6 @@ bool ProfileReportGeneratorDelegateBase::Init(const base::FilePath& path) {
+ 
+ void ProfileReportGeneratorDelegateBase::GetSigninUserInfo(
+     enterprise_management::ChromeUserProfileInfo* report) {
+-  auto account_info =
+-      IdentityManagerFactory::GetForProfile(profile_)->GetPrimaryAccountInfo(
+-          signin::ConsentLevel::kSync);
+-  if (account_info.IsEmpty())
+-    return;
+-  auto* signed_in_user_info = report->mutable_chrome_signed_in_user();
+-  signed_in_user_info->set_email(account_info.email);
+-  signed_in_user_info->set_obfuscated_gaia_id(account_info.gaia);
+ }
+ 
+ std::unique_ptr<policy::PolicyConversionsClient>
 diff --git a/chrome/browser/favicon/history_ui_favicon_request_handler_factory.cc b/chrome/browser/favicon/history_ui_favicon_request_handler_factory.cc
 --- a/chrome/browser/favicon/history_ui_favicon_request_handler_factory.cc
 +++ b/chrome/browser/favicon/history_ui_favicon_request_handler_factory.cc
@@ -4021,6 +4084,43 @@ diff --git a/chrome/browser/feed/android/java/src/org/chromium/chrome/browser/fe
  import org.chromium.components.user_prefs.UserPrefs;
  
  /**
+diff --git a/chrome/browser/feed/feed_service_factory.cc b/chrome/browser/feed/feed_service_factory.cc
+--- a/chrome/browser/feed/feed_service_factory.cc
++++ b/chrome/browser/feed/feed_service_factory.cc
+@@ -17,7 +17,6 @@
+ #include "chrome/browser/metrics/chrome_metrics_service_accessor.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_key.h"
+-#include "chrome/browser/signin/identity_manager_factory.h"
+ #include "chrome/common/channel_info.h"
+ #include "chrome/common/chrome_version.h"
+ #include "components/background_task_scheduler/background_task_scheduler_factory.h"
+@@ -160,7 +159,6 @@ FeedServiceFactory::FeedServiceFactory()
+     : BrowserContextKeyedServiceFactory(
+           "FeedService",
+           BrowserContextDependencyManager::GetInstance()) {
+-  DependsOn(IdentityManagerFactory::GetInstance());
+   DependsOn(HistoryServiceFactory::GetInstance());
+   DependsOn(background_task::BackgroundTaskSchedulerFactory::GetInstance());
+ }
+@@ -181,8 +179,6 @@ KeyedService* FeedServiceFactory::BuildServiceInstanceFor(
+   content::StoragePartition* storage_partition =
+       context->GetDefaultStoragePartition();
+ 
+-  signin::IdentityManager* identity_manager =
+-      IdentityManagerFactory::GetForProfile(profile);
+   std::string api_key;
+   if (google_apis::IsGoogleChromeAPIKeyUsed()) {
+     bool is_stable_channel =
+@@ -223,7 +219,7 @@ KeyedService* FeedServiceFactory::BuildServiceInstanceFor(
+       storage_partition->GetProtoDatabaseProvider()->GetDB<feedkvstore::Entry>(
+           leveldb_proto::ProtoDbType::FEED_KEY_VALUE_DATABASE,
+           feed_dir.AppendASCII("keyvaldb"), background_task_runner),
+-      identity_manager,
++      /* identity_manager */ nullptr,
+       HistoryServiceFactory::GetForProfile(profile,
+                                            ServiceAccessType::IMPLICIT_ACCESS),
+       storage_partition->GetURLLoaderFactoryForBrowserProcess(),
 diff --git a/chrome/browser/first_run/android/java/src/org/chromium/chrome/browser/firstrun/MobileFreProgress.java b/chrome/browser/first_run/android/java/src/org/chromium/chrome/browser/firstrun/MobileFreProgress.java
 --- a/chrome/browser/first_run/android/java/src/org/chromium/chrome/browser/firstrun/MobileFreProgress.java
 +++ b/chrome/browser/first_run/android/java/src/org/chromium/chrome/browser/firstrun/MobileFreProgress.java
@@ -4042,6 +4142,131 @@ diff --git a/chrome/browser/first_run/android/java/src/org/chromium/chrome/brows
      int SYNC_CONSENT_SHOWN = 3;
      /** The user clicked on the continue button to continue with sync consent. */
      int SYNC_CONSENT_ACCEPTED = 4;
+diff --git a/chrome/browser/gcm/gcm_profile_service_factory.cc b/chrome/browser/gcm/gcm_profile_service_factory.cc
+--- a/chrome/browser/gcm/gcm_profile_service_factory.cc
++++ b/chrome/browser/gcm/gcm_profile_service_factory.cc
+@@ -13,7 +13,6 @@
+ #include "chrome/browser/profiles/incognito_helpers.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_key.h"
+-#include "chrome/browser/signin/identity_manager_factory.h"
+ #include "components/gcm_driver/gcm_profile_service.h"
+ #include "components/keyed_service/content/browser_context_dependency_manager.h"
+ #include "components/offline_pages/buildflags/buildflags.h"
+@@ -113,7 +112,6 @@ GCMProfileServiceFactory::GCMProfileServiceFactory()
+     : BrowserContextKeyedServiceFactory(
+         "GCMProfileService",
+         BrowserContextDependencyManager::GetInstance()) {
+-  DependsOn(IdentityManagerFactory::GetInstance());
+ #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
+   DependsOn(offline_pages::PrefetchServiceFactory::GetInstance());
+ #endif  // BUILDFLAG(ENABLE_OFFLINE_PAGES)
+@@ -147,7 +145,7 @@ KeyedService* GCMProfileServiceFactory::BuildServiceInstanceFor(
+           ->GetURLLoaderFactoryForBrowserProcess(),
+       content::GetNetworkConnectionTracker(), chrome::GetChannel(),
+       gcm::GetProductCategoryForSubtypes(profile->GetPrefs()),
+-      IdentityManagerFactory::GetForProfile(profile),
++      /* identity_manager = */ nullptr,
+       std::make_unique<GCMClientFactory>(), content::GetUIThreadTaskRunner({}),
+       content::GetIOThreadTaskRunner({}), blocking_task_runner);
+ #endif
+diff --git a/chrome/browser/invalidation/profile_invalidation_provider_factory.cc b/chrome/browser/invalidation/profile_invalidation_provider_factory.cc
+--- a/chrome/browser/invalidation/profile_invalidation_provider_factory.cc
++++ b/chrome/browser/invalidation/profile_invalidation_provider_factory.cc
+@@ -15,7 +15,6 @@
+ #include "chrome/browser/gcm/gcm_profile_service_factory.h"
+ #include "chrome/browser/gcm/instance_id/instance_id_profile_service_factory.h"
+ #include "chrome/browser/profiles/profile.h"
+-#include "chrome/browser/signin/identity_manager_factory.h"
+ #include "chrome/common/chrome_content_client.h"
+ #include "components/gcm_driver/gcm_profile_service.h"
+ #include "components/gcm_driver/instance_id/instance_id_profile_service.h"
+@@ -42,36 +41,11 @@
+ #endif
+ 
+ namespace invalidation {
+-namespace {
+-
+-std::unique_ptr<InvalidationService> CreateInvalidationServiceForSenderId(
+-    Profile* profile,
+-    IdentityProvider* identity_provider,
+-    const std::string& sender_id) {
+-  auto service = std::make_unique<FCMInvalidationService>(
+-      identity_provider,
+-      base::BindRepeating(
+-          &FCMNetworkHandler::Create,
+-          gcm::GCMProfileServiceFactory::GetForProfile(profile)->driver(),
+-          instance_id::InstanceIDProfileServiceFactory::GetForProfile(profile)
+-              ->driver()),
+-      base::BindRepeating(
+-          &PerUserTopicSubscriptionManager::Create, identity_provider,
+-          profile->GetPrefs(),
+-          base::RetainedRef(profile->GetDefaultStoragePartition()
+-                                ->GetURLLoaderFactoryForBrowserProcess())),
+-      instance_id::InstanceIDProfileServiceFactory::GetForProfile(profile)
+-          ->driver(),
+-      profile->GetPrefs(), sender_id);
+-  service->Init();
+-  return service;
+-}
+-
+-}  // namespace
+ 
+ // static
+ ProfileInvalidationProvider* ProfileInvalidationProviderFactory::GetForProfile(
+     Profile* profile) {
++  return NULL;
+ #if BUILDFLAG(IS_CHROMEOS_ASH)
+   // Using ProfileHelper::GetSigninProfile() here would lead to an infinite loop
+   // when this method is called during the creation of the sign-in profile
+@@ -85,8 +59,6 @@ ProfileInvalidationProvider* ProfileInvalidationProviderFactory::GetForProfile(
+     return NULL;
+   }
+ #endif
+-  return static_cast<ProfileInvalidationProvider*>(
+-      GetInstance()->GetServiceForBrowserContext(profile, true));
+ }
+ 
+ // static
+@@ -99,7 +71,6 @@ ProfileInvalidationProviderFactory::ProfileInvalidationProviderFactory()
+     : BrowserContextKeyedServiceFactory(
+           "InvalidationService",
+           BrowserContextDependencyManager::GetInstance()) {
+-  DependsOn(IdentityManagerFactory::GetInstance());
+   DependsOn(gcm::GCMProfileServiceFactory::GetInstance());
+ }
+ 
+@@ -116,8 +87,6 @@ KeyedService* ProfileInvalidationProviderFactory::BuildServiceInstanceFor(
+   if (testing_factory_)
+     return testing_factory_.Run(context).release();
+ 
+-  std::unique_ptr<IdentityProvider> identity_provider;
+-
+ #if BUILDFLAG(IS_CHROMEOS_ASH)
+   policy::BrowserPolicyConnectorAsh* connector =
+       g_browser_process->platform_part()->browser_policy_connector_ash();
+@@ -129,20 +98,7 @@ KeyedService* ProfileInvalidationProviderFactory::BuildServiceInstanceFor(
+   }
+ #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+ 
+-  Profile* profile = Profile::FromBrowserContext(context);
+-
+-  if (!identity_provider) {
+-    identity_provider = std::make_unique<ProfileIdentityProvider>(
+-        IdentityManagerFactory::GetForProfile(profile));
+-  }
+-  auto service =
+-      CreateInvalidationServiceForSenderId(profile, identity_provider.get(),
+-                                           /* sender_id = */ "");
+-  auto custom_sender_id_factory = base::BindRepeating(
+-      &CreateInvalidationServiceForSenderId, profile, identity_provider.get());
+-  return new ProfileInvalidationProvider(std::move(service),
+-                                         std::move(identity_provider),
+-                                         std::move(custom_sender_id_factory));
++  return NULL;
+ }
+ 
+ void ProfileInvalidationProviderFactory::RegisterProfilePrefs(
 diff --git a/chrome/browser/media/router/discovery/access_code/BUILD.gn b/chrome/browser/media/router/discovery/access_code/BUILD.gn
 --- a/chrome/browser/media/router/discovery/access_code/BUILD.gn
 +++ b/chrome/browser/media/router/discovery/access_code/BUILD.gn
@@ -4309,24 +4534,34 @@ diff --git a/chrome/browser/password_manager/android/java/src/org/chromium/chrom
 diff --git a/chrome/browser/password_manager/chrome_password_manager_client.cc b/chrome/browser/password_manager/chrome_password_manager_client.cc
 --- a/chrome/browser/password_manager/chrome_password_manager_client.cc
 +++ b/chrome/browser/password_manager/chrome_password_manager_client.cc
-@@ -36,7 +36,6 @@
+@@ -30,14 +30,11 @@
+ #include "chrome/browser/password_manager/account_password_store_factory.h"
+ #include "chrome/browser/password_manager/field_info_manager_factory.h"
+ #include "chrome/browser/password_manager/password_manager_settings_service_factory.h"
+-#include "chrome/browser/password_manager/password_reuse_manager_factory.h"
+ #include "chrome/browser/password_manager/password_scripts_fetcher_factory.h"
+ #include "chrome/browser/password_manager/password_store_factory.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/safe_browsing/chrome_password_protection_service.h"
  #include "chrome/browser/safe_browsing/user_interaction_observer.h"
 -#include "chrome/browser/signin/identity_manager_factory.h"
- #include "chrome/browser/sync/sync_service_factory.h"
+-#include "chrome/browser/sync/sync_service_factory.h"
  #include "chrome/browser/touch_to_fill/touch_to_fill_webauthn_credential.h"
  #include "chrome/browser/translate/chrome_translate_client.h"
-@@ -84,8 +83,6 @@
+ #include "chrome/browser/ui/passwords/password_generation_popup_controller_impl.h"
+@@ -84,11 +81,7 @@
  #include "components/profile_metrics/browser_profile_type.h"
  #include "components/safe_browsing/buildflags.h"
  #include "components/sessions/content/content_record_password_state.h"
 -#include "components/signin/public/base/signin_metrics.h"
 -#include "components/signin/public/identity_manager/identity_manager.h"
  #include "components/site_isolation/site_isolation_policy.h"
- #include "components/sync/driver/sync_service.h"
- #include "components/sync/driver/sync_user_settings.h"
-@@ -126,9 +123,6 @@
+-#include "components/sync/driver/sync_service.h"
+-#include "components/sync/driver/sync_user_settings.h"
+ #include "components/translate/core/browser/translate_manager.h"
+ #include "components/version_info/version_info.h"
+ #include "content/public/browser/back_forward_cache.h"
+@@ -126,9 +119,6 @@
  #if BUILDFLAG(IS_ANDROID)
  #include "chrome/browser/android/tab_android.h"
  #include "chrome/browser/autofill/manual_filling_controller.h"
@@ -4336,7 +4571,20 @@ diff --git a/chrome/browser/password_manager/chrome_password_manager_client.cc b
  #include "chrome/browser/password_manager/android/credential_leak_controller_android.h"
  #include "chrome/browser/password_manager/android/generated_password_saved_infobar_delegate_android.h"
  #include "chrome/browser/password_manager/android/password_accessory_controller.h"
-@@ -295,10 +289,7 @@ bool ChromePasswordManagerClient::IsFillingFallbackEnabled(
+@@ -193,12 +183,6 @@ namespace {
+ static const char kPasswordBreachEntryTrigger[] = "PASSWORD_ENTRY";
+ #endif
+ 
+-const syncer::SyncService* GetSyncServiceForProfile(Profile* profile) {
+-  if (SyncServiceFactory::HasSyncService(profile))
+-    return SyncServiceFactory::GetForProfile(profile);
+-  return nullptr;
+-}
+-
+ // Adds |observer| to the input observers of |widget_host|.
+ void AddToWidgetInputEventObservers(
+     content::RenderWidgetHost* widget_host,
+@@ -295,10 +279,7 @@ bool ChromePasswordManagerClient::IsFillingFallbackEnabled(
  }
  
  bool ChromePasswordManagerClient::IsAutoSignInEnabled() const {
@@ -4348,7 +4596,7 @@ diff --git a/chrome/browser/password_manager/chrome_password_manager_client.cc b
  }
  
  bool ChromePasswordManagerClient::PromptUserToSaveOrUpdatePassword(
-@@ -426,13 +417,7 @@ bool ChromePasswordManagerClient::PromptUserToChooseCredentials(
+@@ -426,13 +407,7 @@ bool ChromePasswordManagerClient::PromptUserToChooseCredentials(
        &PasswordManagerClientHelper::OnCredentialsChosen,
        base::Unretained(&helper_), std::move(callback), local_forms.size() == 1);
  #if BUILDFLAG(IS_ANDROID)
@@ -4363,7 +4611,15 @@ diff --git a/chrome/browser/password_manager/chrome_password_manager_client.cc b
  #else
    return PasswordsClientUIDelegateFromWebContents(web_contents())
        ->OnChooseCredentials(std::move(local_forms), origin,
-@@ -518,7 +503,7 @@ void ChromePasswordManagerClient::NotifyUserAutoSignin(
+@@ -467,7 +442,6 @@ void ChromePasswordManagerClient::ShowTouchToFill(
+ 
+ void ChromePasswordManagerClient::OnPasswordSelected(
+     const std::u16string& text) {
+-  password_reuse_detection_manager_.OnPaste(text);
+ }
+ #endif
+ 
+@@ -518,7 +492,7 @@ void ChromePasswordManagerClient::NotifyUserAutoSignin(
    DCHECK(!local_forms.empty());
    helper_.NotifyUserAutoSignin();
  #if BUILDFLAG(IS_ANDROID)
@@ -4372,7 +4628,44 @@ diff --git a/chrome/browser/password_manager/chrome_password_manager_client.cc b
  #else
    PasswordsClientUIDelegateFromWebContents(web_contents())
        ->OnAutoSignin(std::move(local_forms), origin);
-@@ -765,10 +750,7 @@ net::CertStatus ChromePasswordManagerClient::GetMainFrameCertStatus() const {
+@@ -685,10 +659,6 @@ PrefService* ChromePasswordManagerClient::GetPrefs() const {
+   return profile_->GetPrefs();
+ }
+ 
+-const syncer::SyncService* ChromePasswordManagerClient::GetSyncService() const {
+-  return GetSyncServiceForProfile(profile_);
+-}
+-
+ password_manager::PasswordStoreInterface*
+ ChromePasswordManagerClient::GetProfilePasswordStore() const {
+   // Always use EXPLICIT_ACCESS as the password manager checks IsIncognito
+@@ -707,11 +677,6 @@ ChromePasswordManagerClient::GetAccountPasswordStore() const {
+       .get();
+ }
+ 
+-password_manager::PasswordReuseManager*
+-ChromePasswordManagerClient::GetPasswordReuseManager() const {
+-  return PasswordReuseManagerFactory::GetForProfile(profile_);
+-}
+-
+ password_manager::PasswordScriptsFetcher*
+ ChromePasswordManagerClient::GetPasswordScriptsFetcher() {
+   return PasswordScriptsFetcherFactory::GetForBrowserContext(profile_);
+@@ -723,13 +688,6 @@ ChromePasswordManagerClient::GetPasswordChangeSuccessTracker() {
+       GetForBrowserContext(profile_);
+ }
+ 
+-password_manager::SyncState ChromePasswordManagerClient::GetPasswordSyncState()
+-    const {
+-  const syncer::SyncService* sync_service =
+-      SyncServiceFactory::GetForProfile(profile_);
+-  return password_manager_util::GetPasswordSyncState(sync_service);
+-}
+-
+ bool ChromePasswordManagerClient::WasLastNavigationHTTPError() const {
+   DCHECK(web_contents());
+ 
+@@ -765,10 +723,7 @@ net::CertStatus ChromePasswordManagerClient::GetMainFrameCertStatus() const {
  
  void ChromePasswordManagerClient::PromptUserToEnableAutosignin() {
  #if BUILDFLAG(IS_ANDROID)
@@ -4384,7 +4677,36 @@ diff --git a/chrome/browser/password_manager/chrome_password_manager_client.cc b
  #else
    PasswordsClientUIDelegateFromWebContents(web_contents())
        ->OnPromptEnableAutoSignin();
-@@ -961,10 +943,6 @@ favicon::FaviconService* ChromePasswordManagerClient::GetFaviconService() {
+@@ -833,10 +788,6 @@ url::Origin ChromePasswordManagerClient::GetLastCommittedOrigin() const {
+   DCHECK(web_contents());
+   return web_contents()->GetMainFrame()->GetLastCommittedOrigin();
+ }
+-const password_manager::CredentialsFilter*
+-ChromePasswordManagerClient::GetStoreResultFilter() const {
+-  return &credentials_filter_;
+-}
+ 
+ const autofill::LogManager* ChromePasswordManagerClient::GetLogManager() const {
+   return log_manager_.get();
+@@ -887,17 +838,6 @@ void ChromePasswordManagerClient::CheckSafeBrowsingReputation(
+ }
+ #endif  // defined(ON_FOCUS_PING_ENABLED)
+ 
+-void ChromePasswordManagerClient::CheckProtectedPasswordEntry(
+-    PasswordType password_type,
+-    const std::string& username,
+-    const std::vector<password_manager::MatchingReusedCredential>&
+-        matching_reused_credentials,
+-    bool password_field_exists) {
+-}
+-
+-void ChromePasswordManagerClient::LogPasswordReuseDetectedEvent() {
+-}
+-
+ #if !BUILDFLAG(IS_ANDROID)
+ void ChromePasswordManagerClient::MaybeReportEnterpriseLoginEvent(
+     const GURL& url,
+@@ -961,10 +901,6 @@ favicon::FaviconService* ChromePasswordManagerClient::GetFaviconService() {
        profile_, ServiceAccessType::EXPLICIT_ACCESS);
  }
  
@@ -4395,10 +4717,188 @@ diff --git a/chrome/browser/password_manager/chrome_password_manager_client.cc b
  scoped_refptr<network::SharedURLLoaderFactory>
  ChromePasswordManagerClient::GetURLLoaderFactory() {
    return profile_->GetDefaultStoragePartition()
+@@ -1194,18 +1130,14 @@ void ChromePasswordManagerClient::GenerationElementLostFocus() {
+ #if BUILDFLAG(IS_ANDROID)
+ void ChromePasswordManagerClient::OnImeTextCommittedEvent(
+     const std::u16string& text_str) {
+-  password_reuse_detection_manager_.OnKeyPressedCommitted(text_str);
+ }
+ 
+ void ChromePasswordManagerClient::OnImeSetComposingTextEvent(
+     const std::u16string& text_str) {
+   last_composing_text_ = text_str;
+-  password_reuse_detection_manager_.OnKeyPressedUncommitted(
+-      last_composing_text_);
+ }
+ 
+ void ChromePasswordManagerClient::OnImeFinishComposingTextEvent() {
+-  password_reuse_detection_manager_.OnKeyPressedCommitted(last_composing_text_);
+   last_composing_text_.clear();
+ }
+ #endif  // BUILDFLAG(IS_ANDROID)
+@@ -1301,34 +1233,13 @@ ChromePasswordManagerClient::ChromePasswordManagerClient(
+       profile_(Profile::FromBrowserContext(web_contents->GetBrowserContext())),
+       password_manager_(this),
+       password_feature_manager_(profile_->GetPrefs(),
+-                                SyncServiceFactory::GetForProfile(profile_)),
++                                nullptr),
+       httpauth_manager_(this),
+-      password_reuse_detection_manager_(this),
+       driver_factory_(nullptr),
+       webauthn_credentials_delegate_(this),
+       content_credential_manager_(this),
+       password_generation_driver_receivers_(web_contents, this),
+       observer_(nullptr),
+-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+-      credentials_filter_(
+-          this,
+-          base::BindRepeating(&GetSyncServiceForProfile, profile_),
+-          DiceWebSigninInterceptorFactory::GetForProfile(profile_)),
+-      account_storage_auth_helper_(
+-          IdentityManagerFactory::GetForProfile(profile_),
+-          &password_feature_manager_,
+-          base::BindRepeating(
+-              [](content::WebContents* web_contents) {
+-                Browser* browser =
+-                    chrome::FindBrowserWithWebContents(web_contents);
+-                return browser ? browser->signin_view_controller() : nullptr;
+-              },
+-              web_contents)),
+-#else
+-      credentials_filter_(
+-          this,
+-          base::BindRepeating(&GetSyncServiceForProfile, profile_)),
+-#endif
+       helper_(this) {
+   ContentPasswordManagerDriverFactory::CreateForWebContents(web_contents, this,
+                                                             autofill_client);
+@@ -1364,8 +1275,6 @@ void ChromePasswordManagerClient::PrimaryPageChanged(content::Page& page) {
+   // requests.
+   content_credential_manager_.DisconnectBinding();
+ 
+-  password_reuse_detection_manager_.DidNavigateMainFrame(GetLastCommittedURL());
+-
+   AddToWidgetInputEventObservers(page.GetMainDocument().GetRenderWidgetHost(),
+                                  this);
+ 
+@@ -1437,7 +1346,6 @@ void ChromePasswordManagerClient::OnPaste() {
+   }
+ 
+   was_on_paste_called_ = true;
+-  password_reuse_detection_manager_.OnPaste(std::move(text));
+ }
+ #endif
+ 
+@@ -1460,10 +1368,6 @@ void ChromePasswordManagerClient::OnInputEvent(
+   // Android keyboard, ImeTextCommittedEvent is triggered instead.
+   if (event.GetType() != blink::WebInputEvent::Type::kKeyDown)
+     return;
+-  const blink::WebKeyboardEvent& key_event =
+-      static_cast<const blink::WebKeyboardEvent&>(event);
+-  password_reuse_detection_manager_.OnKeyPressedCommitted(key_event.text);
+-
+ #else   // !BUILDFLAG(IS_ANDROID)
+   if (event.GetType() != blink::WebInputEvent::Type::kChar)
+     return;
+@@ -1473,8 +1377,6 @@ void ChromePasswordManagerClient::OnInputEvent(
+   // command key is pressed. This detects CTRL+V, COMMAND+V, and CTRL+SHIFT+V.
+   if (key_event.windows_key_code == (ui::VKEY_V & 0x1f)) {
+     OnPaste();
+-  } else {
+-    password_reuse_detection_manager_.OnKeyPressedCommitted(key_event.text);
+   }
+ #endif  // BUILDFLAG(IS_ANDROID)
+ }
+@@ -1540,19 +1442,7 @@ bool ChromePasswordManagerClient::IsPasswordManagementEnabledForCurrentPage(
+ // static
+ bool ChromePasswordManagerClient::ShouldAnnotateNavigationEntries(
+     Profile* profile) {
+-  // Only annotate PasswordState onto the navigation entry if user is
+-  // opted into UMA and they're not syncing w/ a custom passphrase.
+-  if (!ChromeMetricsServiceAccessor::IsMetricsAndCrashReportingEnabled())
+-    return false;
+-
+-  syncer::SyncService* sync_service =
+-      SyncServiceFactory::GetForProfile(profile);
+-  if (!sync_service || !sync_service->IsSyncFeatureActive() ||
+-      sync_service->GetUserSettings()->IsUsingExplicitPassphrase()) {
+     return false;
+-  }
+-
+-  return true;
+ }
+ 
+ void ChromePasswordManagerClient::GenerationResultAvailable(
 diff --git a/chrome/browser/password_manager/chrome_password_manager_client.h b/chrome/browser/password_manager/chrome_password_manager_client.h
 --- a/chrome/browser/password_manager/chrome_password_manager_client.h
 +++ b/chrome/browser/password_manager/chrome_password_manager_client.h
-@@ -252,7 +252,6 @@ class ChromePasswordManagerClient
+@@ -31,12 +31,9 @@
+ #include "components/password_manager/core/browser/password_manager_client_helper.h"
+ #include "components/password_manager/core/browser/password_manager_metrics_recorder.h"
+ #include "components/password_manager/core/browser/password_manager_metrics_util.h"
+-#include "components/password_manager/core/browser/password_reuse_detection_manager.h"
+-#include "components/password_manager/core/browser/password_reuse_detector.h"
+ #include "components/prefs/pref_member.h"
+ #include "components/safe_browsing/buildflags.h"
+ #include "components/signin/public/base/signin_buildflags.h"
+-#include "components/sync/driver/sync_service.h"
+ #include "content/public/browser/render_frame_host_receiver_set.h"
+ #include "content/public/browser/render_widget_host.h"
+ #include "content/public/browser/web_contents_observer.h"
+@@ -57,8 +54,6 @@ class TouchToFillController;
+ #if BUILDFLAG(ENABLE_DICE_SUPPORT)
+ #include "chrome/browser/password_manager/multi_profile_credentials_filter.h"
+ #include "chrome/browser/ui/passwords/account_storage_auth_helper.h"
+-#else
+-#include "components/password_manager/core/browser/sync_credentials_filter.h"
+ #endif
+ 
+ class PasswordGenerationPopupObserver;
+@@ -184,18 +179,14 @@ class ChromePasswordManagerClient
+       base::OnceCallback<void(ReauthSucceeded)> reauth_callback) override;
+   void TriggerSignIn(signin_metrics::AccessPoint access_point) override;
+   PrefService* GetPrefs() const override;
+-  const syncer::SyncService* GetSyncService() const override;
+   password_manager::PasswordStoreInterface* GetProfilePasswordStore()
+       const override;
+   password_manager::PasswordStoreInterface* GetAccountPasswordStore()
+       const override;
+-  password_manager::PasswordReuseManager* GetPasswordReuseManager()
+-      const override;
+   password_manager::PasswordScriptsFetcher* GetPasswordScriptsFetcher()
+       override;
+   password_manager::PasswordChangeSuccessTracker*
+   GetPasswordChangeSuccessTracker() override;
+-  password_manager::SyncState GetPasswordSyncState() const override;
+   bool WasLastNavigationHTTPError() const override;
+ 
+   net::CertStatus GetMainFrameCertStatus() const override;
+@@ -211,8 +202,6 @@ class ChromePasswordManagerClient
+   bool IsCommittedMainFrameSecure() const override;
+   const GURL& GetLastCommittedURL() const override;
+   url::Origin GetLastCommittedOrigin() const override;
+-  const password_manager::CredentialsFilter* GetStoreResultFilter()
+-      const override;
+   const autofill::LogManager* GetLogManager() const override;
+   void AnnotateNavigationEntry(bool has_password_field) override;
+   autofill::LanguageCode GetPageLanguage() const override;
+@@ -225,15 +214,6 @@ class ChromePasswordManagerClient
+                                    const GURL& frame_url) override;
+ #endif
+ 
+-  void CheckProtectedPasswordEntry(
+-      password_manager::metrics_util::PasswordType reused_password_type,
+-      const std::string& username,
+-      const std::vector<password_manager::MatchingReusedCredential>&
+-          matching_reused_credentials,
+-      bool password_field_exists) override;
+-
+-  void LogPasswordReuseDetectedEvent() override;
+-
+   // Reporting these events is only supported on desktop platforms.
+ #if !BUILDFLAG(IS_ANDROID)
+   void MaybeReportEnterpriseLoginEvent(
+@@ -252,7 +232,6 @@ class ChromePasswordManagerClient
    password_manager::PasswordRequirementsService*
    GetPasswordRequirementsService() override;
    favicon::FaviconService* GetFaviconService() override;
@@ -4406,6 +4906,54 @@ diff --git a/chrome/browser/password_manager/chrome_password_manager_client.h b/
    scoped_refptr<network::SharedURLLoaderFactory> GetURLLoaderFactory() override;
    network::mojom::NetworkContext* GetNetworkContext() const override;
    void UpdateFormManagers() override;
+@@ -377,8 +356,6 @@ class ChromePasswordManagerClient
+   password_manager::PasswordManager password_manager_;
+   password_manager::PasswordFeatureManagerImpl password_feature_manager_;
+   password_manager::HttpAuthManagerImpl httpauth_manager_;
+-  password_manager::PasswordReuseDetectionManager
+-      password_reuse_detection_manager_;
+ 
+ #if BUILDFLAG(IS_ANDROID)
+   // Holds and facilitates a credential store for each origin in this tab.
+@@ -421,8 +398,6 @@ class ChromePasswordManagerClient
+   // MultiProfileCredentialsFilter requires DICE support.
+   const MultiProfileCredentialsFilter credentials_filter_;
+   AccountStorageAuthHelper account_storage_auth_helper_;
+-#else
+-  const password_manager::SyncCredentialsFilter credentials_filter_;
+ #endif
+ 
+   std::unique_ptr<autofill::LogManager> log_manager_;
+diff --git a/chrome/browser/password_manager/password_manager_settings_service_factory.cc b/chrome/browser/password_manager/password_manager_settings_service_factory.cc
+--- a/chrome/browser/password_manager/password_manager_settings_service_factory.cc
++++ b/chrome/browser/password_manager/password_manager_settings_service_factory.cc
+@@ -7,7 +7,6 @@
+ #include "chrome/browser/password_manager/password_manager_settings_service_impl.h"
+ #include "chrome/browser/profiles/incognito_helpers.h"
+ #include "chrome/browser/profiles/profile.h"
+-#include "chrome/browser/sync/sync_service_factory.h"
+ #include "components/keyed_service/content/browser_context_dependency_manager.h"
+ #include "components/password_manager/core/browser/password_manager_settings_service.h"
+ #include "components/password_manager/core/common/password_manager_features.h"
+@@ -34,7 +33,6 @@ PasswordManagerSettingsServiceFactory::PasswordManagerSettingsServiceFactory()
+     : BrowserContextKeyedServiceFactory(
+           "PasswordManagerSettingsService",
+           BrowserContextDependencyManager::GetInstance()) {
+-  DependsOn(SyncServiceFactory::GetInstance());
+ }
+ 
+ PasswordManagerSettingsServiceFactory::
+@@ -44,10 +42,6 @@ KeyedService* PasswordManagerSettingsServiceFactory::BuildServiceInstanceFor(
+     content::BrowserContext* context) const {
+   Profile* profile = Profile::FromBrowserContext(context);
+ #if BUILDFLAG(IS_ANDROID)
+-  if (password_manager::features::UsesUnifiedPasswordManagerUi()) {
+-    return new PasswordManagerSettingsServiceAndroidImpl(
+-        profile->GetPrefs(), SyncServiceFactory::GetForProfile(profile));
+-  }
+   // Reset the migration pref in case the client is no longer in the enabled
+   // group.
+   profile->GetPrefs()->SetBoolean(
 diff --git a/chrome/browser/privacy/BUILD.gn b/chrome/browser/privacy/BUILD.gn
 --- a/chrome/browser/privacy/BUILD.gn
 +++ b/chrome/browser/privacy/BUILD.gn
@@ -4928,6 +5476,49 @@ diff --git a/components/autofill_assistant/browser/headless/client_headless.h b/
    base::OnceCallback<void(bool, const std::string&)>
        fetch_access_token_callback_;
  
+diff --git a/components/omnibox/browser/autocomplete_provider_client.h b/components/omnibox/browser/autocomplete_provider_client.h
+--- a/components/omnibox/browser/autocomplete_provider_client.h
++++ b/components/omnibox/browser/autocomplete_provider_client.h
+@@ -52,10 +52,6 @@ namespace component_updater {
+ class ComponentUpdateService;
+ }
+ 
+-namespace signin {
+-class IdentityManager;
+-}
+-
+ namespace query_tiles {
+ class TileService;
+ }
+@@ -125,9 +121,6 @@ class AutocompleteProviderClient : public OmniboxAction::Client {
+   virtual component_updater::ComponentUpdateService*
+   GetComponentUpdateService() = 0;
+ 
+-  // Returns the signin::IdentityManager associated with the current profile.
+-  virtual signin::IdentityManager* GetIdentityManager() const = 0;
+-
+   virtual bool IsOffTheRecord() const = 0;
+   virtual bool IsAlwaysIncognitoEnabled() const = 0;
+   virtual bool SearchSuggestEnabled() const = 0;
+diff --git a/components/password_manager/core/browser/BUILD.gn b/components/password_manager/core/browser/BUILD.gn
+--- a/components/password_manager/core/browser/BUILD.gn
++++ b/components/password_manager/core/browser/BUILD.gn
+@@ -174,15 +174,6 @@ static_library("browser") {
+     "password_notes_table.h",
+     "password_requirements_service.cc",
+     "password_requirements_service.h",
+-    "password_reuse_detection_manager.cc",
+-    "password_reuse_detection_manager.h",
+-    "password_reuse_detector.cc",
+-    "password_reuse_detector.h",
+-    "password_reuse_detector_consumer.cc",
+-    "password_reuse_detector_consumer.h",
+-    "password_reuse_manager.h",
+-    "password_reuse_manager_impl.cc",
+-    "password_reuse_manager_impl.h",
+     "password_save_manager.h",
+     "password_save_manager_impl.cc",
+     "password_save_manager_impl.h",
 diff --git a/components/password_manager/core/browser/leak_detection_delegate.cc b/components/password_manager/core/browser/leak_detection_delegate.cc
 --- a/components/password_manager/core/browser/leak_detection_delegate.cc
 +++ b/components/password_manager/core/browser/leak_detection_delegate.cc
@@ -4998,10 +5589,167 @@ diff --git a/components/password_manager/core/browser/password_form_manager.cc b
  }
  
  bool PasswordFormManager::IsNewLogin() const {
+diff --git a/components/password_manager/core/browser/password_manager.cc b/components/password_manager/core/browser/password_manager.cc
+--- a/components/password_manager/core/browser/password_manager.cc
++++ b/components/password_manager/core/browser/password_manager.cc
+@@ -995,7 +995,6 @@ void PasswordManager::OnLoginSuccessful() {
+   if (!client_->IsSavingAndFillingEnabled(submitted_form->url))
+     return;
+ 
+-  client_->GetStoreResultFilter()->ReportFormLoginSuccess(*submitted_manager);
+   // Check for leaks only if there are no muted credentials.
+   if (!HasMutedCredentials(
+           submitted_manager->GetInsecureCredentials(),
+@@ -1019,22 +1018,6 @@ void PasswordManager::OnLoginSuccessful() {
+ 
+   MaybeSavePasswordHash(submitted_manager);
+ 
+-  // TODO(https://crbug.com/831123): Implement checking whether to save with
+-  // PasswordFormManager.
+-  // Check whether the filter allows saving this credential. In practice, this
+-  // prevents saving the password of the syncing account. However, if the
+-  // password is already saved, then *updating* it is still allowed - better
+-  // than keeping an outdated password around.
+-  if (!submitted_manager->IsPasswordUpdate() &&
+-      !client_->GetStoreResultFilter()->ShouldSave(
+-          *submitted_manager->GetSubmittedForm())) {
+-    RecordProvisionalSaveFailure(
+-        PasswordManagerMetricsRecorder::SYNC_CREDENTIAL,
+-        submitted_manager->GetURL());
+-    ResetSubmittedManager();
+-    return;
+-  }
+-
+   submitted_manager->GetMetricsRecorder()->LogSubmitPassed();
+ 
+   UMA_HISTOGRAM_BOOLEAN(
+@@ -1083,54 +1066,6 @@ void PasswordManager::MaybeSavePasswordHash(
+   std::string username = base::UTF16ToUTF8(submitted_form->username_value);
+   if (username.empty())
+     return;
+-
+-  password_manager::PasswordReuseManager* reuse_manager =
+-      client_->GetPasswordReuseManager();
+-  // May be null in tests.
+-  if (!reuse_manager)
+-    return;
+-
+-  bool should_save_enterprise_pw =
+-      client_->GetStoreResultFilter()->ShouldSaveEnterprisePasswordHash(
+-          *submitted_form);
+-  bool should_save_gaia_pw =
+-      client_->GetStoreResultFilter()->ShouldSaveGaiaPasswordHash(
+-          *submitted_form);
+-
+-  if (!should_save_enterprise_pw && !should_save_gaia_pw)
+-    return;
+-
+-  if (password_manager_util::IsLoggingActive(client_)) {
+-    BrowserSavePasswordProgressLogger logger(client_->GetLogManager());
+-    logger.LogMessage(Logger::STRING_SAVE_PASSWORD_HASH);
+-  }
+-
+-  // Canonicalizes username if it is an email.
+-  if (username.find('@') != std::string::npos)
+-    username = gaia::CanonicalizeEmail(username);
+-  bool is_password_change = !submitted_form->new_password_element.empty();
+-  const std::u16string password = is_password_change
+-                                      ? submitted_form->new_password_value
+-                                      : submitted_form->password_value;
+-
+-  if (should_save_enterprise_pw) {
+-    reuse_manager->SaveEnterprisePasswordHash(username, password);
+-    return;
+-  }
+-
+-  DCHECK(should_save_gaia_pw);
+-  bool is_sync_account_email =
+-      client_->GetStoreResultFilter()->IsSyncAccountEmail(username);
+-  GaiaPasswordHashChange event =
+-      is_sync_account_email
+-          ? (is_password_change
+-                 ? GaiaPasswordHashChange::CHANGED_IN_CONTENT_AREA
+-                 : GaiaPasswordHashChange::SAVED_IN_CONTENT_AREA)
+-          : (is_password_change
+-                 ? GaiaPasswordHashChange::NOT_SYNC_PASSWORD_CHANGE
+-                 : GaiaPasswordHashChange::SAVED_IN_CONTENT_AREA);
+-  reuse_manager->SaveGaiaPasswordHash(username, password, is_sync_account_email,
+-                                      event);
+ }
+ 
+ void PasswordManager::ProcessAutofillPredictions(
+@@ -1345,23 +1280,6 @@ void PasswordManager::ShowManualFallbackForSaving(
+       ShouldBlockPasswordForSameOriginButDifferentScheme(form_data.url)) {
+     return;
+   }
+-
+-  if (!client_->GetStoreResultFilter()->ShouldSave(
+-          *form_manager->GetSubmittedForm())) {
+-    return;
+-  }
+-
+-  // Show the fallback if a prompt or a confirmation bubble should be available.
+-  bool has_generated_password = form_manager->HasGeneratedPassword();
+-  if (ShouldPromptUserToSavePassword(*form_manager) || has_generated_password) {
+-    bool is_update = form_manager->IsPasswordUpdate();
+-    form_manager->GetMetricsRecorder()->RecordShowManualFallbackForSaving(
+-        has_generated_password, is_update);
+-    client_->ShowManualFallbackForSaving(form_manager->Clone(),
+-                                         has_generated_password, is_update);
+-  } else {
+-    HideManualFallbackForSaving();
+-  }
+ }
+ 
+ bool PasswordManager::NewFormsParsed(PasswordManagerDriver* driver,
 diff --git a/components/password_manager/core/browser/password_manager_client.h b/components/password_manager/core/browser/password_manager_client.h
 --- a/components/password_manager/core/browser/password_manager_client.h
 +++ b/components/password_manager/core/browser/password_manager_client.h
-@@ -441,9 +441,6 @@ class PasswordManagerClient {
+@@ -300,18 +300,12 @@ class PasswordManagerClient {
+   // Gets prefs associated with this embedder.
+   virtual PrefService* GetPrefs() const = 0;
+ 
+-  // Gets the sync service associated with this client.
+-  virtual const syncer::SyncService* GetSyncService() const = 0;
+-
+   // Returns the profile PasswordStore associated with this instance.
+   virtual PasswordStoreInterface* GetProfilePasswordStore() const = 0;
+ 
+   // Returns the account PasswordStore associated with this instance.
+   virtual PasswordStoreInterface* GetAccountPasswordStore() const = 0;
+ 
+-  // Returns the PasswordReuseManager associated with this instance.
+-  virtual PasswordReuseManager* GetPasswordReuseManager() const = 0;
+-
+   // Returns the PasswordScriptsFetcher associated with this instance.
+   virtual PasswordScriptsFetcher* GetPasswordScriptsFetcher() = 0;
+ 
+@@ -367,9 +361,6 @@ class PasswordManagerClient {
+   // Returns last committed origin of the main frame.
+   virtual url::Origin GetLastCommittedOrigin() const = 0;
+ 
+-  // Use this to filter credentials before handling them in password manager.
+-  virtual const CredentialsFilter* GetStoreResultFilter() const = 0;
+-
+   // Returns a LogManager instance.
+   virtual const autofill::LogManager* GetLogManager() const;
+ 
+@@ -398,14 +389,6 @@ class PasswordManagerClient {
+   // The |username| is the user name of the reused password. The user name
+   // can be an email or a username for a non-GAIA or saved-password reuse. No
+   // validation has been done on it.
+-  virtual void CheckProtectedPasswordEntry(
+-      metrics_util::PasswordType reused_password_type,
+-      const std::string& username,
+-      const std::vector<MatchingReusedCredential>& matching_reused_credentials,
+-      bool password_field_exists) = 0;
+-
+-  // Records a Chrome Sync event that GAIA password reuse was detected.
+-  virtual void LogPasswordReuseDetectedEvent() = 0;
+ 
+   // If the feature is enabled send an event to the enterprise reporting
+   // connector server indicating that the user signed in to a website.
+@@ -441,9 +424,6 @@ class PasswordManagerClient {
    // Returns the favicon service used to retrieve icons for an origin.
    virtual favicon::FaviconService* GetFaviconService();
  
