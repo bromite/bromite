@@ -7,13 +7,14 @@ Allow toggling automatic updates
 License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
 ---
  .../android/java/res/layout/fre_tosanduma.xml |   4 +-
+ .../firstrun/ChildAccountStatusSupplier.java  |  14 +-
  .../browser/firstrun/FirstRunActivity.java    |  40 +----
- .../firstrun/FirstRunActivityBase.java        |  17 --
+ .../firstrun/FirstRunActivityBase.java        |  11 +-
  .../firstrun/FirstRunFlowSequencer.java       |  57 ++----
  .../browser/firstrun/FirstRunUtils.java       |  13 +-
  .../firstrun/ToSAndUMAFirstRunFragment.java   | 163 +++++-------------
  .../strings/android_chrome_strings.grd        |  27 ++-
- 7 files changed, 87 insertions(+), 234 deletions(-)
+ 8 files changed, 89 insertions(+), 240 deletions(-)
 
 diff --git a/chrome/android/java/res/layout/fre_tosanduma.xml b/chrome/android/java/res/layout/fre_tosanduma.xml
 --- a/chrome/android/java/res/layout/fre_tosanduma.xml
@@ -32,6 +33,38 @@ diff --git a/chrome/android/java/res/layout/fre_tosanduma.xml b/chrome/android/j
                          android:paddingStart="@dimen/fre_tos_checkbox_padding"
                          android:textAppearance="@style/TextAppearance.TextMedium.Primary" />
                  </LinearLayout>
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/ChildAccountStatusSupplier.java b/chrome/android/java/src/org/chromium/chrome/browser/firstrun/ChildAccountStatusSupplier.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/ChildAccountStatusSupplier.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/firstrun/ChildAccountStatusSupplier.java
+@@ -12,8 +12,6 @@ import org.chromium.base.Callback;
+ import org.chromium.base.metrics.RecordHistogram;
+ import org.chromium.base.supplier.OneshotSupplier;
+ import org.chromium.base.supplier.OneshotSupplierImpl;
+-import org.chromium.components.signin.AccountManagerFacade;
+-import org.chromium.components.signin.AccountUtils;
+ 
+ /**
+  * Fetches the child account status to be used by other FRE components.
+@@ -40,18 +38,8 @@ public class ChildAccountStatusSupplier implements OneshotSupplier<Boolean> {
+      *         {@link ChildAccountStatusSupplier} will ignore app restrictions and rely solely on
+      *         {@link AccountManagerFacade}.
+      */
+-    public ChildAccountStatusSupplier(AccountManagerFacade accountManagerFacade,
+-            @Nullable FirstRunAppRestrictionInfo appRestrictionInfo) {
++    public ChildAccountStatusSupplier() {
+         mChildAccountStatusStartTime = SystemClock.elapsedRealtime();
+-
+-        if (appRestrictionInfo != null) {
+-            appRestrictionInfo.getHasAppRestriction(this::onAppRestrictionDetected);
+-        }
+-
+-        accountManagerFacade.getAccounts().then(accounts -> {
+-            AccountUtils.checkChildAccountStatus(accountManagerFacade, accounts,
+-                    (isChild, account) -> onChildAccountStatusReady(isChild));
+-        });
+     }
+ 
+     @Override
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunActivity.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunActivity.java
@@ -134,16 +167,16 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstR
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunActivityBase.java b/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunActivityBase.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunActivityBase.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunActivityBase.java
-@@ -58,8 +58,6 @@ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
-     private final long mStartTime;
-     private long mNativeInitializedTime;
+@@ -24,8 +24,6 @@ import org.chromium.chrome.browser.metrics.UmaUtils;
+ import org.chromium.chrome.browser.policy.PolicyServiceFactory;
+ import org.chromium.chrome.browser.profiles.ProfileManagerUtils;
+ import org.chromium.components.policy.PolicyService;
+-import org.chromium.components.signin.AccountManagerFacade;
+-import org.chromium.components.signin.AccountManagerFacadeProvider;
  
--    private ChildAccountStatusSupplier mChildAccountStatusSupplier;
--
-     public FirstRunActivityBase() {
-         mFirstRunAppRestrictionInfo = FirstRunAppRestrictionInfo.takeMaybeInitialized();
-         mPolicyServiceSupplier = new OneshotSupplierImpl<>();
-@@ -83,14 +81,6 @@ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
+ /** Base class for First Run Experience. */
+ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
+@@ -83,14 +81,7 @@ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
      @Override
      @CallSuper
      public void triggerLayoutInflation() {
@@ -155,23 +188,10 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstR
 -            mChildAccountStatusSupplier =
 -                    new ChildAccountStatusSupplier(accountManagerFacade, null);
 -        }
++        mChildAccountStatusSupplier = new ChildAccountStatusSupplier();
      }
  
      // Activity:
-@@ -196,13 +186,6 @@ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
-         return mPolicyLoadListener;
-     }
- 
--    /**
--     * Returns the supplier that supplies child account status.
--     */
--    public OneshotSupplier<Boolean> getChildAccountStatusSupplier() {
--        return mChildAccountStatusSupplier;
--    }
--
-     /**
-      * If the first run activity was triggered by a custom tab, notify app associated with
-      * custom tab whether first run was completed.
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunFlowSequencer.java b/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunFlowSequencer.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunFlowSequencer.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstRunFlowSequencer.java
@@ -230,7 +250,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstR
          }
  
          /** @return true if first use hints should be skipped. */
-@@ -146,12 +117,8 @@ public abstract class FirstRunFlowSequencer  {
+@@ -148,12 +119,8 @@ public abstract class FirstRunFlowSequencer  {
       *                                  method.
       */
      void start() {
@@ -245,7 +265,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstR
      }
  
      @VisibleForTesting
-@@ -177,7 +144,6 @@ public abstract class FirstRunFlowSequencer  {
+@@ -185,7 +152,6 @@ public abstract class FirstRunFlowSequencer  {
          mIsFlowKnown = true;
  
          Bundle freProperties = new Bundle();
@@ -253,7 +273,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstR
  
          onFlowIsKnown(freProperties);
      }
-@@ -188,8 +154,8 @@ public abstract class FirstRunFlowSequencer  {
+@@ -196,8 +162,8 @@ public abstract class FirstRunFlowSequencer  {
       * @param freProperties Resulting FRE properties bundle.
       */
      public void updateFirstRunProperties(Bundle freProperties) {
@@ -264,7 +284,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstR
          freProperties.putBoolean(
                  FirstRunActivity.SHOW_SEARCH_ENGINE_PAGE, shouldShowSearchEnginePage());
      }
-@@ -248,6 +214,7 @@ public abstract class FirstRunFlowSequencer  {
+@@ -256,6 +222,7 @@ public abstract class FirstRunFlowSequencer  {
                          || FirstRunStatus.getLightweightFirstRunFlowComplete())) {
              return false;
          }
@@ -272,7 +292,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/firstrun/FirstR
          return true;
      }
  
-@@ -295,15 +262,21 @@ public abstract class FirstRunFlowSequencer  {
+@@ -303,15 +270,21 @@ public abstract class FirstRunFlowSequencer  {
                  freIntent =
                          VrModuleProvider.getIntentDelegate().setupVrFreIntent(caller, freIntent);
                  // We cannot access Chrome right now, e.g. because the VR module is not installed.
