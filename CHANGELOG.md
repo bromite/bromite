@@ -1,3 +1,9 @@
+# 103.0.5060.121
+* do not enable always use HTTPS by default
+* match system dark mode (thanks to @krlvm)
+* remove window name on cross origin navigation (thanks to @uazo)
+* remove preload of GMS fonts on stock Android (thanks to @uazo, fixes ...)
+
 # 102.0.5005.96
 * fix history expiration bug (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2104)
 * fix category setting activation (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2091)
