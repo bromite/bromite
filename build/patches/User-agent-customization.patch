@@ -20,7 +20,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../init/ChromeBrowserInitializer.java        |   3 +
  .../PrivacyPreferencesManagerImpl.java        |  42 ++++
  .../settings/UserAgentPreferences.java        | 188 ++++++++++++++++++
- .../chromium/chrome/browser/tab/TabImpl.java  |  79 +++++++-
+ .../chromium/chrome/browser/tab/TabImpl.java  |  88 +++++++-
  .../chromium/chrome/browser/tab/TabUtils.java |  25 +--
  .../browser/android/content/content_utils.cc  |  28 +++
  .../preferences/browser_prefs_android.cc      |   7 +
@@ -34,14 +34,14 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  chrome/common/pref_names.cc                   |  13 ++
  chrome/common/pref_names.h                    |   8 +
  .../widget/RadioButtonWithEditText.java       |  11 +
- .../embedder_support/user_agent_utils.cc      |  11 +
+ .../embedder_support/user_agent_utils.cc      |  15 +-
  .../navigation_controller_android.cc          |   4 +
  .../navigation_controller_android.h           |   1 +
  .../renderer_host/render_process_host_impl.cc |   1 +
  .../browser/web_contents/web_contents_impl.cc |   4 +
  .../framehost/NavigationControllerImpl.java   |   3 +-
  content/renderer/render_thread_impl.cc        |   1 -
- 31 files changed, 753 insertions(+), 16 deletions(-)
+ 31 files changed, 765 insertions(+), 17 deletions(-)
  create mode 100644 chrome/android/java/res/layout/custom_useragent_preferences.xml
  create mode 100644 chrome/android/java/res/xml/useragent_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/UserAgentPreferences.java
@@ -574,21 +574,25 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.jav
              @TabLoadStatus
              int result = loadUrlInternal(params);
  
-@@ -1390,8 +1419,11 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+@@ -1390,8 +1419,15 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
  
              mWebContents.setImportance(mImportance);
  
 -            ContentUtils.setUserAgentOverride(mWebContents,
 -                    calculateUserAgentOverrideOption() == UserAgentOverrideOption.TRUE);
-+            if (!SharedPreferencesManager.getInstance().readBoolean(
-+                        ChromePreferenceKeys.USERAGENT_STICKY_DESKTOP_MODE, false)) {
++            if (SharedPreferencesManager.getInstance().readBoolean(
++                        ChromePreferenceKeys.USERAGENT_STICKY_DESKTOP_MODE, false) &&
++                SharedPreferencesManager.getInstance().readBoolean(
++                        ChromePreferenceKeys.USERAGENT_ALWAYS_DESKTOP_MODE, false)) {
++                ContentUtils.setUserAgentOverride(mWebContents, true);
++            } else {
 +                ContentUtils.setUserAgentOverride(mWebContents,
 +                        calculateUserAgentOverrideOption() == UserAgentOverrideOption.TRUE);
 +            }
  
              mContentView.addOnAttachStateChangeListener(mAttachStateChangeListener);
              updateInteractableState();
-@@ -1549,6 +1581,10 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+@@ -1549,6 +1585,10 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
              if (mWebContents != null) mWebContents.getNavigationController().loadIfNecessary();
              mIsBeingRestored = true;
              for (TabObserver observer : mObservers) observer.onRestoreStarted(this);
@@ -599,16 +603,21 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.jav
          } finally {
              TraceEvent.end("Tab.restoreIfNeeded");
          }
-@@ -1741,6 +1777,8 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+@@ -1685,6 +1725,13 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
      }
  
-     private void switchUserAgentIfNeeded() {
+     private @UserAgentOverrideOption int calculateUserAgentOverrideOption() {
 +        if (SharedPreferencesManager.getInstance().readBoolean(
-+                ChromePreferenceKeys.USERAGENT_STICKY_DESKTOP_MODE, false)) return;
-         if (calculateUserAgentOverrideOption() == UserAgentOverrideOption.INHERIT
-                 || getWebContents() == null) {
-             return;
-@@ -1751,6 +1789,43 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
++                    ChromePreferenceKeys.USERAGENT_STICKY_DESKTOP_MODE, false) &&
++                SharedPreferencesManager.getInstance().readBoolean(
++                    ChromePreferenceKeys.USERAGENT_ALWAYS_DESKTOP_MODE, false)) {
++            return UserAgentOverrideOption.INHERIT;
++        }
++
+         WebContents webContents = getWebContents();
+         boolean currentRequestDesktopSite = webContents == null
+                 ? false
+@@ -1751,6 +1798,43 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
                  /* forcedByUser */ false);
      }
  
@@ -1124,6 +1133,17 @@ diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedd
    metadata.brand_version_list = GetBrandMajorVersionList(
        enable_updated_grease_by_policy, ua_options.force_major_to_minor);
    metadata.brand_full_version_list = GetBrandFullVersionList(
+@@ -600,7 +611,9 @@ void SetDesktopUserAgentOverride(content::WebContents* web_contents,
+ 
+   blink::UserAgentOverride spoofed_ua;
+   spoofed_ua.ua_string_override = content::BuildUserAgentFromOSAndProduct(
+-      kLinuxInfoStr, GetProductAndVersion());
++      kLinuxInfoStr,
++      GetProductAndVersion(ForceMajorVersionToMinorPosition::kDefault,
++                           UserAgentReductionEnterprisePolicyState::kForceEnabled));
+   spoofed_ua.ua_metadata_override = metadata;
+   spoofed_ua.ua_metadata_override->platform = "Linux";
+   spoofed_ua.ua_metadata_override->platform_version =
 diff --git a/content/browser/renderer_host/navigation_controller_android.cc b/content/browser/renderer_host/navigation_controller_android.cc
 --- a/content/browser/renderer_host/navigation_controller_android.cc
 +++ b/content/browser/renderer_host/navigation_controller_android.cc
