@@ -38,7 +38,7 @@ No.
 We cannot add add-ons to Bromite (merely some features).
 
 ## Is Bromite on Play Store?
-No, and this is unlikely to change. Many limitations apply for submissions there, including which ads are allowed to be blocked.
+No, and this is not going to change. Many limitations apply for submissions there, including which ads are allowed to be blocked.
 
 Bromite favors user freedom in software choice: the device is yours so you get to choose which software to run on it, end of the story.
 
