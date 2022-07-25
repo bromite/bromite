@@ -30,14 +30,12 @@ The feature is controlled by a site setting (default disabled)
  .../renderer/core/frame/local_dom_window.cc   |  6 ++
  .../renderer/core/frame/local_frame_view.cc   |  3 +
  .../blink/renderer/core/frame/screen.cc       | 17 +++-
- .../renderer/core/frame/visual_viewport.cc    |  4 +
- .../renderer/core/frame/visual_viewport.h     |  5 ++
- .../renderer/core/html/html_meta_element.cc   | 28 +++++-
+ .../renderer/core/frame/visual_viewport.cc    |  5 ++
+ .../renderer/core/html/html_meta_element.cc   | 26 +++++-
  .../renderer/core/loader/frame_loader.cc      | 15 +++-
- third_party/blink/renderer/core/page/page.cc  |  8 ++
- third_party/blink/renderer/core/page/page.h   |  3 +
- .../screen_enumeration/screen_detailed.cc     | 15 ++++
- 30 files changed, 275 insertions(+), 14 deletions(-)
+ third_party/blink/renderer/core/page/page.cc  | 12 +++
+ third_party/blink/renderer/core/page/page.h   |  5 ++
+ 28 files changed, 260 insertions(+), 14 deletions(-)
  create mode 100644 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/BromiteViewportContentSetting.java
  create mode 100644 components/browser_ui/strings/android/viewport.grdp
 
@@ -561,39 +559,18 @@ diff --git a/third_party/blink/renderer/core/frame/screen.cc b/third_party/blink
 diff --git a/third_party/blink/renderer/core/frame/visual_viewport.cc b/third_party/blink/renderer/core/frame/visual_viewport.cc
 --- a/third_party/blink/renderer/core/frame/visual_viewport.cc
 +++ b/third_party/blink/renderer/core/frame/visual_viewport.cc
-@@ -467,6 +467,10 @@ void VisualViewport::SetScale(float scale) {
-                       gfx::PointAtOffsetFromOrigin(offset_));
- }
+@@ -1093,6 +1093,11 @@ bool VisualViewport::ShouldDisableDesktopWorkarounds() const {
+   if (!LocalMainFrame().GetSettings()->GetViewportEnabled())
+     return false;
  
-+void VisualViewport::SetPageWidthOverride(int value) {
-+  page_width_override_ = value;
-+}
++  if (LocalMainFrame().GetPage() &&
++      LocalMainFrame().GetPage()->PageWidthOverride() != 0) {
++    return true;
++  }
 +
- double VisualViewport::OffsetLeft() const {
-   // Offset{Left|Top} and Width|Height are used by the DOMVisualViewport to
-   // expose values to JS. We'll only ever ask the visual viewport for these
-diff --git a/third_party/blink/renderer/core/frame/visual_viewport.h b/third_party/blink/renderer/core/frame/visual_viewport.h
---- a/third_party/blink/renderer/core/frame/visual_viewport.h
-+++ b/third_party/blink/renderer/core/frame/visual_viewport.h
-@@ -145,6 +145,9 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
-   float Scale() const { return scale_; }
-   bool IsPinchGestureActive() const { return is_pinch_gesture_active_; }
- 
-+  void SetPageWidthOverride(int);
-+  int PageWidthOverride() const { return page_width_override_; }
-+
-   // Convert the given rect in the main LocalFrameView's coordinates into a rect
-   // in the viewport. The given and returned rects are in CSS pixels, meaning
-   // scale isn't applied.
-@@ -382,6 +385,8 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
-   CompositorElementId elasticity_effect_node_id_;
- 
-   bool needs_paint_property_update_;
-+
-+  int page_width_override_;
- };
- 
- }  // namespace blink
+   // A document is considered adapted to small screen UAs if one of these holds:
+   // 1. The author specified viewport has a constrained width that is equal to
+   //    the initial viewport width.
 diff --git a/third_party/blink/renderer/core/html/html_meta_element.cc b/third_party/blink/renderer/core/html/html_meta_element.cc
 --- a/third_party/blink/renderer/core/html/html_meta_element.cc
 +++ b/third_party/blink/renderer/core/html/html_meta_element.cc
@@ -605,7 +582,7 @@ diff --git a/third_party/blink/renderer/core/html/html_meta_element.cc b/third_p
  #include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink.h"
  #include "third_party/blink/renderer/core/css/style_engine.h"
  #include "third_party/blink/renderer/core/dom/document.h"
-@@ -565,6 +566,27 @@ void HTMLMetaElement::ProcessContent() {
+@@ -565,6 +566,25 @@ void HTMLMetaElement::ProcessContent() {
    if (!IsInDocumentTree())
      return;
  
@@ -625,15 +602,13 @@ diff --git a/third_party/blink/renderer/core/html/html_meta_element.cc b/third_p
 +      String newvalue("initial-scale=" + base::NumberToString(device_width));
 +      ProcessViewportContentAttribute(newvalue, ViewportDescription::kViewportMeta);
 +      process_default = false;
-+    } else {
-+      page->SetPageWidthOverride(0);
 +    }
 +  }
 +
    const AtomicString& name_value = FastGetAttribute(html_names::kNameAttr);
    if (name_value.IsEmpty())
      return;
-@@ -594,8 +616,10 @@ void HTMLMetaElement::ProcessContent() {
+@@ -594,8 +614,10 @@ void HTMLMetaElement::ProcessContent() {
      return;
  
    if (EqualIgnoringASCIICase(name_value, "viewport")) {
@@ -686,16 +661,27 @@ diff --git a/third_party/blink/renderer/core/page/page.cc b/third_party/blink/re
  }
  
 +void Page::SetPageWidthOverride(float value) {
-+  GetVisualViewport().SetPageWidthOverride(value);
++  page_width_override_ = value;
 +}
 +
-+int Page::PageWidthOverride() const {
-+  return GetVisualViewport().PageWidthOverride();
++float Page::PageWidthOverride() const {
++  return page_width_override_;
 +}
 +
  void Page::AllVisitedStateChanged(bool invalidate_visited_link_hashes) {
    for (const Page* page : OrdinaryPages()) {
      for (Frame* frame = page->main_frame_; frame;
+@@ -879,6 +887,10 @@ void Page::UpdateAcceleratedCompositingSettings() {
+ 
+ void Page::DidCommitLoad(LocalFrame* frame) {
+   if (main_frame_ == frame) {
++    blink::WebContentSettingsClient* settings = frame->GetContentSettingsClient();
++    if (!settings->AllowViewportChange(false))
++      SetPageWidthOverride(0);
++
+     GetConsoleMessageStorage().Clear();
+     GetInspectorIssueStorage().Clear();
+     // TODO(loonybear): Most of this doesn't appear to take into account that
 diff --git a/third_party/blink/renderer/core/page/page.h b/third_party/blink/renderer/core/page/page.h
 --- a/third_party/blink/renderer/core/page/page.h
 +++ b/third_party/blink/renderer/core/page/page.h
@@ -704,48 +690,19 @@ diff --git a/third_party/blink/renderer/core/page/page.h b/third_party/blink/ren
    float PageScaleFactor() const;
  
 +  void SetPageWidthOverride(float);
-+  int PageWidthOverride() const;
++  float PageWidthOverride() const;
 +
    float InspectorDeviceScaleFactorOverride() const {
      return inspector_device_scale_factor_override_;
    }
-diff --git a/third_party/blink/renderer/modules/screen_enumeration/screen_detailed.cc b/third_party/blink/renderer/modules/screen_enumeration/screen_detailed.cc
---- a/third_party/blink/renderer/modules/screen_enumeration/screen_detailed.cc
-+++ b/third_party/blink/renderer/modules/screen_enumeration/screen_detailed.cc
-@@ -9,12 +9,22 @@
- #include "third_party/blink/renderer/core/frame/local_frame.h"
- #include "third_party/blink/renderer/core/frame/settings.h"
- #include "third_party/blink/renderer/core/page/chrome_client.h"
-+#include "third_party/blink/renderer/core/page/page.h"
-+#include "third_party/blink/public/platform/web_content_settings_client.h"
- #include "third_party/blink/renderer/platform/wtf/text/string_statics.h"
- #include "ui/display/screen_info.h"
- #include "ui/display/screen_infos.h"
+@@ -538,6 +541,8 @@ class CORE_EXPORT Page final : public GarbageCollected<Page>,
+   // browser side FrameTree has the FrameTree::Type of kFencedFrame.
+   bool is_fenced_frame_tree_ = false;
  
- namespace blink {
- 
-+namespace {
++  float page_width_override_ = 0;
 +
-+float GetScaleOverride(blink::Page* page) {
-+  return 1.0 - (page->PageWidthOverride() / 100.0);
-+}
-+
-+}
-+
- ScreenDetailed::ScreenDetailed(LocalDOMWindow* window,
-                                int64_t display_id,
-                                bool label_is_internal,
-@@ -87,6 +97,11 @@ bool ScreenDetailed::isInternal() const {
- float ScreenDetailed::devicePixelRatio() const {
-   if (!DomWindow())
-     return 0.f;
-+  LocalFrame* frame = DomWindow()->GetFrame();
-+  blink::WebContentSettingsClient* settings = frame->GetContentSettingsClient();
-+  blink::Page* page = frame->GetPage();
-+  if (settings->AllowViewportChange(false))
-+    return GetScreenInfo().device_scale_factor * GetScaleOverride(page);
-   return GetScreenInfo().device_scale_factor;
- }
- 
+   // If the page is hosted inside an MPArch fenced frame, this tracks the
+   // mode that the fenced frame is set to. This will always be set to kDefault
+   // for the ShadowDOM implementation of fenced frames.
 --
 2.25.1
