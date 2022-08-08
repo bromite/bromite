@@ -1,3 +1,5 @@
+# 104.0.5112.63
+
 # 103.0.5060.140
 * fix timezone override not working correctly (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2133)
 * never provide navigator.connection info (thanks to @uazo)
