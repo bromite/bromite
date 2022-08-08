@@ -56,9 +56,9 @@ diff --git a/content/browser/net/cross_origin_embedder_policy_reporter.cc b/cont
    }
    if (endpoint) {
 +#if BUILDFLAG(ENABLE_REPORTING)
-     base::DictionaryValue body_to_pass;
+     base::Value::Dict body_to_pass;
      for (const auto& pair : body) {
-       body_to_pass.SetString(pair.first, pair.second);
+       body_to_pass.Set(pair.first, pair.second);
 @@ -123,7 +125,7 @@ void CrossOriginEmbedderPolicyReporter::QueueAndNotify(
            kType, *endpoint, context_url_, reporting_source_,
            network_isolation_key_,
@@ -106,15 +106,15 @@ diff --git a/content/browser/net/cross_origin_opener_policy_reporter.cc b/conten
  std::string ToString(network::mojom::CrossOriginOpenerPolicyValue coop_value) {
    switch (coop_value) {
      case network::mojom::CrossOriginOpenerPolicyValue::kUnsafeNone:
-@@ -59,6 +52,7 @@ std::string ToString(network::mojom::CrossOriginOpenerPolicyValue coop_value) {
-       return "same-origin-allow-popups-plus-coep";
+@@ -61,6 +54,7 @@ std::string ToString(network::mojom::CrossOriginOpenerPolicyValue coop_value) {
+       return "restrict-properties-plus-coep";
    }
  }
 +#endif
  
  FrameTreeNode* TopLevelOpener(FrameTreeNode* frame) {
    FrameTreeNode* opener =
-@@ -230,6 +224,7 @@ void CrossOriginOpenerPolicyReporter::QueueAccessReport(
+@@ -232,6 +226,7 @@ void CrossOriginOpenerPolicyReporter::QueueAccessReport(
      network::mojom::SourceLocationPtr source_location,
      const std::string& reported_window_url,
      const std::string& initial_popup_url) const {
@@ -122,7 +122,7 @@ diff --git a/content/browser/net/cross_origin_opener_policy_reporter.cc b/conten
    // Cross-Origin-Opener-Policy-Report-Only is not required to provide
    // endpoints.
    if (!coop_.report_only_reporting_endpoint)
-@@ -278,12 +273,14 @@ void CrossOriginOpenerPolicyReporter::QueueAccessReport(
+@@ -279,12 +274,14 @@ void CrossOriginOpenerPolicyReporter::QueueAccessReport(
    storage_partition_->GetNetworkContext()->QueueReport(
        "coop", endpoint, context_url_, reporting_source_, network_isolation_key_,
        absl::nullopt, std::move(body));
@@ -130,13 +130,13 @@ diff --git a/content/browser/net/cross_origin_opener_policy_reporter.cc b/conten
  }
  
  void CrossOriginOpenerPolicyReporter::QueueNavigationReport(
-     base::DictionaryValue body,
+     base::Value::Dict body,
      const std::string& endpoint,
      bool is_report_only) {
 +#if BUILDFLAG(ENABLE_REPORTING)
-   body.SetString(kDisposition,
-                  is_report_only ? kDispositionReporting : kDispositionEnforce);
-   body.SetString(
+   body.Set(kDisposition,
+            is_report_only ? kDispositionReporting : kDispositionEnforce);
+   body.Set(kEffectivePolicy,
 @@ -292,6 +289,7 @@ void CrossOriginOpenerPolicyReporter::QueueNavigationReport(
    storage_partition_->GetNetworkContext()->QueueReport(
        "coop", endpoint, context_url_, reporting_source_, network_isolation_key_,
@@ -156,18 +156,17 @@ diff --git a/content/browser/net/reporting_service_proxy.cc b/content/browser/ne
  #include "content/browser/service_worker/service_worker_host.h"
  #include "content/browser/worker_host/dedicated_worker_host.h"
  #include "content/browser/worker_host/shared_worker_host.h"
-@@ -173,6 +174,7 @@ class ReportingServiceProxyImpl : public blink::mojom::ReportingServiceProxy {
+@@ -174,12 +175,14 @@ class ReportingServiceProxyImpl : public blink::mojom::ReportingServiceProxy {
                     const std::string& group,
                     const std::string& type,
-                    std::unique_ptr<base::Value> body) {
+                    base::Value::Dict body) {
 +#if BUILDFLAG(ENABLE_REPORTING)
      auto* rph = RenderProcessHost::FromID(render_process_id_);
      if (!rph)
        return;
-@@ -180,6 +182,7 @@ class ReportingServiceProxyImpl : public blink::mojom::ReportingServiceProxy {
+     rph->GetStoragePartition()->GetNetworkContext()->QueueReport(
          type, group, url, reporting_source_, network_isolation_key_,
-         /*user_agent=*/absl::nullopt,
-         base::Value::FromUniquePtrValue(std::move(body)));
+         /*user_agent=*/absl::nullopt, std::move(body));
 +#endif
    }
  
@@ -175,10 +174,10 @@ diff --git a/content/browser/net/reporting_service_proxy.cc b/content/browser/ne
 diff --git a/content/browser/renderer_host/render_frame_host_impl.cc b/content/browser/renderer_host/render_frame_host_impl.cc
 --- a/content/browser/renderer_host/render_frame_host_impl.cc
 +++ b/content/browser/renderer_host/render_frame_host_impl.cc
-@@ -11549,12 +11549,6 @@ void RenderFrameHostImpl::MaybeGenerateCrashReport(
-   auto body = base::DictionaryValue();
+@@ -11648,12 +11648,6 @@ void RenderFrameHostImpl::MaybeGenerateCrashReport(
+   base::Value::Dict body;
    if (!reason.empty())
-     body.SetString("reason", reason);
+     body.Set("reason", reason);
 -
 -  // Send the crash report to the Reporting API.
 -  GetProcess()->GetStoragePartition()->GetNetworkContext()->QueueReport(
@@ -221,8 +220,8 @@ diff --git a/content/public/common/content_switch_dependent_feature_overrides.cc
 diff --git a/net/reporting/reporting_service.cc b/net/reporting/reporting_service.cc
 --- a/net/reporting/reporting_service.cc
 +++ b/net/reporting/reporting_service.cc
-@@ -212,6 +212,12 @@ class ReportingServiceImpl : public ReportingService {
-       std::unique_ptr<const base::Value> body,
+@@ -208,6 +208,12 @@ class ReportingServiceImpl : public ReportingService {
+       base::Value::Dict body,
        int depth,
        base::TimeTicks queued_ticks) {
 +#if BUILDFLAG(ENABLE_REPORTING)
@@ -237,12 +236,12 @@ diff --git a/net/reporting/reporting_service.cc b/net/reporting/reporting_servic
 diff --git a/services/network/network_context.h b/services/network/network_context.h
 --- a/services/network/network_context.h
 +++ b/services/network/network_context.h
-@@ -455,10 +455,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+@@ -456,10 +456,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
        const absl::optional<base::UnguessableToken>& reporting_source,
        const net::NetworkIsolationKey& network_isolation_key,
        const absl::optional<std::string>& user_agent,
--      base::Value body) override;
-+      base::Value body);
+-      base::Value::Dict body) override;
++      base::Value::Dict body);
    void QueueSignedExchangeReport(
        mojom::SignedExchangeReportPtr report,
 -      const net::NetworkIsolationKey& network_isolation_key) override;
@@ -253,7 +252,7 @@ diff --git a/services/network/network_context.h b/services/network/network_conte
 diff --git a/services/network/public/mojom/BUILD.gn b/services/network/public/mojom/BUILD.gn
 --- a/services/network/public/mojom/BUILD.gn
 +++ b/services/network/public/mojom/BUILD.gn
-@@ -963,7 +963,6 @@ mojom("mojom") {
+@@ -965,7 +965,6 @@ mojom("mojom") {
      export_define_blink = "BLINK_PLATFORM_IMPLEMENTATION=1"
      export_header_blink = "third_party/blink/public/platform/web_common.h"
      if (enable_reporting) {
@@ -264,7 +263,7 @@ diff --git a/services/network/public/mojom/BUILD.gn b/services/network/public/mo
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
-@@ -1046,6 +1046,7 @@ interface NetworkContext {
+@@ -1055,6 +1055,7 @@ interface NetworkContext {
    // provided |network_isolation_key|.
    //
    // Spec: https://w3c.github.io/reporting/#concept-reports
@@ -272,7 +271,7 @@ diff --git a/services/network/public/mojom/network_context.mojom b/services/netw
    QueueReport(string type,
                string group,
                url.mojom.Url url,
-@@ -1059,6 +1060,7 @@ interface NetworkContext {
+@@ -1068,6 +1069,7 @@ interface NetworkContext {
    // Note that this queued report will never be delivered if no reporting
    // endpoint matching is registered for with the provided
    // |network_isolation_key|.
@@ -291,7 +290,7 @@ diff --git a/third_party/blink/renderer/core/frame/local_frame.cc b/third_party/
  #include "services/data_decoder/public/mojom/resource_snapshot_for_web_bundle.mojom-blink.h"
  #include "services/network/public/cpp/features.h"
  #include "services/network/public/mojom/content_security_policy.mojom-blink.h"
-@@ -2340,9 +2341,11 @@ const base::UnguessableToken& LocalFrame::GetAgentClusterId() const {
+@@ -2356,9 +2357,11 @@ const base::UnguessableToken& LocalFrame::GetAgentClusterId() const {
    return base::UnguessableToken::Null();
  }
  
@@ -317,7 +316,7 @@ diff --git a/third_party/blink/renderer/core/frame/local_frame.h b/third_party/b
  #include "services/device/public/mojom/device_posture_provider.mojom-blink-forward.h"
  #include "services/network/public/mojom/fetch_api.mojom-blink-forward.h"
  #include "third_party/blink/public/common/frame/frame_ad_evidence.h"
-@@ -561,9 +561,9 @@ class CORE_EXPORT LocalFrame final
+@@ -564,9 +564,9 @@ class CORE_EXPORT LocalFrame final
    }
  
    SmoothScrollSequencer& GetSmoothScrollSequencer();
