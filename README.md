@@ -42,7 +42,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * always-incognito mode
 * disable all field trials permanently
 * disable smart search by default, allow web search from incognito mode
-* always-visible cookies, javascript and ads site settings
+* always-visible cookies, javascript and ads site settings from address bar popup
 * remove Play integration binary blobs
 * use [CFI](https://en.wikipedia.org/wiki/Control-flow_integrity) on all architectures except x86
 * enable trivial auto var init
@@ -59,7 +59,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * security enhancement patches from [GrapheneOS](https://github.com/GrapheneOS) project
 * disable scroll-to-text-fragment
 * reduced referer granularity
-* block gateway attacks via websockets
+* block gateway attacks via websockets (partial fix, see [this upstream issue](https://bugs.chromium.org/p/chromium/issues/detail?id=590714))
 * use 64-bit ABI for webview processes
 * make all favicon requests on-demand ([supercookie](https://supercookie.me/) mitigation)
 * enable all network isolation features (`PartitionConnectionsByNetworkIsolationKey`, `PartitionHttpServerPropertiesByNetworkIsolationKey`, `SplitHostCacheByNetworkIsolationKey`, `AppendFrameOriginToNetworkIsolationKey`, `SplitCacheByNetworkIsolationKey`, `UseRegistrableDomainInNetworkIsolationKey`, `PartitionSSLSessionsByNetworkIsolationKey`, `PartitionExpectCTStateByNetworkIsolationKey`, `PartitionDomainReliabilityByNetworkIsolationKey`)
@@ -71,10 +71,8 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * disable feeds
 * disable reporting of certificate errors
 * use pre-defined phone model for client hints and Javascript
-* site settings to disable images
 * allow forcing external links to open in incognito
 * disable AGSA by default
-* allow disabling JIT (per-site, disabled by default)
 * flag to enable Certificate Transparency
 * allow adding search engines from incognito mode
 * disable predictors
@@ -83,6 +81,12 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * disable capability to block `view-source:` URLs
 * disable `SegmentationPlatformFeature`, `OptimizationHints`, client hint headers
 * disable `AsyncDNS` by default
+* customize history expiration threshold
+* disable idle detection
+* HTTPS-only mode enabled by default
+* disable TLS resumption by default
+* partition DoH requests by top-frame NIK
+* add option to use home page as NTP
 
 ## Features not related to privacy
 * browser automatic updates, enabled by default
@@ -101,9 +105,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * adding an URL as bookmark will clear its blocked status for the NTP tiles
 * history support in incognito mode
 * view source of pages
-* timezone customization
 * sticky desktop mode setting
-* disable video autoplay by default, reintroduce site settings
 * mobile/desktop user agent customization
 * accessibility preference to force tablet UI
 * use Alt+D to focus address bar
@@ -111,7 +113,9 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * UI for crash information collection
 * allow OpenSearch search engine detection in incognito
 * allow OpenSearch search engine detection with paths
-* customize history expiration threshold
+* keyboard dictionary hints in address bar
+* always allow `view-source:` URLs
+* allow moving navigation bar to bottom
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 
@@ -136,7 +140,6 @@ New flags:
 * `#max-connections-per-host`
 * `#resume-background-video`
 * `#ipv6-probing`
-* `#disable-webgl`
 * `#enable-device-motion` and `#enable-device-orientation`
 * `#show-legacy-tls-warnings`
 * `#save-data-header`, disabled by default
@@ -145,6 +148,19 @@ New flags:
 * `#cleartext-permitted`, enabled by default, can be used to disable all cleartext-HTTP traffic
 * `#omnibox-autocomplete-filtering`, can be used to restrict omnibox autocomplete results
 * `#disable-external-intent-requests`
+* `#enable-userscripts-log`, see https://github.com/bromite/bromite/wiki/UserScripts#flags
+* `#certificate-transparency-enabled`, enabled by default; see https://chromium.googlesource.com/chromium/src/+/master/net/docs/certificate-transparency.md
+* `#move-top-toolbar-to-bottom`, disabled by default
+* `#site-engagement`, enabled by default, can be used to disable the automatically-generated icons for most visited sites on the NTP
+
+### Site settings
+
+* webGL, disabled by default
+* images, enabled by default
+* Javascript JIT, disabled by default
+* timezone customization override
+* autoplay, disabled by default
+* webRTC, disabled by default
 
 # Privacy limitations
 
