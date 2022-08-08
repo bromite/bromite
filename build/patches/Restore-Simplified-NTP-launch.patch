@@ -13,7 +13,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../feedback/ChromeFeedbackCollector.java     |  1 +
  .../feedback/SimplifiedNtpFeedbackSource.java | 38 +++++++++++
  .../NativePageNavigationDelegateImpl.java     |  4 +-
- .../chrome/browser/ntp/NewTabPageLayout.java  | 28 +++++++-
+ .../chrome/browser/ntp/NewTabPageLayout.java  | 30 ++++++++-
  .../SuggestionsNavigationDelegate.java        | 17 +++++
  chrome/browser/about_flags.cc                 |  3 +
  chrome/browser/flag_descriptions.cc           |  3 +
@@ -23,14 +23,14 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../browser/flags/ChromeFeatureList.java      |  1 +
  components/ntp_snippets/features.cc           |  6 +-
  .../variations/fieldtrial_testing_config.json | 18 +++++
- 17 files changed, 197 insertions(+), 4 deletions(-)
+ 17 files changed, 198 insertions(+), 5 deletions(-)
  create mode 100644 chrome/android/java/res/layout/ntp_shortcuts.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/feedback/SimplifiedNtpFeedbackSource.java
 
 diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_java_resources.gni
 --- a/chrome/android/chrome_java_resources.gni
 +++ b/chrome/android/chrome_java_resources.gni
-@@ -562,6 +562,7 @@ chrome_java_resources = [
+@@ -561,6 +561,7 @@ chrome_java_resources = [
    "java/res/layout/new_tab_page_incognito.xml",
    "java/res/layout/new_tab_page_layout.xml",
    "java/res/layout/new_tab_page_tile_grid_placeholder.xml",
@@ -41,7 +41,7 @@ diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_ja
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
-@@ -526,6 +526,7 @@ chrome_java_sources = [
+@@ -528,6 +528,7 @@ chrome_java_sources = [
    "java/src/org/chromium/chrome/browser/feedback/FeedFeedbackCollector.java",
    "java/src/org/chromium/chrome/browser/feedback/HelpAndFeedbackLauncherImpl.java",
    "java/src/org/chromium/chrome/browser/feedback/ScreenshotTask.java",
@@ -227,30 +227,37 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPageL
       * With {@link #mHasShownView}, it's one of the 2 flags used to track initialisation progress.
 @@ -228,6 +231,7 @@ public class NewTabPageLayout extends LinearLayout implements VrModeObserver {
          initializeMostVisitedTilesCoordinator(profile, lifecycleDispatcher, tileGroupDelegate,
-                 touchEnabledDelegate, isScrollableMVTEnabled(), searchProviderIsGoogle);
+                 touchEnabledDelegate, isScrollableMvtEnabled(), searchProviderIsGoogle);
          initializeSearchBoxBackground();
 +        initializeShortcuts();
          initializeSearchBoxTextView();
          initializeVoiceSearchButton();
          initializeLensButton();
-@@ -542,9 +546,15 @@ public class NewTabPageLayout extends LinearLayout implements VrModeObserver {
-         // Set a bit more top padding on the tile grid if there is no logo.
-         MarginLayoutParams marginLayoutParams =
-                 (MarginLayoutParams) mMvTilesContainerLayout.getLayoutParams();
--        int marginTop = getResources().getDimensionPixelSize(shouldShowLogo()
-+        int marginTop;
-+        if (mShortcutsView != null) {
-+            // If the shortcuts view is visible, padding will be built into that view.
-+            marginTop = 0;
-+        } else {
-+            marginTop = getResources().getDimensionPixelSize(shouldShowLogo()
-                         ? R.dimen.tile_grid_layout_padding_top
-                         : R.dimen.tile_grid_layout_no_logo_padding_top);
-+        }
-         marginLayoutParams.topMargin = marginTop;
- 
-         if (isScrollableMVTEnabled()) {
-@@ -894,6 +904,22 @@ public class NewTabPageLayout extends LinearLayout implements VrModeObserver {
+@@ -556,15 +560,21 @@ public class NewTabPageLayout extends LinearLayout implements VrModeObserver {
+                     R.dimen.ntp_header_lateral_paddings_v2);
+             marginLayoutParams.leftMargin = -lateralPaddingsForNTP;
+             marginLayoutParams.rightMargin = -lateralPaddingsForNTP;
+-            marginLayoutParams.topMargin = getResources().getDimensionPixelSize(shouldShowLogo()
++            // when simplified NTP is enabled the top marging is included in its view's padding
++            if (mShortcutsView == null) {
++                marginLayoutParams.topMargin = getResources().getDimensionPixelSize(shouldShowLogo()
+                             ? R.dimen.tile_grid_layout_top_margin
+                             : R.dimen.tile_grid_layout_no_logo_top_margin);
++            }
+             marginLayoutParams.bottomMargin = getResources().getDimensionPixelOffset(
+                     R.dimen.tile_carousel_layout_bottom_margin);
+         } else {
+             ViewGroup.LayoutParams layoutParams = mMvTilesContainerLayout.getLayoutParams();
+             layoutParams.width = ViewGroup.LayoutParams.WRAP_CONTENT;
+-            marginLayoutParams.topMargin = getGridMvtTopMargin();
++            // when simplified NTP is enabled the top marging is included in its view's padding
++            if (mShortcutsView == null) {
++                marginLayoutParams.topMargin = getGridMvtTopMargin();
++            }
+             marginLayoutParams.bottomMargin = getGridMvtBottomMargin();
+         }
+     }
+@@ -905,6 +915,22 @@ public class NewTabPageLayout extends LinearLayout implements VrModeObserver {
          return iphCommandBuilder;
      }
  
@@ -310,7 +317,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/suggestions/Sug
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
-@@ -4438,6 +4438,9 @@ const FeatureEntry kFeatureEntries[] = {
+@@ -4604,6 +4604,9 @@ const FeatureEntry kFeatureEntries[] = {
       SINGLE_VALUE_TYPE_AND_VALUE(
           switches::kForceShowUpdateMenuItemCustomSummary,
           "Custom Summary")},
@@ -323,9 +330,9 @@ diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
 --- a/chrome/browser/flag_descriptions.cc
 +++ b/chrome/browser/flag_descriptions.cc
-@@ -3575,6 +3575,9 @@ const char kStartSurfaceAndroidDescription[] =
-     "Enable showing the start surface when launching Chrome via the "
-     "launcher.";
+@@ -3679,6 +3679,9 @@ const char kSearchResumptionModuleAndroidName[] = "Search Resumption Module";
+ const char kSearchResumptionModuleAndroidDescription[] =
+     "Enable showing search suggestions on NTP";
  
 +const char kSimplifiedNtpName[] = "Simplified NTP";
 +const char kSimplifiedNtpDescription[] = "Show a simplified New Tab Page.";
@@ -336,7 +343,7 @@ diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descripti
 diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptions.h
 --- a/chrome/browser/flag_descriptions.h
 +++ b/chrome/browser/flag_descriptions.h
-@@ -2032,6 +2032,9 @@ extern const char kSiteIsolationForPasswordSitesDescription[];
+@@ -2090,6 +2090,9 @@ extern const char kSiteIsolationForPasswordSitesDescription[];
  extern const char kSmartSuggestionForLargeDownloadsName[];
  extern const char kSmartSuggestionForLargeDownloadsDescription[];
  
@@ -349,7 +356,7 @@ diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptio
 diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browser/flags/android/chrome_feature_list.cc
 --- a/chrome/browser/flags/android/chrome_feature_list.cc
 +++ b/chrome/browser/flags/android/chrome_feature_list.cc
-@@ -238,6 +238,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
+@@ -241,6 +241,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
      &kImmersiveUiMode,
      &kIncognitoReauthenticationForAndroid,
      &kIncognitoScreenshot,
@@ -357,7 +364,7 @@ diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browse
      &kInstanceSwitcher,
      &kInstantStart,
      &kIsVoiceSearchEnabledCache,
-@@ -696,6 +697,9 @@ const base::Feature kNotificationPermissionVariant{
+@@ -719,6 +720,9 @@ const base::Feature kNotificationPermissionVariant{
  const base::Feature kInstanceSwitcher{"InstanceSwitcher",
                                        base::FEATURE_ENABLED_BY_DEFAULT};
  
@@ -370,7 +377,7 @@ diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browse
 diff --git a/chrome/browser/flags/android/chrome_feature_list.h b/chrome/browser/flags/android/chrome_feature_list.h
 --- a/chrome/browser/flags/android/chrome_feature_list.h
 +++ b/chrome/browser/flags/android/chrome_feature_list.h
-@@ -112,6 +112,7 @@ extern const base::Feature kMostRecentTabOnBackgroundCloseTab;
+@@ -114,6 +114,7 @@ extern const base::Feature kNewInstanceFromDraggedLink;
  extern const base::Feature kNewWindowAppMenu;
  extern const base::Feature kNotificationPermissionVariant;
  extern const base::Feature kPageAnnotationsService;
@@ -381,7 +388,7 @@ diff --git a/chrome/browser/flags/android/chrome_feature_list.h b/chrome/browser
 diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
 --- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
 +++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
-@@ -394,6 +394,7 @@ public abstract class ChromeFeatureList {
+@@ -403,6 +403,7 @@ public abstract class ChromeFeatureList {
      public static final String MESSAGES_FOR_ANDROID_ADS_BLOCKED = "MessagesForAndroidAdsBlocked";
      public static final String MESSAGES_FOR_ANDROID_CHROME_SURVEY =
              "MessagesForAndroidChromeSurvey";
@@ -414,7 +421,7 @@ diff --git a/components/ntp_snippets/features.cc b/components/ntp_snippets/featu
 diff --git a/testing/variations/fieldtrial_testing_config.json b/testing/variations/fieldtrial_testing_config.json
 --- a/testing/variations/fieldtrial_testing_config.json
 +++ b/testing/variations/fieldtrial_testing_config.json
-@@ -3876,6 +3876,24 @@
+@@ -4428,6 +4428,24 @@
              ]
          }
      ],
