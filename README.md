@@ -147,7 +147,7 @@ New flags:
 * `#allow-user-certificates`, disabled by default
 * `#cleartext-permitted`, enabled by default, can be used to disable all cleartext-HTTP traffic
 * `#omnibox-autocomplete-filtering`, can be used to restrict omnibox autocomplete results
-* `#disable-external-intent-requests`
+* `#disable-external-intent-requests`, can be used to disable opening any external app for any URL
 * `#enable-userscripts-log`, see https://github.com/bromite/bromite/wiki/UserScripts#flags
 * `#certificate-transparency-enabled`, enabled by default; see https://chromium.googlesource.com/chromium/src/+/master/net/docs/certificate-transparency.md
 * `#move-top-toolbar-to-bottom`, disabled by default
