@@ -1,3 +1,10 @@
+# 104.0.5112.91
+* re-introduce modal flag to prompt when closing all tabs
+* sharing hub: always use visible URL (fixes https://github.com/bromite/bromite/issues/2204)
+* add SVG fingerprinting mitigation (thanks to @uazo)
+* updated zh_CN translactions (thanks to @zhmars)
+* dropped patch to open YouTube links in Bromite
+
 # 104.0.5112.63
 
 # 103.0.5060.140
