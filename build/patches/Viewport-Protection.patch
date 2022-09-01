@@ -28,24 +28,24 @@ The feature is controlled by a site setting (default disabled)
  .../blink/renderer/core/events/mouse_event.h  | 19 +++-
  .../renderer/core/events/pointer_event.h      | 11 +++
  .../renderer/core/exported/web_view_impl.cc   |  2 +-
- .../renderer/core/frame/local_dom_window.cc   | 33 ++++++-
+ .../renderer/core/frame/local_dom_window.cc   | 27 +++++-
  .../blink/renderer/core/frame/local_frame.cc  | 12 ++-
  .../blink/renderer/core/frame/local_frame.h   |  6 +-
- .../core/frame/screen_metrics_emulator.cc     |  7 +-
+ .../core/frame/screen_metrics_emulator.cc     |  8 +-
  .../core/frame/screen_metrics_emulator.h      |  8 ++
  .../core/frame/web_frame_widget_impl.cc       |  8 ++
  .../core/frame/web_remote_frame_impl.cc       |  3 +-
  .../blink/renderer/core/input/touch.cc        | 17 +++-
  third_party/blink/renderer/core/page/page.cc  | 74 ++++++++++++++++
  third_party/blink/renderer/core/page/page.h   |  7 ++
- 32 files changed, 356 insertions(+), 20 deletions(-)
+ 32 files changed, 351 insertions(+), 20 deletions(-)
  create mode 100644 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/BromiteViewportContentSetting.java
  create mode 100644 components/browser_ui/strings/android/viewport.grdp
 
 diff --git a/components/browser_ui/site_settings/android/BUILD.gn b/components/browser_ui/site_settings/android/BUILD.gn
 --- a/components/browser_ui/site_settings/android/BUILD.gn
 +++ b/components/browser_ui/site_settings/android/BUILD.gn
-@@ -78,6 +78,9 @@ android_library("java") {
+@@ -85,6 +85,9 @@ android_library("java") {
    sources += [
      "java/src/org/chromium/components/browser_ui/site_settings/BromiteWebRTCContentSetting.java",
    ]
@@ -219,14 +219,14 @@ new file mode 100644
 diff --git a/components/components_strings.grd b/components/components_strings.grd
 --- a/components/components_strings.grd
 +++ b/components/components_strings.grd
-@@ -339,6 +339,7 @@
+@@ -340,6 +340,7 @@
        <part file="user_scripts/strings/userscripts_strings.grdp" />
        <part file="browser_ui/strings/android/webgl.grdp" />
        <part file="browser_ui/strings/android/webrtc.grdp" />
 +      <part file="browser_ui/strings/android/viewport.grdp" />
  
        <if expr="not is_ios">
-         <part file="management_strings.grdp" />
+         <part file="history_clusters_strings.grdp" />
 diff --git a/components/content_settings/core/browser/content_settings_registry.cc b/components/content_settings/core/browser/content_settings_registry.cc
 --- a/components/content_settings/core/browser/content_settings_registry.cc
 +++ b/components/content_settings/core/browser/content_settings_registry.cc
@@ -389,7 +389,7 @@ diff --git a/third_party/blink/public/platform/web_content_settings_client.h b/t
 diff --git a/third_party/blink/renderer/core/css/resolver/style_resolver.cc b/third_party/blink/renderer/core/css/resolver/style_resolver.cc
 --- a/third_party/blink/renderer/core/css/resolver/style_resolver.cc
 +++ b/third_party/blink/renderer/core/css/resolver/style_resolver.cc
-@@ -1478,8 +1478,14 @@ scoped_refptr<ComputedStyle> StyleResolver::InitialStyleForElement() const {
+@@ -1487,8 +1487,14 @@ scoped_refptr<ComputedStyle> StyleResolver::InitialStyleForElement() const {
  
    initial_style->SetRtlOrdering(
        GetDocument().VisuallyOrdered() ? EOrder::kVisual : EOrder::kLogical);
@@ -478,19 +478,19 @@ diff --git a/third_party/blink/renderer/core/events/pointer_event.h b/third_part
 diff --git a/third_party/blink/renderer/core/exported/web_view_impl.cc b/third_party/blink/renderer/core/exported/web_view_impl.cc
 --- a/third_party/blink/renderer/core/exported/web_view_impl.cc
 +++ b/third_party/blink/renderer/core/exported/web_view_impl.cc
-@@ -1015,7 +1015,7 @@ WebPagePopupImpl* WebViewImpl::OpenPagePopup(PagePopupClient* client) {
+@@ -1014,7 +1014,7 @@ WebPagePopupImpl* WebViewImpl::OpenPagePopup(PagePopupClient* client) {
+   page_popup_ = WebPagePopupImpl::Create(
        std::move(popup_widget_host), std::move(widget_host),
-       std::move(widget_receiver), agent_group_scheduler.DefaultTaskRunner());
-   popup_widget->InitializeCompositing(agent_group_scheduler,
--                                      opener_widget->GetOriginalScreenInfos(),
-+                                      opener_widget->GetScreenInfos(),
-                                       /*settings=*/nullptr);
- 
-   page_popup_ = To<WebPagePopupImpl>(popup_widget);
+       std::move(widget_receiver), this, agent_group_scheduler,
+-      opener_widget->GetOriginalScreenInfos(), client);
++      opener_widget->GetScreenInfos(), client);
+   EnablePopupMouseWheelEventListener(web_opener_frame->LocalRoot());
+   return page_popup_.get();
+ }
 diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
 --- a/third_party/blink/renderer/core/frame/local_dom_window.cc
 +++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
-@@ -1406,6 +1406,11 @@ int LocalDOMWindow::outerHeight() const {
+@@ -1388,6 +1388,11 @@ int LocalDOMWindow::outerHeight() const {
    if (!page)
      return 0;
  
@@ -502,7 +502,7 @@ diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_p
    ChromeClient& chrome_client = page->GetChromeClient();
    if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
      return static_cast<int>(
-@@ -1431,6 +1436,11 @@ int LocalDOMWindow::outerWidth() const {
+@@ -1413,6 +1418,11 @@ int LocalDOMWindow::outerWidth() const {
    if (!page)
      return 0;
  
@@ -514,23 +514,17 @@ diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_p
    ChromeClient& chrome_client = page->GetChromeClient();
    if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
      return static_cast<int>(
-@@ -1618,7 +1628,14 @@ double LocalDOMWindow::devicePixelRatio() const {
+@@ -1600,7 +1610,8 @@ double LocalDOMWindow::devicePixelRatio() const {
    if (!GetFrame())
      return 0.0;
  
 -  return GetFrame()->DevicePixelRatio();
-+  bool with_zoom_factor = true;
-+
-+  // do not send the zoom factor override value
-+  Page* page = GetFrame()->GetPage();
-+  if (page && page->IsScreenEmulated())
-+    with_zoom_factor = false;
-+
-+  return GetFrame()->DevicePixelRatio(with_zoom_factor);
++  // never send the zoom factor override value
++  return GetFrame()->DevicePixelRatio(/*with_zoom_factor*/false);
  }
  
  void LocalDOMWindow::scrollBy(double x, double y) const {
-@@ -2162,6 +2179,20 @@ DOMWindow* LocalDOMWindow::open(v8::Isolate* isolate,
+@@ -2142,6 +2153,20 @@ DOMWindow* LocalDOMWindow::open(v8::Isolate* isolate,
    if (!completed_url.IsEmpty() || result.new_window)
      result.frame->Navigate(frame_request, WebFrameLoadType::kStandard);
  
@@ -554,7 +548,7 @@ diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_p
 diff --git a/third_party/blink/renderer/core/frame/local_frame.cc b/third_party/blink/renderer/core/frame/local_frame.cc
 --- a/third_party/blink/renderer/core/frame/local_frame.cc
 +++ b/third_party/blink/renderer/core/frame/local_frame.cc
-@@ -1233,6 +1233,10 @@ gfx::SizeF LocalFrame::ResizePageRectsKeepingRatio(
+@@ -1267,6 +1267,10 @@ gfx::SizeF LocalFrame::ResizePageRectsKeepingRatio(
    return gfx::SizeF(result_width, result_height);
  }
  
@@ -565,7 +559,7 @@ diff --git a/third_party/blink/renderer/core/frame/local_frame.cc b/third_party/
  void LocalFrame::SetPageZoomFactor(float factor) {
    SetPageAndTextZoomFactors(factor, text_zoom_factor_);
  }
-@@ -1381,12 +1385,16 @@ device::mojom::blink::DevicePostureType LocalFrame::GetDevicePosture() {
+@@ -1406,12 +1410,16 @@ device::mojom::blink::DevicePostureType LocalFrame::GetDevicePosture() {
    return mojo_handler_->GetDevicePosture();
  }
  
@@ -580,14 +574,14 @@ diff --git a/third_party/blink/renderer/core/frame/local_frame.cc b/third_party/
 +  if (with_zoom_factor)
 +    ratio *= PageZoomFactor();
 +  else
-+    ratio *= (PageZoomFactor() - page_zoom_factor_base_value_);
++    ratio = page_zoom_factor_;
    return ratio;
  }
  
 diff --git a/third_party/blink/renderer/core/frame/local_frame.h b/third_party/blink/renderer/core/frame/local_frame.h
 --- a/third_party/blink/renderer/core/frame/local_frame.h
 +++ b/third_party/blink/renderer/core/frame/local_frame.h
-@@ -351,14 +351,15 @@ class CORE_EXPORT LocalFrame final
+@@ -364,13 +364,14 @@ class CORE_EXPORT LocalFrame final
    void SetInViewSourceMode(bool = true);
  
    void SetPageZoomFactor(float);
@@ -599,13 +593,12 @@ diff --git a/third_party/blink/renderer/core/frame/local_frame.h b/third_party/b
    void SetPageAndTextZoomFactors(float page_zoom_factor,
                                   float text_zoom_factor);
  
-   void DeviceScaleFactorChanged();
 -  double DevicePixelRatio() const;
 +  double DevicePixelRatio(bool with_zoom_factor = true) const;
  
    // Informs the local root's document and its local descendant subtree that a
    // media query value changed.
-@@ -867,6 +868,7 @@ class CORE_EXPORT LocalFrame final
+@@ -886,6 +887,7 @@ class CORE_EXPORT LocalFrame final
    unsigned hidden_ : 1;
  
    float page_zoom_factor_;
@@ -626,13 +619,14 @@ diff --git a/third_party/blink/renderer/core/frame/screen_metrics_emulator.cc b/
  }
  
  void ScreenMetricsEmulator::UpdateVisualProperties(
-@@ -191,9 +194,7 @@ void ScreenMetricsEmulator::OnUpdateScreenRects(
+@@ -191,9 +194,8 @@ void ScreenMetricsEmulator::OnUpdateScreenRects(
      const gfx::Rect& window_screen_rect) {
    original_view_screen_rect_ = view_screen_rect;
    original_window_screen_rect_ = window_screen_rect;
 -  if (emulating_desktop()) {
 -    Apply();
 -  }
++  // needed as we need browser ui size
 +  Apply();
  }
  
@@ -665,7 +659,7 @@ diff --git a/third_party/blink/renderer/core/frame/screen_metrics_emulator.h b/t
 diff --git a/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc b/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
 --- a/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
 +++ b/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
-@@ -1499,6 +1499,14 @@ void WebFrameWidgetImpl::ApplyVisualPropertiesSizing(
+@@ -1579,6 +1579,14 @@ void WebFrameWidgetImpl::ApplyVisualPropertiesSizing(
  
      if (auto* device_emulator = DeviceEmulator()) {
        device_emulator->UpdateVisualProperties(visual_properties);
@@ -683,7 +677,7 @@ diff --git a/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc b/th
 diff --git a/third_party/blink/renderer/core/frame/web_remote_frame_impl.cc b/third_party/blink/renderer/core/frame/web_remote_frame_impl.cc
 --- a/third_party/blink/renderer/core/frame/web_remote_frame_impl.cc
 +++ b/third_party/blink/renderer/core/frame/web_remote_frame_impl.cc
-@@ -315,7 +315,8 @@ void WebRemoteFrameImpl::InitializeFrameVisualProperties(
+@@ -339,7 +339,8 @@ void WebRemoteFrameImpl::InitializeFrameVisualProperties(
    visual_properties.page_scale_factor = ancestor_widget->PageScaleInMainFrame();
    visual_properties.is_pinch_gesture_active =
        ancestor_widget->PinchGestureActiveInMainFrame();
@@ -753,7 +747,7 @@ diff --git a/third_party/blink/renderer/core/page/page.cc b/third_party/blink/re
  
 +void Page::CalculateEmulatedScreenSetting(LocalFrame* frame, bool force) {
 +  blink::WebContentSettingsClient* settings = frame->GetContentSettingsClient();
-+  if (settings->AllowViewportChange(false) || force) {
++  if ( (settings && settings->AllowViewportChange(false)) || force) {
 +    // this is the maximum (and minimum) value which in percentage
 +    // corresponds to +- 0.03%
 +    // more or less 3-6 pixels according to the resolution 300-600px
