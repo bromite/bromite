@@ -86,7 +86,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * HTTPS-only mode enabled by default
 * disable TLS resumption by default
 * partition DoH requests by top-frame NIK
-* add option to use home page as NTP
+* strict site isolation and strict origin isolation
 
 ## Features not related to privacy
 * browser automatic updates, enabled by default
@@ -116,6 +116,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * keyboard dictionary hints in address bar
 * always allow `view-source:` URLs
 * allow moving navigation bar to bottom
+* add option to use home page as NTP
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 
