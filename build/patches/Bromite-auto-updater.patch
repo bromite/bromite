@@ -28,9 +28,9 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../flags/android/chrome_feature_list.h       |   1 +
  .../browser/flags/ChromeFeatureList.java      |   1 +
  .../strings/android_chrome_strings.grd        |  23 +-
- .../endpoint_fetcher/endpoint_fetcher.cc      | 107 +++++++-
+ .../endpoint_fetcher/endpoint_fetcher.cc      | 102 +++++++-
  .../endpoint_fetcher/endpoint_fetcher.h       |  22 +-
- 23 files changed, 899 insertions(+), 55 deletions(-)
+ 23 files changed, 896 insertions(+), 53 deletions(-)
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/BromiteInlineUpdateController.java
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateController.java
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/InlineUpdateControllerFactory.java
@@ -39,9 +39,9 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
 diff --git a/build/android/java/templates/BuildConfig.template b/build/android/java/templates/BuildConfig.template
 --- a/build/android/java/templates/BuildConfig.template
 +++ b/build/android/java/templates/BuildConfig.template
-@@ -86,4 +86,6 @@ public class BuildConfig {
+@@ -92,4 +92,6 @@ public class BuildConfig {
  #else
-     public static MAYBE_FINAL boolean ISOLATED_SPLITS_ENABLED MAYBE_FALSE;
+     public static MAYBE_FINAL boolean IS_FOR_TEST MAYBE_FALSE;
  #endif
 +
 +    public static MAYBE_FINAL String BUILD_TARGET_CPU = _BUILD_TARGET_CPU;
@@ -49,9 +49,9 @@ diff --git a/build/android/java/templates/BuildConfig.template b/build/android/j
 diff --git a/build/config/android/rules.gni b/build/config/android/rules.gni
 --- a/build/config/android/rules.gni
 +++ b/build/config/android/rules.gni
-@@ -2049,6 +2049,9 @@ if (enable_java_templates) {
-           ]
-         }
+@@ -2153,6 +2153,9 @@ if (enable_java_templates) {
+       if (defined(testonly) && testonly) {
+         defines += [ "_IS_FOR_TEST" ]
        }
 +
 +      # add arch to org.chromium.build.BuildConfig
@@ -62,7 +62,7 @@ diff --git a/build/config/android/rules.gni b/build/config/android/rules.gni
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
-@@ -801,6 +801,9 @@ chrome_java_sources = [
+@@ -802,6 +802,9 @@ chrome_java_sources = [
    "java/src/org/chromium/chrome/browser/omaha/UpdateConfigs.java",
    "java/src/org/chromium/chrome/browser/omaha/UpdateMenuItemHelper.java",
    "java/src/org/chromium/chrome/browser/omaha/UpdateStatusProvider.java",
@@ -1250,7 +1250,7 @@ new file mode 100644
 diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browser/flags/android/chrome_feature_list.cc
 --- a/chrome/browser/flags/android/chrome_feature_list.cc
 +++ b/chrome/browser/flags/android/chrome_feature_list.cc
-@@ -255,6 +255,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
+@@ -261,6 +261,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
      &kNewWindowAppMenu,
      &kNotificationPermissionVariant,
      &kPageAnnotationsService,
@@ -1258,7 +1258,7 @@ diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browse
      &kBookmarksImprovedSaveFlow,
      &kBookmarksRefresh,
      &kBackGestureRefactorAndroid,
-@@ -686,6 +687,9 @@ const base::Feature kIncognitoReauthenticationForAndroid{
+@@ -709,6 +710,9 @@ const base::Feature kIncognitoReauthenticationForAndroid{
  const base::Feature kIncognitoScreenshot{"IncognitoScreenshot",
                                           base::FEATURE_DISABLED_BY_DEFAULT};
  
@@ -1271,7 +1271,7 @@ diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browse
 diff --git a/chrome/browser/flags/android/chrome_feature_list.h b/chrome/browser/flags/android/chrome_feature_list.h
 --- a/chrome/browser/flags/android/chrome_feature_list.h
 +++ b/chrome/browser/flags/android/chrome_feature_list.h
-@@ -100,6 +100,7 @@ extern const base::Feature kGridTabSwitcherForTablets;
+@@ -103,6 +103,7 @@ extern const base::Feature kGridTabSwitcherForTablets;
  extern const base::Feature kHandleMediaIntents;
  extern const base::Feature kImmersiveUiMode;
  extern const base::Feature kIncognitoReauthenticationForAndroid;
@@ -1282,7 +1282,7 @@ diff --git a/chrome/browser/flags/android/chrome_feature_list.h b/chrome/browser
 diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
 --- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
 +++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
-@@ -377,6 +377,7 @@ public abstract class ChromeFeatureList {
+@@ -379,6 +379,7 @@ public abstract class ChromeFeatureList {
      public static final String INCOGNITO_REAUTHENTICATION_FOR_ANDROID =
              "IncognitoReauthenticationForAndroid";
      public static final String INCOGNITO_SCREENSHOT = "IncognitoScreenshot";
@@ -1293,7 +1293,7 @@ diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/f
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -1873,6 +1873,12 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -1887,6 +1887,12 @@ Your Google account may have other forms of browsing history like searches and a
        <message name="IDS_DEPRECATION_WARNING" desc="Warning about Chrome updates no longer being supported">
          Chrome updates are no longer supported for this version of Android
        </message>
@@ -1306,7 +1306,7 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
  
        <!-- Account management UI strings. -->
        <message name="IDS_ACCOUNT_MANAGEMENT_TITLE" desc="Header title for the account management screen. [CHAR_LIMIT=32]">
-@@ -3435,7 +3441,10 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+@@ -3492,7 +3498,10 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
  
        <!-- Main menu items -->
        <message name="IDS_MENU_UPDATE" desc="Menu item for updating chrome. [CHAR_LIMIT=24]">
@@ -1318,7 +1318,7 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
        </message>
        <message name="IDS_MENU_UPDATE_SUMMARY_DEFAULT" desc="Summary string for update menu item explaining that a newer version of Chrome is available. [CHAR_LIMIT=30]">
          Newer version is available
-@@ -3446,6 +3455,18 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
+@@ -3503,6 +3512,18 @@ To change this setting, <ph name="BEGIN_LINK">&lt;resetlink&gt;</ph>reset sync<p
        <message name="IDS_MENU_UPDATE_UNSUPPORTED_SUMMARY_DEFAULT" desc="Summary string for update menu item explaining that the Android version on the device is unsupported. [CHAR_LIMIT=30]">
          Android version is unsupported
        </message>
@@ -1422,7 +1422,7 @@ diff --git a/components/endpoint_fetcher/endpoint_fetcher.cc b/components/endpoi
    if (base::EqualsCaseInsensitiveASCII(http_method_, "POST")) {
      resource_request->headers.SetHeader(kContentTypeKey, content_type_);
    }
-@@ -222,31 +251,59 @@ void EndpointFetcher::PerformRequest(
+@@ -222,25 +251,52 @@ void EndpointFetcher::PerformRequest(
      default:
        break;
    }
@@ -1457,7 +1457,6 @@ diff --git a/components/endpoint_fetcher/endpoint_fetcher.cc b/components/endpoi
 -  simple_url_loader_->SetTimeoutDuration(base::Milliseconds(timeout_ms_));
 -  simple_url_loader_->SetAllowHttpErrorResults(true);
 -  network::SimpleURLLoader::BodyAsStringCallback body_as_string_callback =
--      base::BindOnce(&EndpointFetcher::OnResponseFetched,
 +
 +  LOG(INFO) << "performing " << http_method_ << " request to " << url_;
 +  if (base::EqualsCaseInsensitiveASCII(http_method_, "HEAD")) {
@@ -1468,39 +1467,21 @@ diff --git a/components/endpoint_fetcher/endpoint_fetcher.cc b/components/endpoi
 +        base::BindOnce(&EndpointFetcher::OnURLLoadComplete,
 +                     base::Unretained(this)));
 +  } else {
-+    network::SimpleURLLoader::BodyAsStringCallback body_as_string_callback =
-+        base::BindOnce(&EndpointFetcher::OnResponseFetched,
++      network::SimpleURLLoader::BodyAsStringCallback body_as_string_callback =
+       base::BindOnce(&EndpointFetcher::OnResponseFetched,
                       weak_ptr_factory_.GetWeakPtr(),
                       std::move(endpoint_fetcher_callback));
 -  simple_url_loader_->DownloadToString(
 -      url_loader_factory_.get(), std::move(body_as_string_callback),
 -      network::SimpleURLLoader::kMaxBoundedStringDownloadSize);
-+    simple_url_loader_->DownloadToString(
-+        url_loader_factory_.get(), std::move(body_as_string_callback),
-+        network::SimpleURLLoader::kMaxBoundedStringDownloadSize);
++      simple_url_loader_->DownloadToString(
++         url_loader_factory_.get(), std::move(body_as_string_callback),
++         network::SimpleURLLoader::kMaxBoundedStringDownloadSize);
 +  }
  }
  
  void EndpointFetcher::OnResponseFetched(
-     EndpointFetcherCallback endpoint_fetcher_callback,
-     std::unique_ptr<std::string> response_body) {
-   if (response_body) {
-+    simple_url_loader_.reset();
-     if (sanitize_response_) {
-       data_decoder::JsonSanitizer::Sanitize(
-           std::move(*response_body),
-@@ -264,9 +321,9 @@ void EndpointFetcher::OnResponseFetched(
-     std::string net_error = net::ErrorToString(simple_url_loader_->NetError());
-     VLOG(1) << __func__ << " with response error: " << net_error;
-     response->response = "There was a response error";
-+    simple_url_loader_.reset();
-     std::move(endpoint_fetcher_callback).Run(std::move(response));
-   }
--  simple_url_loader_.reset();
- }
- 
- void EndpointFetcher::OnSanitizationResult(
-@@ -286,3 +343,37 @@ void EndpointFetcher::OnSanitizationResult(
+@@ -293,3 +349,37 @@ void EndpointFetcher::OnSanitizationResult(
  std::string EndpointFetcher::GetUrlForTesting() {
    return url_.spec();
  }

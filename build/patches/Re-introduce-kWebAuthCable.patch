@@ -1,0 +1,163 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sun, 4 Sep 2022 18:47:58 +0200
+Subject: Re-introduce kWebAuthCable
+
+This reverts commit ebfd987a57bf4a58588760e8a4342b4fffef36f2.
+
+Feature is disabled by default.
+
+License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
+---
+ .../authenticator_dialog_view_browsertest.cc      |  7 +++++++
+ .../webauthn/authenticator_dialog_browsertest.cc  |  7 +++++++
+ .../webauthn/chrome_webauthn_browsertest.cc       |  2 ++
+ content/browser/webauth/authenticator_common.cc   |  6 ++++--
+ .../webauth/authenticator_impl_unittest.cc        | 15 +++++++++++++--
+ content/public/common/content_features.cc         |  6 ++++++
+ content/public/common/content_features.h          |  1 +
+ 7 files changed, 40 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/ui/views/webauthn/authenticator_dialog_view_browsertest.cc b/chrome/browser/ui/views/webauthn/authenticator_dialog_view_browsertest.cc
+--- a/chrome/browser/ui/views/webauthn/authenticator_dialog_view_browsertest.cc
++++ b/chrome/browser/ui/views/webauthn/authenticator_dialog_view_browsertest.cc
+@@ -110,6 +110,12 @@ class TestSheetView : public AuthenticatorRequestSheetView {
+ 
+ class AuthenticatorDialogViewTest : public DialogBrowserTest {
+  public:
++  void SetUp() override {
++    // Enable all upcoming features to excerise them for tests.
++    scoped_feature_list_.InitWithFeatures({features::kWebAuthCable}, {});
++    DialogBrowserTest::SetUp();
++  }
++
+   // DialogBrowserTest:
+   void ShowUi(const std::string& name) override {
+     dialog_model_ = std::make_unique<AuthenticatorRequestDialogModel>(
+@@ -166,6 +172,7 @@ class AuthenticatorDialogViewTest : public DialogBrowserTest {
+     }
+   }
+ 
++  base::test::ScopedFeatureList scoped_feature_list_;
+   std::unique_ptr<AuthenticatorRequestDialogModel> dialog_model_;
+ };
+ 
+diff --git a/chrome/browser/ui/webauthn/authenticator_dialog_browsertest.cc b/chrome/browser/ui/webauthn/authenticator_dialog_browsertest.cc
+--- a/chrome/browser/ui/webauthn/authenticator_dialog_browsertest.cc
++++ b/chrome/browser/ui/webauthn/authenticator_dialog_browsertest.cc
+@@ -35,6 +35,12 @@ class AuthenticatorDialogTest : public DialogBrowserTest {
+   AuthenticatorDialogTest(const AuthenticatorDialogTest&) = delete;
+   AuthenticatorDialogTest& operator=(const AuthenticatorDialogTest&) = delete;
+ 
++  void SetUp() override {
++    // Enable all upcoming features so that people can see the UI.
++    scoped_feature_list_.InitWithFeatures({features::kWebAuthCable}, {});
++    DialogBrowserTest::SetUp();
++  }
++
+   // DialogBrowserTest:
+   void ShowUi(const std::string& name) override {
+     // Web modal dialogs' bounds may exceed the display's work area.
+@@ -296,6 +302,7 @@ class AuthenticatorDialogTest : public DialogBrowserTest {
+   std::unique_ptr<AuthenticatorRequestDialogModel> model_;
+   base::RepeatingTimer timer_;
+   int bio_samples_remaining_ = 5;
++  base::test::ScopedFeatureList scoped_feature_list_;
+ };
+ 
+ // Run with:
+diff --git a/chrome/browser/webauthn/chrome_webauthn_browsertest.cc b/chrome/browser/webauthn/chrome_webauthn_browsertest.cc
+--- a/chrome/browser/webauthn/chrome_webauthn_browsertest.cc
++++ b/chrome/browser/webauthn/chrome_webauthn_browsertest.cc
+@@ -453,6 +453,7 @@ IN_PROC_BROWSER_TEST_F(WebAuthnCableExtension, ServerLinkExperiments) {
+ class WebAuthnCableSecondFactor : public WebAuthnBrowserTest {
+  public:
+   WebAuthnCableSecondFactor() {
++    scoped_feature_list_.InitWithFeatures({features::kWebAuthCable}, {});
+     // This makes it a little easier to compare against.
+     trace_ << std::endl;
+   }
+@@ -697,6 +698,7 @@ class WebAuthnCableSecondFactor : public WebAuthnBrowserTest {
+   };
+ 
+  protected:
++  base::test::ScopedFeatureList scoped_feature_list_;
+   std::ostringstream trace_;
+   AuthenticatorRequestDialogModel* model_ = nullptr;
+ };
+diff --git a/content/browser/webauth/authenticator_common.cc b/content/browser/webauth/authenticator_common.cc
+--- a/content/browser/webauth/authenticator_common.cc
++++ b/content/browser/webauth/authenticator_common.cc
+@@ -298,8 +298,10 @@ base::flat_set<device::FidoTransportProtocol> GetWebAuthnTransports(
+     transports.insert(device::FidoTransportProtocol::kInternal);
+   }
+ 
+-  transports.insert(
+-      device::FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy);
++  if (base::FeatureList::IsEnabled(features::kWebAuthCable)) {
++    transports.insert(
++        device::FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy);
++  }
+ 
+   // kAndroidAccessory doesn't work on Windows because of USB stack issues.
+   // Note: even if this value were inserted it wouldn't take effect on Windows
+diff --git a/content/browser/webauth/authenticator_impl_unittest.cc b/content/browser/webauth/authenticator_impl_unittest.cc
+--- a/content/browser/webauth/authenticator_impl_unittest.cc
++++ b/content/browser/webauth/authenticator_impl_unittest.cc
+@@ -1448,7 +1448,12 @@ TEST_F(AuthenticatorImplTest, OversizedCredentialId) {
+   }
+ }
+ 
+-TEST_F(AuthenticatorImplTest, NoSilentAuthenticationForCable) {
++class AuthenticatorImplCableFlagSetTest : public AuthenticatorImplTest {
++ private:
++  base::test::ScopedFeatureList scoped_feature_list_{features::kWebAuthCable};
++};
++
++TEST_F(AuthenticatorImplCableFlagSetTest, NoSilentAuthenticationForCable) {
+   // https://crbug.com/954355
+   NavigateAndCommit(GURL(kTestOrigin1));
+ 
+@@ -3405,7 +3410,13 @@ TEST_F(AuthenticatorContentBrowserClientTest,
+             AuthenticatorStatus::SUCCESS);
+ }
+ 
+-TEST_F(AuthenticatorContentBrowserClientTest,
++class AuthenticatorContentBrowserClientWithCableFlagTest
++    : public AuthenticatorContentBrowserClientTest {
++ private:
++  base::test::ScopedFeatureList scoped_feature_list_{features::kWebAuthCable};
++};
++
++TEST_F(AuthenticatorContentBrowserClientWithCableFlagTest,
+        CableCredentialWithoutCableExtension) {
+   // Exercise the case where a credential is marked as "cable" but no caBLE
+   // extension is provided. The AuthenticatorRequestClientDelegate should see no
+diff --git a/content/public/common/content_features.cc b/content/public/common/content_features.cc
+--- a/content/public/common/content_features.cc
++++ b/content/public/common/content_features.cc
+@@ -1106,6 +1106,12 @@ const base::Feature kWebAssemblyTrapHandler {
+ #endif
+ };
+ 
++// Controls whether CTAP2 devices can communicate via the WebAuthentication API
++// using pairingless BLE protocol.
++// https://w3c.github.io/webauthn
++const base::Feature kWebAuthCable{"WebAuthenticationCable",                 // must be disabled
++                                  base::FEATURE_DISABLED_BY_DEFAULT};       // by default in Bromite
++
+ // Controls whether WebAuthn conditional UI requests are supported.
+ const base::Feature kWebAuthConditionalUI{"WebAuthenticationConditionalUI",
+                                           base::FEATURE_DISABLED_BY_DEFAULT};
+diff --git a/content/public/common/content_features.h b/content/public/common/content_features.h
+--- a/content/public/common/content_features.h
++++ b/content/public/common/content_features.h
+@@ -286,6 +286,7 @@ CONTENT_EXPORT extern const base::Feature kWebAssemblyLazyCompilation;
+ CONTENT_EXPORT extern const base::Feature kWebAssemblySimd;
+ CONTENT_EXPORT extern const base::Feature kWebAssemblyTiering;
+ CONTENT_EXPORT extern const base::Feature kWebAssemblyTrapHandler;
++CONTENT_EXPORT extern const base::Feature kWebAuthCable;
+ CONTENT_EXPORT extern const base::Feature kWebAuthConditionalUI;
+ CONTENT_EXPORT extern const base::Feature kWebBluetooth;
+ CONTENT_EXPORT extern const base::Feature kWebBluetoothNewPermissionsBackend;
+--
+2.25.1
