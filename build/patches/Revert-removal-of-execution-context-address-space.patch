@@ -17,11 +17,15 @@ This reverts commit 11f6a3e29bee9a6590a4fd56b28e8048200c18d0.
 Original License: BSD-3-Clause - https://spdx.org/licenses/BSD-3-Clause.html
 License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
 ---
+ .../renderer_host/policy_container_host.cc    |  2 +-
+ content/renderer/policy_container_util.cc     |  1 +
+ .../public/mojom/frame/policy_container.mojom |  3 ++
+ .../public/platform/web_policy_container.h    |  2 ++
  .../execution_context/execution_context.cc    |  9 +++++
  .../execution_context/execution_context.h     |  4 +++
  .../core/exported/web_shared_worker_impl.cc   |  1 +
- .../renderer/core/frame/policy_container.cc   |  5 +++
- .../renderer/core/frame/policy_container.h    |  8 +++++
+ .../renderer/core/frame/policy_container.cc   | 11 ++++++
+ .../renderer/core/frame/policy_container.h    | 11 ++++++
  .../renderer/core/frame/web_frame_test.cc     | 34 +++++++++++++++++++
  .../layout_worklet_global_scope_proxy.cc      |  2 +-
  ...ed_service_worker_module_script_fetcher.cc |  1 +
@@ -53,8 +57,70 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../audio_worklet_global_scope_test.cc        |  1 +
  .../webaudio/audio_worklet_thread_test.cc     |  1 +
  .../worklet/worklet_thread_test_common.cc     |  2 +-
- 36 files changed, 181 insertions(+), 24 deletions(-)
+ 40 files changed, 197 insertions(+), 25 deletions(-)
 
+diff --git a/content/browser/renderer_host/policy_container_host.cc b/content/browser/renderer_host/policy_container_host.cc
+--- a/content/browser/renderer_host/policy_container_host.cc
++++ b/content/browser/renderer_host/policy_container_host.cc
+@@ -221,7 +221,7 @@ PolicyContainerHost::CreatePolicyContainerForBlink() {
+   return blink::mojom::PolicyContainer::New(
+       blink::mojom::PolicyContainerPolicies::New(
+           policies_.cross_origin_embedder_policy.value,
+-          policies_.referrer_policy,
++          policies_.referrer_policy, policies_.ip_address_space,
+           mojo::Clone(policies_.content_security_policies),
+           policies_.is_anonymous, policies_.sandbox_flags),
+       std::move(remote));
+diff --git a/content/renderer/policy_container_util.cc b/content/renderer/policy_container_util.cc
+--- a/content/renderer/policy_container_util.cc
++++ b/content/renderer/policy_container_util.cc
+@@ -18,6 +18,7 @@ std::unique_ptr<blink::WebPolicyContainer> ToWebPolicyContainer(
+       blink::WebPolicyContainerPolicies{
+           in->policies->cross_origin_embedder_policy,
+           in->policies->referrer_policy,
++          in->policies->ip_address_space,
+           ToWebContentSecurityPolicies(
+               std::move(in->policies->content_security_policies)),
+           in->policies->is_anonymous,
+diff --git a/third_party/blink/public/mojom/frame/policy_container.mojom b/third_party/blink/public/mojom/frame/policy_container.mojom
+--- a/third_party/blink/public/mojom/frame/policy_container.mojom
++++ b/third_party/blink/public/mojom/frame/policy_container.mojom
+@@ -6,6 +6,7 @@ module blink.mojom;
+ 
+ import "services/network/public/mojom/content_security_policy.mojom";
+ import "services/network/public/mojom/cross_origin_embedder_policy.mojom";
++import "services/network/public/mojom/ip_address_space.mojom";
+ import "services/network/public/mojom/referrer_policy.mojom";
+ import "services/network/public/mojom/web_sandbox_flags.mojom";
+ 
+@@ -18,6 +19,8 @@ struct PolicyContainerPolicies {
+     network.mojom.CrossOriginEmbedderPolicyValue.kNone;
+   network.mojom.ReferrerPolicy referrer_policy =
+     network.mojom.ReferrerPolicy.kDefault;
++  network.mojom.IPAddressSpace ip_address_space =
++    network.mojom.IPAddressSpace.kUnknown;
+   array<network.mojom.ContentSecurityPolicy> content_security_policies;
+   bool is_anonymous = false;
+   network.mojom.WebSandboxFlags sandbox_flags =
+diff --git a/third_party/blink/public/platform/web_policy_container.h b/third_party/blink/public/platform/web_policy_container.h
+--- a/third_party/blink/public/platform/web_policy_container.h
++++ b/third_party/blink/public/platform/web_policy_container.h
+@@ -6,6 +6,7 @@
+ #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_POLICY_CONTAINER_H_
+ 
+ #include "services/network/public/mojom/cross_origin_embedder_policy.mojom-shared.h"
++#include "services/network/public/mojom/ip_address_space.mojom-shared.h"
+ #include "services/network/public/mojom/referrer_policy.mojom-shared.h"
+ #include "services/network/public/mojom/web_sandbox_flags.mojom-shared.h"
+ #include "third_party/blink/public/mojom/frame/policy_container.mojom-shared.h"
+@@ -22,6 +23,7 @@ struct WebPolicyContainerPolicies {
+       network::mojom::CrossOriginEmbedderPolicyValue::kNone;
+   network::mojom::ReferrerPolicy referrer_policy =
+       network::mojom::ReferrerPolicy::kDefault;
++  network::mojom::IPAddressSpace ip_address_space;
+   WebVector<WebContentSecurityPolicy> content_security_policies;
+   bool is_anonymous = false;
+   network::mojom::WebSandboxFlags sandbox_flags =
 diff --git a/third_party/blink/renderer/core/execution_context/execution_context.cc b/third_party/blink/renderer/core/execution_context/execution_context.cc
 --- a/third_party/blink/renderer/core/execution_context/execution_context.cc
 +++ b/third_party/blink/renderer/core/execution_context/execution_context.cc
@@ -109,12 +175,31 @@ diff --git a/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc 
 diff --git a/third_party/blink/renderer/core/frame/policy_container.cc b/third_party/blink/renderer/core/frame/policy_container.cc
 --- a/third_party/blink/renderer/core/frame/policy_container.cc
 +++ b/third_party/blink/renderer/core/frame/policy_container.cc
-@@ -56,6 +56,11 @@ void PolicyContainer::UpdateReferrerPolicy(
+@@ -37,6 +37,7 @@ std::unique_ptr<PolicyContainer> PolicyContainer::CreateFromWebPolicyContainer(
+       mojom::blink::PolicyContainerPolicies::New(
+           container->policies.cross_origin_embedder_policy,
+           container->policies.referrer_policy,
++          container->policies.ip_address_space,
+           ConvertToMojoBlink(
+               std::move(container->policies.content_security_policies)),
+           container->policies.is_anonymous, container->policies.sandbox_flags);
+@@ -50,12 +51,22 @@ network::mojom::blink::ReferrerPolicy PolicyContainer::GetReferrerPolicy()
+   return policies_->referrer_policy;
+ }
+ 
++network::mojom::blink::IPAddressSpace PolicyContainer::GetIPAddressSpace()
++    const {
++  return policies_->ip_address_space;
++}
++
+ void PolicyContainer::UpdateReferrerPolicy(
+     network::mojom::blink::ReferrerPolicy policy) {
+   policies_->referrer_policy = policy;
    policy_container_host_remote_->SetReferrerPolicy(policy);
  }
  
 +void PolicyContainer::SetIPAddressSpace(
-+    network::mojom::blink::IPAddressSpace ip_address_space) {
++    network::mojom::IPAddressSpace ip_address_space) {
 +  policies_->ip_address_space = ip_address_space;
 +}
 +
@@ -124,7 +209,15 @@ diff --git a/third_party/blink/renderer/core/frame/policy_container.cc b/third_p
 diff --git a/third_party/blink/renderer/core/frame/policy_container.h b/third_party/blink/renderer/core/frame/policy_container.h
 --- a/third_party/blink/renderer/core/frame/policy_container.h
 +++ b/third_party/blink/renderer/core/frame/policy_container.h
-@@ -44,6 +44,14 @@ class CORE_EXPORT PolicyContainer {
+@@ -8,6 +8,7 @@
+ #include "mojo/public/cpp/bindings/associated_remote.h"
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+ #include "services/network/public/mojom/content_security_policy.mojom-blink-forward.h"
++#include "services/network/public/mojom/ip_address_space.mojom-shared.h"
+ #include "services/network/public/mojom/referrer_policy.mojom-shared.h"
+ #include "services/network/public/mojom/web_sandbox_flags.mojom-shared.h"
+ #include "third_party/blink/public/mojom/frame/policy_container.mojom-blink.h"
+@@ -44,6 +45,16 @@ class CORE_EXPORT PolicyContainer {
    void UpdateReferrerPolicy(network::mojom::blink::ReferrerPolicy policy);
    network::mojom::blink::ReferrerPolicy GetReferrerPolicy() const;
  
@@ -134,7 +227,9 @@ diff --git a/third_party/blink/renderer/core/frame/policy_container.h b/third_pa
 +  // TODO(https://crbug.com/1177199): Remove this when we implement policy
 +  // inheritance for workers/worklets using the PolicyContainer.
 +  void SetIPAddressSpace(
-+      network::mojom::blink::IPAddressSpace ip_address_space);
++      network::mojom::IPAddressSpace ip_address_space);
++
++  network::mojom::blink::IPAddressSpace GetIPAddressSpace() const;
 +
    // Append |policies| to the list of Content Security Policy and sync them with
    // the PolicyContainerHost.

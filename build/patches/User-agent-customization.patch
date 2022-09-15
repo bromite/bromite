@@ -20,8 +20,8 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../init/ChromeBrowserInitializer.java        |   3 +
  .../PrivacyPreferencesManagerImpl.java        |  42 ++++
  .../settings/UserAgentPreferences.java        | 188 ++++++++++++++++++
- .../chromium/chrome/browser/tab/TabImpl.java  |  88 +++++++-
- .../chromium/chrome/browser/tab/TabUtils.java |  26 +--
+ .../chromium/chrome/browser/tab/TabImpl.java  |  89 ++++++++-
+ .../chromium/chrome/browser/tab/TabUtils.java |  24 ++-
  .../browser/android/content/content_utils.cc  |  28 +++
  .../preferences/browser_prefs_android.cc      |   7 +
  .../privacy_preferences_manager_impl.cc       | 121 +++++++++++
@@ -41,7 +41,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../browser/web_contents/web_contents_impl.cc |   4 +
  .../framehost/NavigationControllerImpl.java   |   3 +-
  content/renderer/render_thread_impl.cc        |   1 -
- 31 files changed, 766 insertions(+), 17 deletions(-)
+ 31 files changed, 766 insertions(+), 16 deletions(-)
  create mode 100644 chrome/android/java/res/layout/custom_useragent_preferences.xml
  create mode 100644 chrome/android/java/res/xml/useragent_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/UserAgentPreferences.java
@@ -542,7 +542,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.jav
  import org.chromium.base.supplier.Supplier;
  import org.chromium.chrome.R;
  import org.chromium.chrome.browser.ActivityUtils;
-@@ -513,6 +517,31 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+@@ -513,6 +517,32 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
              // Request desktop sites for large screen tablets if necessary.
              params.setOverrideUserAgent(calculateUserAgentOverrideOption());
  
@@ -561,7 +561,8 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.jav
 +                    NavigationController navigationController = webContents.getNavigationController();
 +                    boolean currentUseDesktopUserAgent = navigationController.getUseDesktopUserAgent();
 +                    if (currentUseDesktopUserAgent != alwaysDesktopModeEnabled)
-+                        navigationController.setUseDesktopUserAgent(alwaysDesktopModeEnabled, false);
++                        navigationController.setUseDesktopUserAgent(alwaysDesktopModeEnabled, false,
++                            UseDesktopUserAgentCaller.OTHER);
 +                }
 +
 +                if (alwaysDesktopModeEnabled) {
@@ -574,7 +575,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.jav
              @TabLoadStatus
              int result = loadUrlInternal(params);
  
-@@ -1391,8 +1420,15 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+@@ -1391,8 +1421,15 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
  
              mWebContents.setImportance(mImportance);
  
@@ -592,7 +593,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.jav
  
              mContentView.addOnAttachStateChangeListener(mAttachStateChangeListener);
              updateInteractableState();
-@@ -1550,6 +1586,10 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+@@ -1550,6 +1587,10 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
              if (mWebContents != null) mWebContents.getNavigationController().loadIfNecessary();
              mIsBeingRestored = true;
              for (TabObserver observer : mObservers) observer.onRestoreStarted(this);
@@ -603,7 +604,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.jav
          } finally {
              TraceEvent.end("Tab.restoreIfNeeded");
          }
-@@ -1686,6 +1726,13 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+@@ -1686,6 +1727,13 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
      }
  
      private @UserAgentOverrideOption int calculateUserAgentOverrideOption() {
@@ -617,7 +618,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.jav
          WebContents webContents = getWebContents();
          boolean currentRequestDesktopSite = TabUtils.isUsingDesktopUserAgent(webContents);
          @TabUserAgent
-@@ -1730,6 +1777,43 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
+@@ -1730,6 +1778,43 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
                  /* forcedByUser */ false, caller);
      }
  
@@ -641,7 +642,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.jav
 +
 +            NavigationController navigationController = webContents.getNavigationController();
 +            navigationController.setUseDesktopUserAgent(
-+                usingDesktopUserAgent, !this.isNativePage());
++                usingDesktopUserAgent, !this.isNativePage(), UseDesktopUserAgentCaller.OTHER);
 +            if (forcedByUser) CriticalPersistedTabData.from(this).setUserAgent(TabUserAgent.DESKTOP);
 +        }
 +        else if (this.getPendingLoadParams() != null) {
@@ -664,18 +665,18 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabImpl.jav
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabUtils.java b/chrome/android/java/src/org/chromium/chrome/browser/tab/TabUtils.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabUtils.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tab/TabUtils.java
-@@ -38,6 +38,10 @@ import org.chromium.url.GURL;
- import java.lang.annotation.Retention;
- import java.lang.annotation.RetentionPolicy;
+@@ -35,6 +35,10 @@ import org.chromium.ui.base.WindowAndroid;
+ import org.chromium.ui.display.DisplayAndroidManager;
+ import org.chromium.url.GURL;
  
 +import org.chromium.chrome.browser.app.tabmodel.TabWindowManagerSingleton;
 +import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
 +import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
 +
- /**
-  * Collection of utility methods that operates on Tab.
-  */
-@@ -117,18 +121,16 @@ public class TabUtils {
+ import java.lang.annotation.Retention;
+ import java.lang.annotation.RetentionPolicy;
+ 
+@@ -117,17 +121,15 @@ public class TabUtils {
       */
      public static void switchUserAgent(Tab tab, boolean switchToDesktop, boolean forcedByUser,
              @UseDesktopUserAgentCaller int caller) {
@@ -690,7 +691,6 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabUtils.ja
 -                tabUserAgent = TabUserAgent.DEFAULT;
 -            }
 -            CriticalPersistedTabData.from(tab).setUserAgent(tabUserAgent);
--        }
 +        SharedPreferencesManager.getInstance().writeBoolean(
 +            ChromePreferenceKeys.USERAGENT_ALWAYS_DESKTOP_MODE, switchToDesktop);
 +
@@ -700,10 +700,9 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tab/TabUtils.ja
 +            TabWindowManagerSingleton.getInstance().SetOverrideUserAgentForAllTabs(switchToDesktop);
 +        } else {
 +            tab.SetOverrideUserAgent(switchToDesktop, forcedByUser);
-+         }
+         }
      }
  
-     /**
 diff --git a/chrome/browser/android/content/content_utils.cc b/chrome/browser/android/content/content_utils.cc
 --- a/chrome/browser/android/content/content_utils.cc
 +++ b/chrome/browser/android/content/content_utils.cc
@@ -920,15 +919,15 @@ diff --git a/chrome/browser/preferences/android/java/src/org/chromium/chrome/bro
      /**
       * These values are currently used as SharedPreferences keys, along with the keys in
       * {@link LegacyChromePreferenceKeys#getKeysInUse()}. Add new SharedPreferences keys
-@@ -1099,6 +1102,8 @@ public final class ChromePreferenceKeys {
-                 SHOW_START_SEGMENTATION_RESULT,
-                 SYNC_PROMO_SHOW_COUNT.pattern(),
-                 SIGNIN_PROMO_NTP_FIRST_SHOWN_TIME,
-+                USERAGENT_STICKY_DESKTOP_MODE,
-+                USERAGENT_ALWAYS_DESKTOP_MODE,
-                 SIGNIN_PROMO_NTP_LAST_SHOWN_TIME,
+@@ -1103,6 +1106,8 @@ public final class ChromePreferenceKeys {
                  SYNC_PROMO_TOTAL_SHOW_COUNT,
                  START_NEXT_SHOW_ON_STARTUP_DECISION_MS,
+                 SEARCH_RESUMPTION_MODULE_COLLAPSE_ON_NTP,
++                USERAGENT_STICKY_DESKTOP_MODE,
++                USERAGENT_ALWAYS_DESKTOP_MODE,
+                 START_SHOW_ON_STARTUP,
+                 TAP_FEED_CARDS_COUNT,
+                 TAP_MV_TILES_COUNT,
 diff --git a/chrome/browser/privacy/settings/java/src/org/chromium/chrome/browser/privacy/settings/PrivacyPreferencesManager.java b/chrome/browser/privacy/settings/java/src/org/chromium/chrome/browser/privacy/settings/PrivacyPreferencesManager.java
 --- a/chrome/browser/privacy/settings/java/src/org/chromium/chrome/browser/privacy/settings/PrivacyPreferencesManager.java
 +++ b/chrome/browser/privacy/settings/java/src/org/chromium/chrome/browser/privacy/settings/PrivacyPreferencesManager.java

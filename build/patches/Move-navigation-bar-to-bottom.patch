@@ -16,13 +16,13 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  cc/base/features.h                            |  1 +
  cc/input/browser_controls_offset_manager.cc   |  6 +++
  cc/trees/layer_tree_host_impl.cc              |  3 ++
- .../tab_management/TabGroupUiCoordinator.java |  6 ++-
+ .../tab_management/TabGroupUiCoordinator.java |  7 ++-
  .../tab_management/TabGroupUiMediator.java    | 50 +++++++++++++++++-
  .../tab_management/TabGroupUiProperties.java  |  6 ++-
  .../tab_management/TabGroupUiToolbarView.java | 18 +++++++
  .../tab_management/TabGroupUiViewBinder.java  |  3 ++
  .../tab_management/TabListRecyclerView.java   | 19 ++++++-
- .../tab_management/TabSwitcherMediator.java   | 15 ++++++
+ .../tab_management/TabSwitcherMediator.java   | 16 ++++++
  .../ChromeAccessibilitySettingsDelegate.java  | 52 +++++++++++++++++++
  .../chrome/browser/app/ChromeActivity.java    | 13 +++++
  .../browser/app/flags/ChromeCachedFlags.java  |  1 +
@@ -55,7 +55,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../flags/android/cached_feature_flags.cc     | 18 +++++++
  .../flags/android/chrome_feature_list.cc      |  2 +
  .../browser/flags/CachedFeatureFlags.java     | 19 +++++++
- .../browser/flags/ChromeFeatureList.java      |  2 +
+ .../browser/flags/ChromeFeatureList.java      |  4 ++
  .../chrome/browser/ui/appmenu/AppMenu.java    | 25 +++++++++
  .../ui/appmenu/AppMenuHandlerImpl.java        | 11 ++++
  .../omnibox/LocationBarCoordinator.java       |  9 +++-
@@ -81,7 +81,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../accessibility/AccessibilitySettings.java  | 16 ++++++
  .../AccessibilitySettingsDelegate.java        |  6 +++
  .../render_widget_host_view_android.cc        |  3 ++
- 69 files changed, 734 insertions(+), 53 deletions(-)
+ 69 files changed, 738 insertions(+), 53 deletions(-)
 
 diff --git a/cc/base/features.cc b/cc/base/features.cc
 --- a/cc/base/features.cc
@@ -164,12 +164,13 @@ diff --git a/chrome/android/features/tab_ui/java/src/org/chromium/chrome/browser
          try (TraceEvent e = TraceEvent.scoped("TabGroupUiCoordinator.initializeWithNative")) {
              if (UmaSessionStats.isMetricsServiceAvailable()) {
                  UmaSessionStats.registerSyntheticFieldTrial(
-@@ -168,7 +170,7 @@ public class TabGroupUiCoordinator implements TabGroupUiMediator.ResetHandler, T
+@@ -168,7 +170,8 @@ public class TabGroupUiCoordinator implements TabGroupUiMediator.ResetHandler, T
              mMediator = new TabGroupUiMediator(mActivity, visibilityController, this, mModel,
                      mTabModelSelector, mTabCreatorManager, mLayoutStateProviderSupplier,
                      mIncognitoStateProvider, dialogController, mActivityLifecycleDispatcher,
 -                    mSnackbarManager, mOmniboxFocusStateSupplier);
-+                    mSnackbarManager, mOmniboxFocusStateSupplier, topUiThemeColorProvider, tabSupplier);
++                    mSnackbarManager, mOmniboxFocusStateSupplier,
++                topUiThemeColorProvider, tabSupplier);
  
              TabGroupUtils.startObservingForCreationIPH();
  
@@ -435,7 +436,15 @@ diff --git a/chrome/android/features/tab_ui/java/src/org/chromium/chrome/browser
 diff --git a/chrome/android/features/tab_ui/java/src/org/chromium/chrome/browser/tasks/tab_management/TabSwitcherMediator.java b/chrome/android/features/tab_ui/java/src/org/chromium/chrome/browser/tasks/tab_management/TabSwitcherMediator.java
 --- a/chrome/android/features/tab_ui/java/src/org/chromium/chrome/browser/tasks/tab_management/TabSwitcherMediator.java
 +++ b/chrome/android/features/tab_ui/java/src/org/chromium/chrome/browser/tasks/tab_management/TabSwitcherMediator.java
-@@ -384,11 +384,22 @@ class TabSwitcherMediator implements TabSwitcher.Controller, TabListRecyclerView
+@@ -39,6 +39,7 @@ import org.chromium.chrome.browser.browser_controls.BrowserControlsStateProvider
+ import org.chromium.chrome.browser.compositor.layouts.LayoutManagerImpl;
+ import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
+ import org.chromium.chrome.browser.flags.ChromeFeatureList;
++import org.chromium.chrome.browser.flags.CachedFeatureFlags;
+ import org.chromium.chrome.browser.init.FirstDrawDetector;
+ import org.chromium.chrome.browser.multiwindow.MultiWindowModeStateDispatcher;
+ import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
+@@ -384,11 +385,22 @@ class TabSwitcherMediator implements TabSwitcher.Controller, TabListRecyclerView
              updateTopControlsProperties();
              mContainerViewModel.set(
                      BOTTOM_CONTROLS_HEIGHT, browserControlsStateProvider.getBottomControlsHeight());
@@ -458,7 +467,7 @@ diff --git a/chrome/android/features/tab_ui/java/src/org/chromium/chrome/browser
          }
  
          mContainerView = containerView;
-@@ -502,6 +513,10 @@ class TabSwitcherMediator implements TabSwitcher.Controller, TabListRecyclerView
+@@ -502,6 +514,10 @@ class TabSwitcherMediator implements TabSwitcher.Controller, TabListRecyclerView
          final int contentOffset = mBrowserControlsStateProvider.getContentOffset();
  
          mContainerViewModel.set(TOP_MARGIN, contentOffset);
@@ -585,14 +594,14 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/flags/ChromeCachedFlags.java b/chrome/android/java/src/org/chromium/chrome/browser/app/flags/ChromeCachedFlags.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/app/flags/ChromeCachedFlags.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/app/flags/ChromeCachedFlags.java
-@@ -98,6 +98,7 @@ public class ChromeCachedFlags {
-                 add(ChromeFeatureList.sElidePrioritizationOfPreNativeBootstrapTasks);
-                 add(ChromeFeatureList.sFeedLoadingPlaceholder);
-                 add(ChromeFeatureList.sGridTabSwitcherForTablets);
-+                add(ChromeFeatureList.MOVE_TOP_TOOLBAR_TO_BOTTOM);
-                 add(ChromeFeatureList.sImmersiveUiMode);
-                 add(ChromeFeatureList.sIncognitoReauthenticationForAndroid);
+@@ -103,6 +103,7 @@ public class ChromeCachedFlags {
                  add(ChromeFeatureList.sInstanceSwitcher);
+                 add(ChromeFeatureList.sInstantStart);
+                 add(ChromeFeatureList.sInterestFeedV2);
++                add(ChromeFeatureList.sMoveTopToolbarToBottom);
+                 add(ChromeFeatureList.sNewWindowAppMenu);
+                 add(ChromeFeatureList.sOptimizationGuidePushNotifications);
+                 add(ChromeFeatureList.sPaintPreviewDemo);
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/CompositorViewHolder.java b/chrome/android/java/src/org/chromium/chrome/browser/compositor/CompositorViewHolder.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/compositor/CompositorViewHolder.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/compositor/CompositorViewHolder.java
@@ -1227,7 +1236,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/status_indicato
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java b/chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java
-@@ -176,6 +176,9 @@ import org.chromium.url.GURL;
+@@ -175,6 +175,9 @@ import org.chromium.url.GURL;
  
  import java.util.List;
  
@@ -1237,7 +1246,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/Toolbar
  /**
   * Contains logic for managing the toolbar visual component.  This class manages the interactions
   * with the rest of the application to ensure the toolbar is always visually up to date.
-@@ -613,7 +616,7 @@ public class ToolbarManager implements UrlFocusChangeListener, ThemeColorObserve
+@@ -612,7 +615,7 @@ public class ToolbarManager implements UrlFocusChangeListener, ThemeColorObserve
                      mEphemeralTabCoordinatorSupplier);
              // clang-format off
              LocationBarCoordinator locationBarCoordinator = new LocationBarCoordinator(
@@ -1246,7 +1255,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/Toolbar
                      PrivacyPreferencesManagerImpl.getInstance(), mLocationBarModel,
                      mActionModeController.getActionModeCallback(),
                      new WindowDelegate(mActivity.getWindow()), windowAndroid, mActivityTabProvider,
-@@ -861,11 +864,13 @@ public class ToolbarManager implements UrlFocusChangeListener, ThemeColorObserve
+@@ -860,11 +863,13 @@ public class ToolbarManager implements UrlFocusChangeListener, ThemeColorObserve
                  // the height won't be measured by the background image.
                  if (mControlContainer.getBackground() == null) {
                      setControlContainerTopMargin(getToolbarExtraYOffset());
@@ -1260,7 +1269,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/Toolbar
                              mControlContainer.removeOnLayoutChangeListener(mLayoutChangeListener);
                              mLayoutChangeListener = null;
                          }
-@@ -1228,13 +1233,25 @@ public class ToolbarManager implements UrlFocusChangeListener, ThemeColorObserve
+@@ -1227,13 +1232,25 @@ public class ToolbarManager implements UrlFocusChangeListener, ThemeColorObserve
          return mLocationBar.getOmniboxStub().isUrlBarFocused();
      }
  
@@ -1288,7 +1297,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/Toolbar
                  mScrimCoordinator, mOmniboxFocusStateSupplier, mBottomSheetController,
                  mActivityLifecycleDispatcher, mIsWarmOnResumeSupplier, mTabModelSelector,
                  mTabContentManager, mCompositorViewHolder,
-@@ -1243,8 +1260,9 @@ public class ToolbarManager implements UrlFocusChangeListener, ThemeColorObserve
+@@ -1242,8 +1259,9 @@ public class ToolbarManager implements UrlFocusChangeListener, ThemeColorObserve
          mBottomControlsCoordinatorSupplier.set(
                  new BottomControlsCoordinator(mActivity, mWindowAndroid, mLayoutManager,
                          mCompositorViewHolder.getResourceManager(), mBrowserControlsSizer,
@@ -1300,7 +1309,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/Toolbar
      }
  
      /**
-@@ -2007,6 +2025,15 @@ public class ToolbarManager implements UrlFocusChangeListener, ThemeColorObserve
+@@ -1985,6 +2003,15 @@ public class ToolbarManager implements UrlFocusChangeListener, ThemeColorObserve
      private void setControlContainerTopMargin(int margin) {
          final ViewGroup.MarginLayoutParams layoutParams =
                  ((ViewGroup.MarginLayoutParams) mControlContainer.getLayoutParams());
@@ -1359,18 +1368,18 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ui/BottomContai
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
-@@ -4235,6 +4235,11 @@ const FeatureEntry kFeatureEntries[] = {
-      flag_descriptions::kLightweightReactionsAndroidName,
-      flag_descriptions::kLightweightReactionsAndroidDescription, kOsAndroid,
-      FEATURE_VALUE_TYPE(content_creation::kLightweightReactions)},
-+
+@@ -6942,6 +6942,11 @@ const FeatureEntry kFeatureEntries[] = {
+      flag_descriptions::kWindowsScrollingPersonalityDescription, kOsAll,
+      FEATURE_VALUE_TYPE(features::kWindowsScrollingPersonality)},
+ 
 +    {"move-top-toolbar-to-bottom",
 +     flag_descriptions::kMoveTopToolbarToBottomName,
 +     flag_descriptions::kMoveTopToolbarToBottomDescription, kOsAndroid,
 +     FEATURE_VALUE_TYPE(features::kMoveTopToolbarToBottom)},
- #endif  // BUILDFLAG(IS_ANDROID)
-     {"enable-automatic-snooze", flag_descriptions::kEnableAutomaticSnoozeName,
-      flag_descriptions::kEnableAutomaticSnoozeDescription, kOsAll,
++
+     {"scroll-unification", flag_descriptions::kScrollUnificationName,
+      flag_descriptions::kScrollUnificationDescription, kOsAll,
+      FEATURE_VALUE_TYPE(features::kScrollUnification)},
 diff --git a/chrome/browser/android/compositor/scene_layer/tab_strip_scene_layer.cc b/chrome/browser/android/compositor/scene_layer/tab_strip_scene_layer.cc
 --- a/chrome/browser/android/compositor/scene_layer/tab_strip_scene_layer.cc
 +++ b/chrome/browser/android/compositor/scene_layer/tab_strip_scene_layer.cc
@@ -1538,14 +1547,14 @@ diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browse
 diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
 --- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
 +++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
-@@ -98,6 +98,7 @@ public class CachedFeatureFlags {
+@@ -97,6 +97,7 @@ public class CachedFeatureFlags {
+                     .put(ChromeFeatureList.TAB_GROUPS_CONTINUATION_ANDROID, false)
                      .put(ChromeFeatureList.TAB_GROUPS_FOR_TABLETS, false)
                      .put(ChromeFeatureList.TAB_STRIP_IMPROVEMENTS, false)
-                     .put(ChromeFeatureList.TAB_TO_GTS_ANIMATION, true)
 +                    .put(ChromeFeatureList.MOVE_TOP_TOOLBAR_TO_BOTTOM, false)
+                     .put(ChromeFeatureList.TAB_TO_GTS_ANIMATION, true)
                      .put(ChromeFeatureList.TEST_DEFAULT_DISABLED, false)
                      .put(ChromeFeatureList.TEST_DEFAULT_ENABLED, true)
-                     .put(ChromeFeatureList.TOOLBAR_USE_HARDWARE_BITMAP_DRAW, false)
 @@ -202,6 +203,23 @@ public class CachedFeatureFlags {
          SharedPreferencesManager.getInstance().writeBoolean(preferenceName, isEnabledInNative);
      }
@@ -1590,6 +1599,15 @@ diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/f
      public static final String METRICS_SETTINGS_ANDROID = "MetricsSettingsAndroid";
      public static final String MOST_RECENT_TAB_ON_BACKGROUND_CLOSE_TAB =
              "MostRecentTabOnBackgroundCloseTab";
+@@ -663,6 +665,8 @@ public abstract class ChromeFeatureList {
+     public static final CachedFlag sInterestFeedV2 = new CachedFlag(INTEREST_FEED_V2, true);
+     public static final CachedFlag sLensCameraAssistedSearch =
+             new CachedFlag(LENS_CAMERA_ASSISTED_SEARCH, false);
++    public static final CachedFlag sMoveTopToolbarToBottom =
++            new CachedFlag(MOVE_TOP_TOOLBAR_TO_BOTTOM, false);
+     public static final CachedFlag sNewWindowAppMenu = new CachedFlag(NEW_WINDOW_APP_MENU, true);
+     public static final CachedFlag sOptimizationGuidePushNotifications =
+             new CachedFlag(OPTIMIZATION_GUIDE_PUSH_NOTIFICATIONS, false);
 diff --git a/chrome/browser/ui/android/appmenu/internal/java/src/org/chromium/chrome/browser/ui/appmenu/AppMenu.java b/chrome/browser/ui/android/appmenu/internal/java/src/org/chromium/chrome/browser/ui/appmenu/AppMenu.java
 --- a/chrome/browser/ui/android/appmenu/internal/java/src/org/chromium/chrome/browser/ui/appmenu/AppMenu.java
 +++ b/chrome/browser/ui/android/appmenu/internal/java/src/org/chromium/chrome/browser/ui/appmenu/AppMenu.java
