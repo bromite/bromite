@@ -1,0 +1,191 @@
+From: Ari Chivukula <arichiv@chromium.org>
+Date: Wed, 10 Aug 2022 23:41:51 +0000
+Subject: Add new cache check function
+
+Currently, if a.com is loaded and has a favicon at a.com/icon.png and
+then b.com is loaded and has the exact same favicon, the cache entry is
+shared which permits b.com to notice that a.com was visited. The end
+goal of this task is to prevent cross-origin cache leaks.
+
+This CL adds a new variant of GetFaviconIDForFaviconURL that filters
+results by page origin. This will be used in UpdateFaviconMappingsAndFetch
+in the next CL, but is just tested here.
+
+This CL is part of a series:
+(1) Cache browser test
+(2) Add new cache check function
+(3) Stop cross-origin cache hits
+
+Bug: 1300214
+Change-Id: Ic1513c63f0a09a32e3316d3569f0719990be833b
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/3822854
+Reviewed-by: Scott Violet <sky@chromium.org>
+Auto-Submit: Ari Chivukula <arichiv@chromium.org>
+Commit-Queue: Ari Chivukula <arichiv@chromium.org>
+Cr-Commit-Position: refs/heads/main@{#1033779}
+
+License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
+---
+ components/favicon/core/favicon_database.cc   | 27 +++++++++
+ components/favicon/core/favicon_database.h    | 20 ++++++-
+ .../favicon/core/favicon_database_unittest.cc | 60 +++++++++++++++++++
+ 3 files changed, 104 insertions(+), 3 deletions(-)
+
+diff --git a/components/favicon/core/favicon_database.cc b/components/favicon/core/favicon_database.cc
+--- a/components/favicon/core/favicon_database.cc
++++ b/components/favicon/core/favicon_database.cc
+@@ -29,6 +29,7 @@
+ #include "sql/statement.h"
+ #include "sql/transaction.h"
+ #include "third_party/sqlite/sqlite3.h"
++#include "url/origin.h"
+ 
+ #if BUILDFLAG(IS_APPLE)
+ #include "base/mac/backup_util.h"
+@@ -666,6 +667,32 @@ bool FaviconDatabase::GetFaviconLastUpdatedTime(favicon_base::FaviconID icon_id,
+   return true;
+ }
+ 
++favicon_base::FaviconID FaviconDatabase::GetFaviconIDForFaviconURL(
++    const GURL& icon_url,
++    favicon_base::IconType icon_type,
++    const url::Origin& page_origin) {
++  // Look to see if there even is any relevant cached entry.
++  auto const icon_id = GetFaviconIDForFaviconURL(icon_url, icon_type);
++  if (!icon_id) {
++    return icon_id;
++  }
++
++  // Check existing mappings to see if any are for the same origin.
++  sql::Statement statement(db_.GetCachedStatement(
++      SQL_FROM_HERE, "SELECT page_url FROM icon_mapping WHERE icon_id=?"));
++  statement.BindInt64(0, icon_id);
++  while (statement.Step()) {
++    const auto candidate_origin =
++        url::Origin::Create(GURL(statement.ColumnString(0)));
++    if (candidate_origin == page_origin) {
++      return icon_id;
++    }
++  }
++
++  // Act as if there is no entry in the cache if no mapping exists.
++  return 0;
++}
++
+ favicon_base::FaviconID FaviconDatabase::GetFaviconIDForFaviconURL(
+     const GURL& icon_url,
+     favicon_base::IconType icon_type) {
+diff --git a/components/favicon/core/favicon_database.h b/components/favicon/core/favicon_database.h
+--- a/components/favicon/core/favicon_database.h
++++ b/components/favicon/core/favicon_database.h
+@@ -22,6 +22,10 @@ class RefCountedMemory;
+ class Time;
+ }  // namespace base
+ 
++namespace url {
++class Origin;
++}  // namespace url
++
+ namespace favicon {
+ 
+ // The minimum number of days after which last_requested field gets updated.
+@@ -146,9 +150,19 @@ class FaviconDatabase {
+   // Returns true if successful.
+   bool TouchOnDemandFavicon(const GURL& icon_url, base::Time time);
+ 
+-  // Returns the id of the entry in the favicon database with the specified url
+-  // and icon type.
+-  // Returns 0 if no entry exists for the specified url.
++  // Returns the id of the entry in the favicon database with the specified
++  // `icon_url` and `icon_type` that has an existing mapping to `page_origin`
++  // (and 0 if no entry exists). See crbug.com/1300214 for more context.
++  favicon_base::FaviconID GetFaviconIDForFaviconURL(
++      const GURL& icon_url,
++      favicon_base::IconType icon_type,
++      const url::Origin& page_origin);
++
++  // Returns the id of the entry in the favicon database with the specified
++  // `icon_url` and `icon_type` (and 0 if no entry exists). This function does
++  // not respect cross-origin partitioning and returns an entry from the cache
++  // without verifying it was stored for the origin requesting it. This can leak
++  // navigation history, see crbug.com/1300214 for more context.
+   favicon_base::FaviconID GetFaviconIDForFaviconURL(
+       const GURL& icon_url,
+       favicon_base::IconType icon_type);
+diff --git a/components/favicon/core/favicon_database_unittest.cc b/components/favicon/core/favicon_database_unittest.cc
+--- a/components/favicon/core/favicon_database_unittest.cc
++++ b/components/favicon/core/favicon_database_unittest.cc
+@@ -25,6 +25,7 @@
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "third_party/sqlite/sqlite3.h"
+ #include "url/gurl.h"
++#include "url/origin.h"
+ 
+ using testing::AllOf;
+ using testing::ElementsAre;
+@@ -1447,4 +1448,63 @@ TEST_F(FaviconDatabaseTest, SetFaviconsOutOfDateBetween) {
+   EXPECT_EQ(base::Time(), GetLastUpdated(&db, icon3));
+ }
+ 
++// Test that GetFaviconIDForFaviconURL can filter by origin.
++TEST_F(FaviconDatabaseTest, GetFaviconIDForFaviconURLOriginFilter) {
++  // Setup DB with `kPageUrl1` mapped to `kIconUrl1`.
++  FaviconDatabase db;
++  ASSERT_EQ(sql::INIT_OK, db.Init(file_name_));
++  db.BeginTransaction();
++  scoped_refptr<base::RefCountedStaticMemory> favicon1(
++      new base::RefCountedStaticMemory(kBlob1, sizeof(kBlob1)));
++  const auto icon_id = db.AddFavicon(
++      kIconUrl1, favicon_base::IconType::kFavicon, favicon1,
++      FaviconBitmapType::ON_VISIT, base::Time::Now(), gfx::Size());
++  db.AddIconMapping(kPageUrl1, icon_id);
++  ASSERT_NE(0, icon_id);
++
++  // We should be able to find the `icon_id` via the non-filtered function.
++  auto icon_id_found =
++      db.GetFaviconIDForFaviconURL(kIconUrl1, favicon_base::IconType::kFavicon);
++  ASSERT_EQ(icon_id, icon_id_found);
++
++  // We should be able to find the `icon_id` via a the origin of `kPageUrl1`.
++  icon_id_found =
++      db.GetFaviconIDForFaviconURL(kIconUrl1, favicon_base::IconType::kFavicon,
++                                   url::Origin::Create(kPageUrl1));
++  ASSERT_EQ(icon_id, icon_id_found);
++
++  // We shouldn't be able to find the `icon_id` via a the origin of `kPageUrl2`.
++  icon_id_found =
++      db.GetFaviconIDForFaviconURL(kIconUrl1, favicon_base::IconType::kFavicon,
++                                   url::Origin::Create(kPageUrl2));
++  ASSERT_EQ(0, icon_id_found);
++
++  // We shouldn't be able to find the `icon_id` via a the origin of `kPageUrl3`.
++  icon_id_found =
++      db.GetFaviconIDForFaviconURL(kIconUrl1, favicon_base::IconType::kFavicon,
++                                   url::Origin::Create(kPageUrl3));
++  ASSERT_EQ(0, icon_id_found);
++
++  // If we map `kPageUrl2` then the situation changes.
++  db.AddIconMapping(kPageUrl2, icon_id);
++
++  // We should be able to find the `icon_id` via a the origin of `kPageUrl1`.
++  icon_id_found =
++      db.GetFaviconIDForFaviconURL(kIconUrl1, favicon_base::IconType::kFavicon,
++                                   url::Origin::Create(kPageUrl1));
++  ASSERT_EQ(icon_id, icon_id_found);
++
++  // We should be able to find the `icon_id` via a the origin of `kPageUrl2`.
++  icon_id_found =
++      db.GetFaviconIDForFaviconURL(kIconUrl1, favicon_base::IconType::kFavicon,
++                                   url::Origin::Create(kPageUrl2));
++  ASSERT_EQ(icon_id, icon_id_found);
++
++  // We shouldn't be able to find the `icon_id` via a the origin of `kPageUrl3`.
++  icon_id_found =
++      db.GetFaviconIDForFaviconURL(kIconUrl1, favicon_base::IconType::kFavicon,
++                                   url::Origin::Create(kPageUrl3));
++  ASSERT_EQ(0, icon_id_found);
++}
++
+ }  // namespace favicon
+--
+2.25.1

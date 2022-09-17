@@ -1,0 +1,128 @@
+From: Ari Chivukula <arichiv@chromium.org>
+Date: Thu, 11 Aug 2022 00:39:04 +0000
+Subject: Stop cross-origin cache hits
+
+Currently, if a.com is loaded and has a favicon at a.com/icon.png and
+then b.com is loaded and has the exact same favicon, the cache entry is
+shared which permits b.com to notice that a.com was visited. The end
+goal of this task is to prevent cross-origin cache leaks.
+
+This CL integrates the new variant of GetFaviconIDForFaviconURL into
+UpdateFaviconMappingsAndFetch so that we filter the results per-pageurl
+based on the origin. This should fully resolve the task, although the db
+itself isn't fully partitioned.
+
+This CL is part of a series:
+(1) Cache browser test
+(2) Add new cache check function
+(3) Stop cross-origin cache hits
+
+Bug: 1300214
+Change-Id: I9bf04982abea136a00e2b5252726a1cdef8e8550
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/3822882
+Reviewed-by: Scott Violet <sky@chromium.org>
+Auto-Submit: Ari Chivukula <arichiv@chromium.org>
+Commit-Queue: Ari Chivukula <arichiv@chromium.org>
+Cr-Commit-Position: refs/heads/main@{#1033798}
+
+License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
+---
+ components/favicon/core/favicon_backend.cc    | 24 +++++++++++----
+ .../favicon/core/favicon_backend_unittest.cc  | 29 ++++++++++++++++++-
+ 2 files changed, 46 insertions(+), 7 deletions(-)
+
+diff --git a/components/favicon/core/favicon_backend.cc b/components/favicon/core/favicon_backend.cc
+--- a/components/favicon/core/favicon_backend.cc
++++ b/components/favicon/core/favicon_backend.cc
+@@ -17,6 +17,7 @@
+ #include "components/favicon_base/select_favicon_frames.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
+ #include "ui/gfx/codec/png_codec.h"
++#include "url/origin.h"
+ 
+ namespace favicon {
+ 
+@@ -211,20 +212,31 @@ UpdateFaviconMappingsResult FaviconBackend::UpdateFaviconMappingsAndFetch(
+     favicon_base::IconType icon_type,
+     const std::vector<int>& desired_sizes) {
+   UpdateFaviconMappingsResult result;
+-  const favicon_base::FaviconID favicon_id =
+-      db_->GetFaviconIDForFaviconURL(icon_url, icon_type);
++  const auto favicon_id = db_->GetFaviconIDForFaviconURL(icon_url, icon_type);
+   if (!favicon_id)
+     return result;
++  bool per_origin_favicon_id_found = false;
+ 
+   for (const GURL& page_url : page_urls) {
+-    bool mappings_updated =
+-        SetFaviconMappingsForPageAndRedirects(page_url, icon_type, favicon_id);
++    // We check per-origin so that we don't cross-origin load from the cache.
++    // See crbug.com/1300214 for more context.
++    const auto per_origin_favicon_id = db_->GetFaviconIDForFaviconURL(
++        icon_url, icon_type, url::Origin::Create(page_url));
++    if (!per_origin_favicon_id)
++      continue;
++    per_origin_favicon_id_found = true;
++    bool mappings_updated = SetFaviconMappingsForPageAndRedirects(
++        page_url, icon_type, per_origin_favicon_id);
+     if (mappings_updated)
+       result.updated_page_urls.insert(page_url);
+   }
+ 
+-  result.bitmap_results =
+-      GetFaviconBitmapResultsForBestMatch({favicon_id}, desired_sizes);
++  // We add the favicon if at least one origin saw it *or* if this was loaded
++  // without linking the favicon to any page url (used by history service).
++  if (per_origin_favicon_id_found || page_urls.empty()) {
++    result.bitmap_results =
++        GetFaviconBitmapResultsForBestMatch({favicon_id}, desired_sizes);
++  }
+   return result;
+ }
+ 
+diff --git a/components/favicon/core/favicon_backend_unittest.cc b/components/favicon/core/favicon_backend_unittest.cc
+--- a/components/favicon/core/favicon_backend_unittest.cc
++++ b/components/favicon/core/favicon_backend_unittest.cc
+@@ -378,7 +378,7 @@ TEST_F(FaviconBackendTest, SetFaviconsSameFaviconURLForTwoPages) {
+   GURL icon_url("http://www.google.com/favicon.ico");
+   GURL icon_url_new("http://www.google.com/favicon2.ico");
+   GURL page_url1("http://www.google.com");
+-  GURL page_url2("http://www.google.ca");
++  GURL page_url2("http://www.google.com/page");
+   std::vector<SkBitmap> bitmaps;
+   bitmaps.push_back(CreateBitmap(SK_ColorBLUE, kSmallEdgeSize));
+   bitmaps.push_back(CreateBitmap(SK_ColorRED, kLargeEdgeSize));
+@@ -1270,4 +1270,31 @@ TEST_F(FaviconBackendTest, GetFaviconsForUrlExpired) {
+   EXPECT_TRUE(bitmap_results_out[0].expired);
+ }
+ 
++// Test that a favicon isn't loaded cross-origin.
++TEST_F(FaviconBackendTest, FaviconCacheWillNotLoadCrossOrigin) {
++  GURL icon_url("http://www.google.com/favicon.ico");
++  GURL page_url1("http://www.google.com");
++  GURL page_url2("http://www.google.ca");
++  std::vector<SkBitmap> bitmaps;
++  bitmaps.push_back(CreateBitmap(SK_ColorBLUE, kSmallEdgeSize));
++  bitmaps.push_back(CreateBitmap(SK_ColorRED, kLargeEdgeSize));
++
++  // Store `icon_url` for `page_url1`, but just attempt load for `page_url2`.
++  SetFavicons({page_url1}, IconType::kFavicon, icon_url, bitmaps);
++  backend_->UpdateFaviconMappingsAndFetch(
++      {page_url2}, icon_url, IconType::kFavicon, GetEdgeSizesSmallAndLarge());
++
++  // Check that the same FaviconID is mapped just to `page_url1`.
++  std::vector<IconMapping> icon_mappings;
++  EXPECT_TRUE(
++      backend_->db()->GetIconMappingsForPageURL(page_url1, &icon_mappings));
++  EXPECT_EQ(1u, icon_mappings.size());
++  favicon_base::FaviconID favicon_id = icon_mappings[0].icon_id;
++  EXPECT_NE(0, favicon_id);
++
++  icon_mappings.clear();
++  EXPECT_FALSE(
++      backend_->db()->GetIconMappingsForPageURL(page_url2, &icon_mappings));
++}
++
+ }  // namespace favicon
+--
+2.25.1
