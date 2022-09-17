@@ -17,11 +17,15 @@ This reverts commit 11f6a3e29bee9a6590a4fd56b28e8048200c18d0.
 Original License: BSD-3-Clause - https://spdx.org/licenses/BSD-3-Clause.html
 License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
 ---
+ .../renderer_host/policy_container_host.cc    |  2 +-
+ content/renderer/policy_container_util.cc     |  1 +
+ .../public/mojom/frame/policy_container.mojom |  3 ++
+ .../public/platform/web_policy_container.h    |  2 ++
  .../execution_context/execution_context.cc    |  9 +++++
  .../execution_context/execution_context.h     |  4 +++
  .../core/exported/web_shared_worker_impl.cc   |  1 +
- .../renderer/core/frame/policy_container.cc   |  5 +++
- .../renderer/core/frame/policy_container.h    |  8 +++++
+ .../renderer/core/frame/policy_container.cc   | 11 ++++++
+ .../renderer/core/frame/policy_container.h    | 11 ++++++
  .../renderer/core/frame/web_frame_test.cc     | 34 +++++++++++++++++++
  .../layout_worklet_global_scope_proxy.cc      |  2 +-
  ...ed_service_worker_module_script_fetcher.cc |  1 +
@@ -53,8 +57,70 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../audio_worklet_global_scope_test.cc        |  1 +
  .../webaudio/audio_worklet_thread_test.cc     |  1 +
  .../worklet/worklet_thread_test_common.cc     |  2 +-
- 36 files changed, 181 insertions(+), 24 deletions(-)
+ 40 files changed, 197 insertions(+), 25 deletions(-)
 
+diff --git a/content/browser/renderer_host/policy_container_host.cc b/content/browser/renderer_host/policy_container_host.cc
+--- a/content/browser/renderer_host/policy_container_host.cc
++++ b/content/browser/renderer_host/policy_container_host.cc
+@@ -221,7 +221,7 @@ PolicyContainerHost::CreatePolicyContainerForBlink() {
+   return blink::mojom::PolicyContainer::New(
+       blink::mojom::PolicyContainerPolicies::New(
+           policies_.cross_origin_embedder_policy.value,
+-          policies_.referrer_policy,
++          policies_.referrer_policy, policies_.ip_address_space,
+           mojo::Clone(policies_.content_security_policies),
+           policies_.is_anonymous, policies_.sandbox_flags),
+       std::move(remote));
+diff --git a/content/renderer/policy_container_util.cc b/content/renderer/policy_container_util.cc
+--- a/content/renderer/policy_container_util.cc
++++ b/content/renderer/policy_container_util.cc
+@@ -18,6 +18,7 @@ std::unique_ptr<blink::WebPolicyContainer> ToWebPolicyContainer(
+       blink::WebPolicyContainerPolicies{
+           in->policies->cross_origin_embedder_policy,
+           in->policies->referrer_policy,
++          in->policies->ip_address_space,
+           ToWebContentSecurityPolicies(
+               std::move(in->policies->content_security_policies)),
+           in->policies->is_anonymous,
+diff --git a/third_party/blink/public/mojom/frame/policy_container.mojom b/third_party/blink/public/mojom/frame/policy_container.mojom
+--- a/third_party/blink/public/mojom/frame/policy_container.mojom
++++ b/third_party/blink/public/mojom/frame/policy_container.mojom
+@@ -6,6 +6,7 @@ module blink.mojom;
+ 
+ import "services/network/public/mojom/content_security_policy.mojom";
+ import "services/network/public/mojom/cross_origin_embedder_policy.mojom";
++import "services/network/public/mojom/ip_address_space.mojom";
+ import "services/network/public/mojom/referrer_policy.mojom";
+ import "services/network/public/mojom/web_sandbox_flags.mojom";
+ 
+@@ -18,6 +19,8 @@ struct PolicyContainerPolicies {
+     network.mojom.CrossOriginEmbedderPolicyValue.kNone;
+   network.mojom.ReferrerPolicy referrer_policy =
+     network.mojom.ReferrerPolicy.kDefault;
++  network.mojom.IPAddressSpace ip_address_space =
++    network.mojom.IPAddressSpace.kUnknown;
+   array<network.mojom.ContentSecurityPolicy> content_security_policies;
+   bool is_anonymous = false;
+   network.mojom.WebSandboxFlags sandbox_flags =
+diff --git a/third_party/blink/public/platform/web_policy_container.h b/third_party/blink/public/platform/web_policy_container.h
+--- a/third_party/blink/public/platform/web_policy_container.h
++++ b/third_party/blink/public/platform/web_policy_container.h
+@@ -6,6 +6,7 @@
+ #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_POLICY_CONTAINER_H_
+ 
+ #include "services/network/public/mojom/cross_origin_embedder_policy.mojom-shared.h"
++#include "services/network/public/mojom/ip_address_space.mojom-shared.h"
+ #include "services/network/public/mojom/referrer_policy.mojom-shared.h"
+ #include "services/network/public/mojom/web_sandbox_flags.mojom-shared.h"
+ #include "third_party/blink/public/mojom/frame/policy_container.mojom-shared.h"
+@@ -22,6 +23,7 @@ struct WebPolicyContainerPolicies {
+       network::mojom::CrossOriginEmbedderPolicyValue::kNone;
+   network::mojom::ReferrerPolicy referrer_policy =
+       network::mojom::ReferrerPolicy::kDefault;
++  network::mojom::IPAddressSpace ip_address_space;
+   WebVector<WebContentSecurityPolicy> content_security_policies;
+   bool is_anonymous = false;
+   network::mojom::WebSandboxFlags sandbox_flags =
 diff --git a/third_party/blink/renderer/core/execution_context/execution_context.cc b/third_party/blink/renderer/core/execution_context/execution_context.cc
 --- a/third_party/blink/renderer/core/execution_context/execution_context.cc
 +++ b/third_party/blink/renderer/core/execution_context/execution_context.cc
@@ -85,7 +151,7 @@ diff --git a/third_party/blink/renderer/core/execution_context/execution_context
  #include "services/network/public/mojom/referrer_policy.mojom-blink-forward.h"
  #include "third_party/abseil-cpp/absl/types/optional.h"
  #include "third_party/blink/public/common/tokens/tokens.h"
-@@ -376,6 +377,9 @@ class CORE_EXPORT ExecutionContext : public Supplementable<ExecutionContext>,
+@@ -381,6 +382,9 @@ class CORE_EXPORT ExecutionContext : public Supplementable<ExecutionContext>,
        const String& message = g_empty_string,
        const String& source_file = g_empty_string) const {}
  
@@ -98,7 +164,7 @@ diff --git a/third_party/blink/renderer/core/execution_context/execution_context
 diff --git a/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc b/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc
 --- a/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc
 +++ b/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc
-@@ -279,6 +279,7 @@ void WebSharedWorkerImpl::StartWorkerContext(
+@@ -280,6 +280,7 @@ void WebSharedWorkerImpl::StartWorkerContext(
        MakeGarbageCollected<WorkerClients>(),
        std::make_unique<SharedWorkerContentSettingsProxy>(
            std::move(content_settings)),
@@ -109,12 +175,31 @@ diff --git a/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc 
 diff --git a/third_party/blink/renderer/core/frame/policy_container.cc b/third_party/blink/renderer/core/frame/policy_container.cc
 --- a/third_party/blink/renderer/core/frame/policy_container.cc
 +++ b/third_party/blink/renderer/core/frame/policy_container.cc
-@@ -59,6 +59,11 @@ void PolicyContainer::UpdateReferrerPolicy(
+@@ -37,6 +37,7 @@ std::unique_ptr<PolicyContainer> PolicyContainer::CreateFromWebPolicyContainer(
+       mojom::blink::PolicyContainerPolicies::New(
+           container->policies.cross_origin_embedder_policy,
+           container->policies.referrer_policy,
++          container->policies.ip_address_space,
+           ConvertToMojoBlink(
+               std::move(container->policies.content_security_policies)),
+           container->policies.is_anonymous, container->policies.sandbox_flags);
+@@ -50,12 +51,22 @@ network::mojom::blink::ReferrerPolicy PolicyContainer::GetReferrerPolicy()
+   return policies_->referrer_policy;
+ }
+ 
++network::mojom::blink::IPAddressSpace PolicyContainer::GetIPAddressSpace()
++    const {
++  return policies_->ip_address_space;
++}
++
+ void PolicyContainer::UpdateReferrerPolicy(
+     network::mojom::blink::ReferrerPolicy policy) {
+   policies_->referrer_policy = policy;
    policy_container_host_remote_->SetReferrerPolicy(policy);
  }
  
 +void PolicyContainer::SetIPAddressSpace(
-+    network::mojom::blink::IPAddressSpace ip_address_space) {
++    network::mojom::IPAddressSpace ip_address_space) {
 +  policies_->ip_address_space = ip_address_space;
 +}
 +
@@ -124,9 +209,17 @@ diff --git a/third_party/blink/renderer/core/frame/policy_container.cc b/third_p
 diff --git a/third_party/blink/renderer/core/frame/policy_container.h b/third_party/blink/renderer/core/frame/policy_container.h
 --- a/third_party/blink/renderer/core/frame/policy_container.h
 +++ b/third_party/blink/renderer/core/frame/policy_container.h
-@@ -46,6 +46,14 @@ class CORE_EXPORT PolicyContainer {
- 
-   network::mojom::blink::IPAddressSpace GetIPAddressSpace() const;
+@@ -8,6 +8,7 @@
+ #include "mojo/public/cpp/bindings/associated_remote.h"
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+ #include "services/network/public/mojom/content_security_policy.mojom-blink-forward.h"
++#include "services/network/public/mojom/ip_address_space.mojom-shared.h"
+ #include "services/network/public/mojom/referrer_policy.mojom-shared.h"
+ #include "services/network/public/mojom/web_sandbox_flags.mojom-shared.h"
+ #include "third_party/blink/public/mojom/frame/policy_container.mojom-blink.h"
+@@ -44,6 +45,16 @@ class CORE_EXPORT PolicyContainer {
+   void UpdateReferrerPolicy(network::mojom::blink::ReferrerPolicy policy);
+   network::mojom::blink::ReferrerPolicy GetReferrerPolicy() const;
  
 +  // This setter is used only by worklets and workers, which do not sync the
 +  // PolicyContainer with the browser.
@@ -134,7 +227,9 @@ diff --git a/third_party/blink/renderer/core/frame/policy_container.h b/third_pa
 +  // TODO(https://crbug.com/1177199): Remove this when we implement policy
 +  // inheritance for workers/worklets using the PolicyContainer.
 +  void SetIPAddressSpace(
-+      network::mojom::blink::IPAddressSpace ip_address_space);
++      network::mojom::IPAddressSpace ip_address_space);
++
++  network::mojom::blink::IPAddressSpace GetIPAddressSpace() const;
 +
    // Append |policies| to the list of Content Security Policy and sync them with
    // the PolicyContainerHost.
@@ -142,7 +237,7 @@ diff --git a/third_party/blink/renderer/core/frame/policy_container.h b/third_pa
 diff --git a/third_party/blink/renderer/core/frame/web_frame_test.cc b/third_party/blink/renderer/core/frame/web_frame_test.cc
 --- a/third_party/blink/renderer/core/frame/web_frame_test.cc
 +++ b/third_party/blink/renderer/core/frame/web_frame_test.cc
-@@ -7907,6 +7907,40 @@ TEST_F(WebFrameTest, PushStateStartsAndStops) {
+@@ -7942,6 +7942,40 @@ TEST_F(WebFrameTest, PushStateStartsAndStops) {
    EXPECT_EQ(client.StopLoadingCount(), 2);
  }
  
@@ -371,7 +466,7 @@ diff --git a/third_party/blink/renderer/core/workers/dedicated_worker_global_sco
    // The following is the Content-Security-Policy part of "Initialize worker
    // global scope's policy container"
    // https://html.spec.whatwg.org/#initialize-worker-policy-container
-@@ -445,6 +451,7 @@ void DedicatedWorkerGlobalScope::DidFetchClassicScript(
+@@ -453,6 +459,7 @@ void DedicatedWorkerGlobalScope::DidFetchClassicScript(
    // Pass dummy origin trial tokens here as it is already set to outside's
    // origin trial tokens in DedicatedWorkerGlobalScope's constructor.
    Initialize(classic_script_loader->ResponseURL(), response_referrer_policy,
@@ -562,7 +657,7 @@ diff --git a/third_party/blink/renderer/core/workers/shared_worker_global_scope.
    Vector<network::mojom::blink::ContentSecurityPolicyPtr> csp_headers =
        response_url.ProtocolIsAbout() || response_url.ProtocolIsData() ||
                response_url.ProtocolIs("blob")
-@@ -275,6 +281,7 @@ void SharedWorkerGlobalScope::DidFetchClassicScript(
+@@ -280,6 +286,7 @@ void SharedWorkerGlobalScope::DidFetchClassicScript(
  
    // Step 12.3-12.6 are implemented in Initialize().
    Initialize(classic_script_loader->ResponseURL(), response_referrer_policy,
@@ -673,7 +768,7 @@ diff --git a/third_party/blink/renderer/core/workers/worker_global_scope.h b/thi
  #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
  #include "third_party/blink/public/common/loader/worker_main_script_load_parameters.h"
  #include "third_party/blink/public/common/tokens/tokens.h"
-@@ -156,6 +157,7 @@ class CORE_EXPORT WorkerGlobalScope
+@@ -157,6 +158,7 @@ class CORE_EXPORT WorkerGlobalScope
    virtual void Initialize(
        const KURL& response_url,
        network::mojom::ReferrerPolicy response_referrer_policy,
@@ -684,15 +779,15 @@ diff --git a/third_party/blink/renderer/core/workers/worker_global_scope.h b/thi
 diff --git a/third_party/blink/renderer/core/workers/worker_thread_test.cc b/third_party/blink/renderer/core/workers/worker_thread_test.cc
 --- a/third_party/blink/renderer/core/workers/worker_thread_test.cc
 +++ b/third_party/blink/renderer/core/workers/worker_thread_test.cc
-@@ -8,6 +8,7 @@
- #include <utility>
+@@ -9,6 +9,7 @@
  
+ #include "base/synchronization/lock.h"
  #include "base/synchronization/waitable_event.h"
 +#include "services/network/public/mojom/ip_address_space.mojom-blink.h"
  #include "testing/gmock/include/gmock/gmock.h"
  #include "testing/gtest/include/gtest/gtest.h"
  #include "third_party/blink/public/mojom/v8_cache_options.mojom-blink.h"
-@@ -371,6 +372,7 @@ TEST_F(WorkerThreadTest, Terminate_WhileDebuggerTaskIsRunningOnInitialization) {
+@@ -372,6 +373,7 @@ TEST_F(WorkerThreadTest, Terminate_WhileDebuggerTaskIsRunningOnInitialization) {
            CalculateHttpsState(security_origin_.get()),
            MakeGarbageCollected<WorkerClients>(),
            nullptr /* content_settings_client */,
@@ -727,7 +822,7 @@ diff --git a/third_party/blink/renderer/core/workers/worker_thread_test_helper.h
      InitContentSecurityPolicyFromVector(std::move(response_csp));
      BindContentSecurityPolicyToExecutionContext();
  
-@@ -143,6 +148,7 @@ class WorkerThreadForTest : public WorkerThread {
+@@ -145,6 +150,7 @@ class WorkerThreadForTest : public WorkerThread {
          false /* starter_secure_context */,
          CalculateHttpsState(security_origin), worker_clients,
          nullptr /* content_settings_client */,
@@ -764,7 +859,7 @@ diff --git a/third_party/blink/renderer/modules/exported/web_embedded_worker_imp
 diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
 --- a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
 +++ b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
-@@ -435,6 +435,7 @@ void ServiceWorkerGlobalScope::DidFetchClassicScript(
+@@ -441,6 +441,7 @@ void ServiceWorkerGlobalScope::DidFetchClassicScript(
    // is set, and with the following callback steps given evaluationStatus:"
    RunClassicScript(
        classic_script_loader->ResponseURL(), referrer_policy,
@@ -772,7 +867,7 @@ diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_gl
        classic_script_loader->GetContentSecurityPolicy()
            ? mojo::Clone(classic_script_loader->GetContentSecurityPolicy()
                              ->GetParsedPolicies())
-@@ -448,6 +449,7 @@ void ServiceWorkerGlobalScope::DidFetchClassicScript(
+@@ -454,6 +455,7 @@ void ServiceWorkerGlobalScope::DidFetchClassicScript(
  void ServiceWorkerGlobalScope::Initialize(
      const KURL& response_url,
      network::mojom::ReferrerPolicy response_referrer_policy,
@@ -780,7 +875,7 @@ diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_gl
      Vector<network::mojom::blink::ContentSecurityPolicyPtr> response_csp,
      const Vector<String>* response_origin_trial_tokens) {
    // Step 4.5. "Set workerGlobalScope's url to serviceWorker's script url."
-@@ -461,6 +463,9 @@ void ServiceWorkerGlobalScope::Initialize(
+@@ -467,6 +469,9 @@ void ServiceWorkerGlobalScope::Initialize(
    // script resource's referrer policy."
    SetReferrerPolicy(response_referrer_policy);
  
@@ -790,7 +885,7 @@ diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_gl
    // This is quoted from the "Content Security Policy" algorithm in the service
    // workers spec:
    // "Whenever a user agent invokes Run Service Worker algorithm with a service
-@@ -471,6 +476,9 @@ void ServiceWorkerGlobalScope::Initialize(
+@@ -477,6 +482,9 @@ void ServiceWorkerGlobalScope::Initialize(
    // - If serviceWorker's script resource was delivered with a
    //   Content-Security-Policy-Report-Only HTTP header containing the value
    //   policy, the user agent must monitor policy for serviceWorker."
@@ -800,7 +895,7 @@ diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_gl
    InitContentSecurityPolicyFromVector(std::move(response_csp));
    BindContentSecurityPolicyToExecutionContext();
  
-@@ -511,26 +519,27 @@ void ServiceWorkerGlobalScope::LoadAndRunInstalledClassicScript(
+@@ -517,26 +525,27 @@ void ServiceWorkerGlobalScope::LoadAndRunInstalledClassicScript(
          kDoNotSupportReferrerPolicyLegacyKeywords, &referrer_policy);
    }
  
@@ -839,7 +934,7 @@ diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_gl
 diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h
 --- a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h
 +++ b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h
-@@ -116,6 +116,7 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
+@@ -118,6 +118,7 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
    void Initialize(
        const KURL& response_url,
        network::mojom::ReferrerPolicy response_referrer_policy,
@@ -847,7 +942,7 @@ diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_gl
        Vector<network::mojom::blink::ContentSecurityPolicyPtr> response_csp,
        const Vector<String>* response_origin_trial_tokens) override;
    // Fetches and runs the top-level classic worker script.
-@@ -352,6 +353,7 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
+@@ -362,6 +363,7 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
    void RunClassicScript(
        const KURL& response_url,
        network::mojom::ReferrerPolicy response_referrer_policy,
