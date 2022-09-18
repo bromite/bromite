@@ -1,3 +1,10 @@
+# 105.0.5195.41
+* revert by-pass for clipboard permissions for NTP doodles (fixes https://bugs.chromium.org/p/chromium/issues/detail?id=1334203)
+* prevent history detection via favicon (fixes https://github.com/bromite/bromite/issues/2269)
+* fix the lack of protection in canvas.convertToBlob()
+* improve incognito mode detection countermeasures (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1615)
+* fix toolbar gesture when using bottom navigation bar (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2253)
+
 # 104.0.5112.91
 * re-introduce modal flag to prompt when closing all tabs
 * sharing hub: always use visible URL (fixes https://github.com/bromite/bromite/issues/2204)

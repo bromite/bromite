@@ -27,6 +27,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../chrome/browser/app/ChromeActivity.java    | 13 +++++
  .../browser/app/flags/ChromeCachedFlags.java  |  1 +
  .../compositor/CompositorViewHolder.java      |  6 +++
+ .../layouts/LayoutManagerChrome.java          | 18 +++++--
  .../layouts/LayoutManagerChromeTablet.java    |  4 +-
  .../layouts/ToolbarSwipeLayout.java           | 15 +++++-
  .../overlays/strip/StripLayoutHelper.java     |  2 +-
@@ -81,7 +82,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../accessibility/AccessibilitySettings.java  | 16 ++++++
  .../AccessibilitySettingsDelegate.java        |  6 +++
  .../render_widget_host_view_android.cc        |  3 ++
- 69 files changed, 738 insertions(+), 53 deletions(-)
+ 70 files changed, 753 insertions(+), 56 deletions(-)
 
 diff --git a/cc/base/features.cc b/cc/base/features.cc
 --- a/cc/base/features.cc
@@ -625,6 +626,71 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/Comp
                          forwarder.setCurrentTouchEventOffsets(0, top);
                      }
                  });
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/LayoutManagerChrome.java b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/LayoutManagerChrome.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/LayoutManagerChrome.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/LayoutManagerChrome.java
+@@ -45,6 +45,8 @@ import org.chromium.components.browser_ui.widget.gesture.SwipeGestureListener.Sc
+ import org.chromium.components.browser_ui.widget.gesture.SwipeGestureListener.SwipeHandler;
+ import org.chromium.components.browser_ui.widget.scrim.ScrimCoordinator;
+ import org.chromium.ui.resources.dynamics.DynamicResourceLoader;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
++import org.chromium.chrome.browser.flags.CachedFeatureFlags;
+ 
+ import java.util.List;
+ 
+@@ -210,7 +212,10 @@ public class LayoutManagerChrome
+ 
+     @Override
+     public SwipeHandler createToolbarSwipeHandler(boolean supportSwipeDown) {
+-        return new ToolbarSwipeHandler(supportSwipeDown);
++        boolean move_top_toolbar =
++            CachedFeatureFlags.isEnabled(ChromeFeatureList.MOVE_TOP_TOOLBAR_TO_BOTTOM);
++        return new ToolbarSwipeHandler(supportSwipeDown && !move_top_toolbar,
++                                       supportSwipeDown && move_top_toolbar);
+     }
+ 
+     @Override
+@@ -424,9 +429,11 @@ public class LayoutManagerChrome
+         private static final float SWIPE_RANGE_DEG = 25;
+ 
+         private final boolean mSupportSwipeDown;
++        private final boolean mSupportSwipeUp;
+ 
+-        public ToolbarSwipeHandler(boolean supportSwipeDown) {
++        public ToolbarSwipeHandler(boolean supportSwipeDown, boolean supportSwipeUp) {
+             mSupportSwipeDown = supportSwipeDown;
++            mSupportSwipeUp = supportSwipeUp;
+         }
+ 
+         @Override
+@@ -458,6 +465,9 @@ public class LayoutManagerChrome
+                     && mScrollDirection == ScrollDirection.DOWN) {
+                 RecordUserAction.record("MobileToolbarSwipeOpenStackView");
+                 showLayout(LayoutType.TAB_SWITCHER, true);
++            } else if (mSupportSwipeUp && mOverviewLayout != null
++                    && mScrollDirection == ScrollDirection.UP) {
++                showLayout(LayoutType.TAB_SWITCHER, true);
+             } else if (mScrollDirection == ScrollDirection.LEFT
+                     || mScrollDirection == ScrollDirection.RIGHT) {
+                 startShowing(mToolbarSwipeLayout, true);
+@@ -504,6 +514,8 @@ public class LayoutManagerChrome
+                 direction = ScrollDirection.RIGHT;
+             } else if (swipeAngle < 270 + SWIPE_RANGE_DEG && swipeAngle > 270 - SWIPE_RANGE_DEG) {
+                 direction = ScrollDirection.DOWN;
++            } else if (swipeAngle < 90 + SWIPE_RANGE_DEG && swipeAngle > 90 - SWIPE_RANGE_DEG) {
++                direction = ScrollDirection.UP;
+             }
+ 
+             return direction;
+@@ -518,7 +530,7 @@ public class LayoutManagerChrome
+                 return false;
+             }
+ 
+-            if (direction == ScrollDirection.DOWN) {
++            if (direction == ScrollDirection.DOWN || direction == ScrollDirection.UP) {
+                 boolean isAccessibility = ChromeAccessibilityUtil.get().isAccessibilityEnabled();
+                 return mOverviewLayout != null && !isAccessibility;
+             }
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/LayoutManagerChromeTablet.java b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/LayoutManagerChromeTablet.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/LayoutManagerChromeTablet.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/compositor/layouts/LayoutManagerChromeTablet.java
