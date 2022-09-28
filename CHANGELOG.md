@@ -1,3 +1,13 @@
+# 105.0.5195.147
+* enable HEVC by default (fixes https://github.com/bromite/bromite/issues/2331)
+* partition blobs by top frame URL (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2312)
+* use first accept-language as system language for Blink (thanks to @uazo, fixes https://github.com/bromite/bromite/pull/2311)
+* fix injection with back-forward cache enabled (thanks to @uazo)
+* fix user scripts injection with back-forward cache enabled (thanks to @uazo)
+* remove HTTP referrals in cross-origin navigation (thanks to @uazo)
+* update noise factor for anti-fingerpriting mitigations only once per document (fixes https://github.com/bromite/bromite/issues/2352)
+* disable add to home screen prompt (fixes https://github.com/bromite/bromite/issues/2340)
+
 # 105.0.5195.41
 * revert by-pass for clipboard permissions for NTP doodles (fixes https://bugs.chromium.org/p/chromium/issues/detail?id=1334203)
 * prevent history detection via favicon (fixes https://github.com/bromite/bromite/issues/2269)
