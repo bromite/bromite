@@ -1,0 +1,189 @@
+From: Yifeng <wuyifeng@nd.com.cn>
+Date: Tue, 2 Aug 2022 07:40:00 +0000
+Subject: Read or write file content provider
+
+Provider the APIs that read/write the 'Local State' file, since after Identity clears the Chromium
+user data, we want to keep the file.
+
+---
+ chrome/android/chrome_java_sources.gni | 1 +
+ chrome/android/java/AndroidManifest.xml | 6 +
+ chrome/android/proguard/main.flags | 1 +
+ chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java | 122 +
+ 4 files changed, 130 insertions(+), 0 deletion(-)
+
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -42,6 +42,7 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/NearOomMonitor.java",
+   "java/src/org/chromium/chrome/browser/PlayServicesVersionInfo.java",
+   "java/src/org/chromium/chrome/browser/PowerBroadcastReceiver.java",
++  "java/src/org/chromium/chrome/browser/PrometheanContentProvider.java",
+   "java/src/org/chromium/chrome/browser/ServiceTabLauncher.java",
+   "java/src/org/chromium/chrome/browser/ShortcutHelper.java",
+   "java/src/org/chromium/chrome/browser/SnackbarActivity.java",
+diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/AndroidManifest.xml
+--- a/chrome/android/java/AndroidManifest.xml
++++ b/chrome/android/java/AndroidManifest.xml
+@@ -22,6 +22,10 @@ by a child template that "extends" this file.
+
+     <uses-feature android:glEsVersion="0x00020000" />
+
++    <permission android:name="org.chromium.chrome.permission.PROMETHEAN_PROVIDER"
++        android:label="provider permission"
++        android:protectionLevel="signature"/>
++
+     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+     <uses-permission-sdk-23 android:name="android.permission.ACCESS_WIFI_STATE" />
+@@ -1304,6 +1308,13 @@ by a child template that "extends" this file.
+           android:name="com.prometheanworld.telemetry.product_name"
+           android:value="@string/app_name" />
+
++      <provider
++          android:authorities="org.chromium.chrome.PrometheanContentProvider"
++          android:name="org.chromium.chrome.browser.PrometheanContentProvider"
++          android:exported="true"
++          android:enabled="true"
++          android:permission="org.chromium.chrome.permission.PROMETHEAN_PROVIDER" />
++
+       {% block base_application_definitions %}
+       {% endblock %}
+       {% block extra_application_definitions_for_test %}
+diff --git a/chrome/android/proguard/main.flags b/chrome/android/proguard/main.flags
+--- a/chrome/android/proguard/main.flags
++++ b/chrome/android/proguard/main.flags
+@@ -42,3 +42,4 @@
+ -keep public class ** extends org.chromium.chrome.browser.base.SplitCompat*$Impl {
+   public <init>();
+ }
++-keep class org.chromium.chrome.browser.PrometheanContentProvider {*;}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java b/chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java
+@@ -0,0 +1,122 @@
++package org.chromium.chrome.browser;
++
++import android.content.ContentProvider;
++import android.content.ContentValues;
++import android.content.UriMatcher;
++import android.database.Cursor;
++import android.database.MatrixCursor;
++import android.net.Uri;
++import android.text.TextUtils;
++import android.util.Log;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import java.io.BufferedReader;
++import java.io.BufferedWriter;
++import java.io.File;
++import java.io.FileReader;
++import java.io.FileWriter;
++
++public class PrometheanContentProvider extends ContentProvider {
++
++    private static final String AUTHORITY = "org.chromium.chrome.PrometheanContentProvider";
++    private static final String PATH_DATA_DATA_LOCAL_STATE = "data-data/localState";
++    private static final int CODE_DATA_DATA_LOCAL_STATE = 1;
++    private static final String KEY_DATA = "data";
++    private static final UriMatcher URI_MATCHER = new UriMatcher(UriMatcher.NO_MATCH);
++
++    static {
++        URI_MATCHER.addURI(AUTHORITY, PATH_DATA_DATA_LOCAL_STATE, CODE_DATA_DATA_LOCAL_STATE);
++    }
++
++    @Override
++    public boolean onCreate() {
++        return false;
++    }
++
++    @Nullable
++    @Override
++    public Cursor query(@NonNull Uri uri, @Nullable String[] projection, @Nullable String selection, @Nullable String[] selectionArgs, @Nullable String sortOrder) {
++        if (URI_MATCHER.match(uri) == CODE_DATA_DATA_LOCAL_STATE) {
++            String[] columnNames = {KEY_DATA};
++            Object[] columnValues = {readFromLocalState()};
++            MatrixCursor cursor = new MatrixCursor(columnNames);
++            cursor.addRow(columnValues);
++            return cursor;
++        }
++        return null;
++    }
++
++    @Nullable
++    @Override
++    public String getType(@NonNull Uri uri) {
++        return null;
++    }
++
++    @Nullable
++    @Override
++    public Uri insert(@NonNull Uri uri, @Nullable ContentValues values) {
++        if (URI_MATCHER.match(uri) == CODE_DATA_DATA_LOCAL_STATE) {
++            if (values != null) {
++                writeToLocalState(values.getAsString(KEY_DATA));
++            }
++        }
++        return null;
++    }
++
++    @Override
++    public int delete(@NonNull Uri uri, @Nullable String selection, @Nullable String[] selectionArgs) {
++        return 0;
++    }
++
++    @Override
++    public int update(@NonNull Uri uri, @Nullable ContentValues values, @Nullable String selection, @Nullable String[] selectionArgs) {
++        return 0;
++    }
++
++    private String readFromLocalState() {
++        StringBuilder content = new StringBuilder();
++        File file = new File(getContext().getDataDir(), "app_chrome/Local State");
++        if (file.exists() && file.isFile()) {
++            try (BufferedReader br = new BufferedReader(new FileReader(file))) {
++                String line;
++                while ((line = br.readLine()) != null) {
++                    content.append(line);
++                }
++                Log.d("PrometheanContentProvider", "readFromLocalState success");
++            } catch (Throwable e) {
++                Log.e("PrometheanContentProvider", "readFromLocalState error: " + e);
++            }
++        }
++        return content.toString();
++    }
++
++    private void writeToLocalState(String content) {
++        File localStateFile;
++        try {
++            File appChromeDir = new File(getContext().getDataDir(), "app_chrome");
++            if (!appChromeDir.exists()) {
++                appChromeDir.mkdirs();
++            }
++            localStateFile = new File(appChromeDir, "Local State");
++            if (localStateFile.exists()) {
++                localStateFile.delete();
++            }
++            if (TextUtils.isEmpty(content)) {
++                Log.d("PrometheanContentProvider", "writeToLocalState success");
++                return;
++            }
++            localStateFile.createNewFile();
++        } catch (Throwable e) {
++            Log.e("PrometheanContentProvider", "writeToLocalState create error: " + e);
++            return;
++        }
++        try (BufferedWriter bw = new BufferedWriter(new FileWriter(localStateFile))) {
++            bw.write(content);
++            Log.d("PrometheanContentProvider", "writeToLocalState success");
++        } catch (Throwable e) {
++            Log.e("PrometheanContentProvider", "writeToLocalState error: " + e);
++        }
++    }
++}
+--
