@@ -5,14 +5,31 @@ Subject: Read or write file content provider
 Fix version: 1.2.0
 Provide the APIs that read/write the 'Local State' file, since after Identity clears the Chromium
 user data, we want to keep the file.
-Provide the API that clears the user data except for the 'Local State' file.
+Provide the API that clears the user data, the files or dirs are:
+- /data/data/org.chromium.chrome/app_tabs
+- /data/data/org.chromium.chrome/app_chrome/Default/Account Web Data
+- /data/data/org.chromium.chrome/app_chrome/Default/Account Web Data-journal
+- /data/data/org.chromium.chrome/app_chrome/Default/Download Service
+- /data/data/org.chromium.chrome/app_chrome/Default/History
+- /data/data/org.chromium.chrome/app_chrome/Default/History-journal
+- /data/data/org.chromium.chrome/app_chrome/Default/Login Data
+- /data/data/org.chromium.chrome/app_chrome/Default/Login Data-journal
+- /data/data/org.chromium.chrome/app_chrome/Default/Shortcuts
+- /data/data/org.chromium.chrome/app_chrome/Default/Shortcuts-journal
+- /data/data/org.chromium.chrome/app_chrome/Default/share_history
+- /data/data/org.chromium.chrome/app_chrome/Default/shared_proto_db
+- /data/data/org.chromium.chrome/app_chrome/Default/AutofillStrikeDatabase
+- /data/data/org.chromium.chrome/app_chrome/Default/Session Storage
+- /data/data/org.chromium.chrome/app_chrome/Default/Cookies
+- /data/data/org.chromium.chrome/app_chrome/Default/Cookies-journal
+- /storage/emulated/0/Android/data/org.chromium.chrome
 
 ---
  chrome/android/chrome_java_sources.gni | 1 +
  chrome/android/java/AndroidManifest.xml | 11 +
  chrome/android/proguard/main.flags | 1 +
- chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java | 161 +
- 4 files changed, 174 insertions(+), 0 deletion(-)
+ chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java | 176 +
+ 4 files changed, 189 insertions(+), 0 deletion(-)
 
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
@@ -65,7 +82,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/PrometheanConte
 new file mode 100644
 --- /dev/null
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,176 @@
 +package org.chromium.chrome.browser;
 +
 +import android.content.ContentProvider;
@@ -99,6 +116,7 @@ new file mode 100644
 +    private static final int CODE_CLEAR_USER_DATA = 2;
 +    private static final String KEY_DATA = "data";
 +    private static final UriMatcher URI_MATCHER = new UriMatcher(UriMatcher.NO_MATCH);
++    private static final Set<String> CLEAR_FILES_OR_DIRS = new HashSet<>();
 +
 +    static {
 +        URI_MATCHER.addURI(AUTHORITY, PATH_DATA_DATA_LOCAL_STATE, CODE_DATA_DATA_LOCAL_STATE);
@@ -107,6 +125,26 @@ new file mode 100644
 +
 +    @Override
 +    public boolean onCreate() {
++        String dataDirPath = getContext().getDataDir().getAbsolutePath();
++        String appChromeDefaultDir = dataDirPath + "/app_chrome/Default";
++        String externalDir = "/storage/emulated/0/Android/data/" + getContext().getPackageName();
++        CLEAR_FILES_OR_DIRS.add(dataDirPath + "/app_tabs");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Account Web Data");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Account Web Data-journal");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Download Service");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/History");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/History-journal");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Login Data");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Login Data-journal");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Shortcuts");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Shortcuts-journal");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/share_history");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/shared_proto_db");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/AutofillStrikeDatabase");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Session Storage");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Cookies");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Cookies-journal");
++        CLEAR_FILES_OR_DIRS.add(externalDir);
 +        return false;
 +    }
 +
@@ -143,12 +181,8 @@ new file mode 100644
 +    @Override
 +    public int delete(@NonNull Uri uri, @Nullable String selection, @Nullable String[] selectionArgs) {
 +        if (URI_MATCHER.match(uri) == CODE_CLEAR_USER_DATA) {
-+            Set<String> excludeFiles = new HashSet<>();
-+            excludeFiles.add("Local State");
-+            deleteFile(getContext().getDataDir(), excludeFiles);
-+            File externalCacheDir = getContext().getExternalCacheDir();
-+            if (externalCacheDir != null) {
-+                deleteFile(externalCacheDir.getParentFile(), null);
++            for (String path : CLEAR_FILES_OR_DIRS) {
++                deleteFileOrDir(new File(path));
 +            }
 +        }
 +        return 0;
@@ -204,24 +238,22 @@ new file mode 100644
 +        }
 +    }
 +
-+    private void deleteFile(File file, Set<String> excludeFiles) {
++    private void deleteFileOrDir(File file) {
 +        if (file == null || !file.exists()) {
 +            return;
 +        }
 +        if (file.isFile()) {
-+            if (excludeFiles == null || !excludeFiles.contains(file.getName())) {
-+                boolean deleted = file.delete();
-+                if (deleted) {
-+                    Log.d(TAG, "deleted file " + file.getAbsolutePath());
-+                } else {
-+                    Log.d(TAG, "could not delete file " + file.getAbsolutePath());
-+                }
++            boolean deleted = file.delete();
++            if (deleted) {
++                Log.d(TAG, "deleted file " + file.getAbsolutePath());
++            } else {
++                Log.d(TAG, "could not delete file " + file.getAbsolutePath());
 +            }
 +        } else if (file.isDirectory()) {
 +            File[] files = file.listFiles();
 +            if (files != null) {
 +                for (File f : files) {
-+                    deleteFile(f, excludeFiles);
++                    deleteFileOrDir(f);
 +                }
 +            }
 +        }
