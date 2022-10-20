@@ -1,3 +1,6 @@
+# 106.0.5249.72
+* dropped patches already merged upstream
+
 # 105.0.5195.147
 * enable HEVC by default (fixes https://github.com/bromite/bromite/issues/2331)
 * partition blobs by top frame URL (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2312)
