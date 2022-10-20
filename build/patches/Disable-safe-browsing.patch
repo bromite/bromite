@@ -32,7 +32,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../browser/download/download_item_model.cc   | 15 +++-
  chrome/browser/download/download_item_model.h |  4 +
  chrome/browser/download/download_prefs.cc     | 17 ++--
- chrome/browser/download/download_stats.cc     |  4 +
+ chrome/browser/download/download_stats.cc     |  6 ++
  .../download/download_target_determiner.cc    | 66 +++++-----------
  .../download/download_target_determiner.h     |  6 ++
  .../browser/download/download_target_info.cc  |  4 +
@@ -42,7 +42,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../extensions/api/downloads/downloads_api.cc | 41 +---------
  .../extensions/api/downloads/downloads_api.h  | 12 ---
  .../webstore_private/webstore_private_api.cc  | 18 +----
- ...e_file_system_access_permission_context.cc |  6 ++
+ ...e_file_system_access_permission_context.cc | 10 +++
  ...me_file_system_access_permission_context.h |  5 +-
  .../lookalike_url_controller_client.cc        |  4 -
  .../metrics/chrome_metrics_service_client.cc  |  3 -
@@ -91,7 +91,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../file_system_access_permission_context.h   |  6 --
  weblayer/BUILD.gn                             |  4 -
  weblayer/test/BUILD.gn                        |  1 -
- 82 files changed, 203 insertions(+), 695 deletions(-)
+ 82 files changed, 209 insertions(+), 695 deletions(-)
 
 diff --git a/chrome/android/java/res/xml/google_services_preferences.xml b/chrome/android/java/res/xml/google_services_preferences.xml
 --- a/chrome/android/java/res/xml/google_services_preferences.xml
@@ -1207,6 +1207,20 @@ diff --git a/chrome/browser/download/download_stats.cc b/chrome/browser/download
  }
  
  void RecordOpenedDangerousConfirmDialog(
+@@ -44,11 +48,13 @@ void RecordDownloadOpen(ChromeDownloadOpenMethod open_method,
+   base::RecordAction(base::UserMetricsAction("Download.Open"));
+   base::UmaHistogramEnumeration("Download.OpenMethod", open_method,
+                                 DOWNLOAD_OPEN_METHOD_LAST_ENTRY);
++#if defined(FULL_SAFE_BROWSING)
+   download::DownloadContent download_content =
+       download::DownloadContentFromMimeType(
+           mime_type_string, /*record_content_subcategory=*/false);
+   base::UmaHistogramEnumeration("Download.Open.ContentType", download_content,
+                                 download::DownloadContent::MAX);
++#endif
+ }
+ 
+ void RecordDatabaseAvailability(bool is_available) {
 diff --git a/chrome/browser/download/download_target_determiner.cc b/chrome/browser/download/download_target_determiner.cc
 --- a/chrome/browser/download/download_target_determiner.cc
 +++ b/chrome/browser/download/download_target_determiner.cc
@@ -1680,7 +1694,23 @@ diff --git a/chrome/browser/file_system_access/chrome_file_system_access_permiss
  #include "chrome/browser/ui/file_system_access_dialogs.h"
  #include "chrome/common/chrome_paths.h"
  #include "chrome/grit/generated_resources.h"
-@@ -342,6 +344,7 @@ BindResultCallbackToCurrentSequence(
+@@ -144,6 +146,7 @@ void ShowFileSystemAccessRestrictedDirectoryDialogOnUIThread(
+       origin, path, handle_type, std::move(callback), web_contents);
+ }
+ 
++#if defined(FULL_SAFE_BROWSING)
+ void ShowFileSystemAccessDangerousFileDialogOnUIThread(
+     content::GlobalRenderFrameHostId frame_id,
+     const url::Origin& origin,
+@@ -172,6 +175,7 @@ void ShowFileSystemAccessDangerousFileDialogOnUIThread(
+   ShowFileSystemAccessDangerousFileDialog(origin, path, std::move(callback),
+                                           web_contents);
+ }
++#endif
+ 
+ // Sentinel used to indicate that no PathService key is specified for a path in
+ // the struct below.
+@@ -342,6 +346,7 @@ BindResultCallbackToCurrentSequence(
        base::SequencedTaskRunnerHandle::Get(), std::move(callback));
  }
  
@@ -1688,7 +1718,7 @@ diff --git a/chrome/browser/file_system_access/chrome_file_system_access_permiss
  void DoSafeBrowsingCheckOnUIThread(
      content::GlobalRenderFrameHostId frame_id,
      std::unique_ptr<content::FileSystemAccessWriteItem> item,
-@@ -418,6 +421,7 @@ InterpretSafeBrowsingResult(safe_browsing::DownloadCheckResult result) {
+@@ -418,6 +423,7 @@ InterpretSafeBrowsingResult(safe_browsing::DownloadCheckResult result) {
    NOTREACHED();
    return ChromeFileSystemAccessPermissionContext::AfterWriteCheckResult::kBlock;
  }
@@ -1696,7 +1726,7 @@ diff --git a/chrome/browser/file_system_access/chrome_file_system_access_permiss
  
  std::string GenerateLastPickedDirectoryKey(const std::string& id) {
    return id.empty() ? kDefaultLastPickedDirectoryKey
-@@ -1200,6 +1204,7 @@ void ChromeFileSystemAccessPermissionContext::ConfirmSensitiveEntryAccess(
+@@ -1200,6 +1206,7 @@ void ChromeFileSystemAccessPermissionContext::ConfirmSensitiveEntryAccess(
                       frame_id, std::move(callback)));
  }
  
@@ -1704,7 +1734,7 @@ diff --git a/chrome/browser/file_system_access/chrome_file_system_access_permiss
  void ChromeFileSystemAccessPermissionContext::PerformAfterWriteChecks(
      std::unique_ptr<content::FileSystemAccessWriteItem> item,
      content::GlobalRenderFrameHostId frame_id,
-@@ -1221,6 +1226,7 @@ void ChromeFileSystemAccessPermissionContext::PerformAfterWriteChecks(
+@@ -1221,6 +1228,7 @@ void ChromeFileSystemAccessPermissionContext::PerformAfterWriteChecks(
                },
                base::SequencedTaskRunnerHandle::Get(), std::move(callback))));
  }
@@ -1712,6 +1742,22 @@ diff --git a/chrome/browser/file_system_access/chrome_file_system_access_permiss
  
  void ChromeFileSystemAccessPermissionContext::
      DidConfirmSensitiveDirectoryAccess(
+@@ -1232,6 +1240,7 @@ void ChromeFileSystemAccessPermissionContext::
+         base::OnceCallback<void(SensitiveEntryResult)> callback,
+         bool should_block) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++#if defined(FULL_SAFE_BROWSING)
+   if (!should_block) {
+     // If attempting to save a file with a dangerous extension, prompt the user
+     // to make them confirm they actually want to save the file.
+@@ -1257,6 +1266,7 @@ void ChromeFileSystemAccessPermissionContext::
+     std::move(callback).Run(SensitiveEntryResult::kAllowed);
+     return;
+   }
++#endif
+ 
+   auto result_callback =
+       BindResultCallbackToCurrentSequence(std::move(callback));
 diff --git a/chrome/browser/file_system_access/chrome_file_system_access_permission_context.h b/chrome/browser/file_system_access/chrome_file_system_access_permission_context.h
 --- a/chrome/browser/file_system_access/chrome_file_system_access_permission_context.h
 +++ b/chrome/browser/file_system_access/chrome_file_system_access_permission_context.h
