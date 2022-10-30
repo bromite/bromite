@@ -153,6 +153,7 @@ New flags:
 * `#certificate-transparency-enabled`, enabled by default; see https://chromium.googlesource.com/chromium/src/+/master/net/docs/certificate-transparency.md
 * `#move-top-toolbar-to-bottom`, disabled by default
 * `#site-engagement`, enabled by default
+* `#offline-pages-auto-save`, disabled by default, allows auto-saving of pages when device goes offline
 
 ### Site settings
 
