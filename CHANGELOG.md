@@ -1,3 +1,6 @@
+# 106.0.5249.163
+* enable ECH (Encrypted ClientHello) by default
+
 # 106.0.5249.72
 * dropped patches already merged upstream
 
