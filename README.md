@@ -29,6 +29,8 @@ Please donate to support development of Bromite and the costs for the build syst
 
 ## &rarr; Support development with a donation
 
+Patreon: https://www.patreon.com/csagan5
+
 <a href="bitcoin:bc1qlx7h0lj9z88g2xfeuwsrtfs77sxuhrxf2t28sw">BTC donations address</a>: `bc1qlx7h0lj9z88g2xfeuwsrtfs77sxuhrxf2t28sw`
 
 ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
