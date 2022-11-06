@@ -213,6 +213,8 @@ The Chromium version tag used as base for the patches is available here: [RELEAS
 The GN args used to build Bromite are available here: [bromite.gn_args](./build/bromite.gn_args).
 The patches are to be applied second the order specified in the `bromite_patches_list.txt` file (you can use `git am`).
 
+NOTE: no official support is provided for builds.
+
 ## How to build the filters
 
 See upstream documentation: https://github.com/chromium/chromium/blob/master/components/subresource_filter/FILTER_LIST_GENERATION.md
