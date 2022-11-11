@@ -24,11 +24,11 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../tab_management/TabSwitcherMediator.java   |  57 ------
  .../chrome/browser/app/ChromeActivity.java    |  17 --
  .../AppMenuPropertiesDelegateImpl.java        |  16 +-
- .../browser/bookmarks/BookmarkBridge.java     |  35 +---
+ .../browser/bookmarks/BookmarkBridge.java     |  84 ---------
  .../bookmarks/BookmarkItemsAdapter.java       |  23 ---
  .../browser/bookmarks/BookmarkManager.java    |  11 --
  .../BookmarkSaveFlowCoordinator.java          |  37 +---
- .../bookmarks/BookmarkSaveFlowMediator.java   |  49 +----
+ .../bookmarks/BookmarkSaveFlowMediator.java   |  69 +------
  .../browser/bookmarks/BookmarkUtils.java      |  12 +-
  .../init/ProcessInitializationHandler.java    |   5 -
  .../chrome/browser/tab/TabHelpers.java        |   9 -
@@ -42,7 +42,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../CommerceSubscriptionsService.java         |  36 +---
  .../SubscriptionsManagerImpl.java             |  26 +--
  chrome/browser/persisted_state_db/BUILD.gn    |   1 -
- 38 files changed, 31 insertions(+), 843 deletions(-)
+ 38 files changed, 29 insertions(+), 914 deletions(-)
 
 diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
 --- a/chrome/android/BUILD.gn
@@ -1304,26 +1304,68 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
      }
  
      /** Returns whether the bridge has been destroyed. */
-@@ -664,8 +635,8 @@ public class BookmarkBridge {
-      *
-      * @param subscriptions The list of subscriptions to disable.
-      */
+@@ -656,61 +627,6 @@ public class BookmarkBridge {
+         return result;
+     }
+ 
+-    /**
+-     * Disable price tracking for the list of subscriptions. This flips the bit in ShoppingSpecifics
+-     * but does not actually unsubscribe from the subscription service -- this assumes that is
+-     * already done.
+-     * TODO(1284730): This should live somewhere other than BookmarkBridge.
+-     *
+-     * @param subscriptions The list of subscriptions to disable.
+-     */
 -    private void removeExplicitShoppingSubscriptions(List<CommerceSubscription> subscriptions) {
 -        if (subscriptions == null) return;
-+    private void removeExplicitShoppingSubscriptions(List<CommerceSubscription> subscriptions) { // disabled in Bromite
-+        /*if (subscriptions == null) return;
- 
-         List<BookmarkId> products = searchBookmarks("", null, PowerBookmarkType.SHOPPING, -1);
-         if (products == null || products.size() == 0) return;
-@@ -709,7 +680,7 @@ public class BookmarkBridge {
-                                 .build());
-             }
-         }
+-
+-        List<BookmarkId> products = searchBookmarks("", null, PowerBookmarkType.SHOPPING, -1);
+-        if (products == null || products.size() == 0) return;
+-
+-        // Put the offer and cluster IDs into a map so they can be quickly checked.
+-        HashSet<Long> offerIdMap = new HashSet<>();
+-        HashSet<Long> clusterIdMap = new HashSet<>();
+-        for (CommerceSubscription c : subscriptions) {
+-            // Ensure the subscription is explicit.
+-            if (c == null
+-                    || !c.getManagementType().equals(
+-                            CommerceSubscription.SubscriptionManagementType.USER_MANAGED)) {
+-                continue;
+-            }
+-
+-            if (c.getTrackingIdType().equals(CommerceSubscription.TrackingIdType.OFFER_ID)) {
+-                offerIdMap.add(UnsignedLongs.parseUnsignedLong(c.getTrackingId()));
+-            } else if (c.getTrackingIdType().equals(
+-                               CommerceSubscription.TrackingIdType.PRODUCT_CLUSTER_ID)) {
+-                clusterIdMap.add(UnsignedLongs.parseUnsignedLong(c.getTrackingId()));
+-            }
+-        }
+-
+-        // Look at all the products the user has saved to find any of the above product or cluster
+-        // IDs.
+-        for (BookmarkId product : products) {
+-            PowerBookmarkMeta meta = getPowerBookmarkMeta(product);
+-            if (!meta.hasShoppingSpecifics()) continue;
+-
+-            ShoppingSpecifics specifics = meta.getShoppingSpecifics();
+-            if (offerIdMap.contains(specifics.getOfferId())
+-                    || clusterIdMap.contains(specifics.getProductClusterId())) {
+-                // Reset the meta using a copy of the existing one, but set the price tracking flag
+-                // to false.
+-                setPowerBookmarkMeta(product,
+-                        PowerBookmarkMeta.newBuilder(meta)
+-                                .setShoppingSpecifics(
+-                                        ShoppingSpecifics.newBuilder(meta.getShoppingSpecifics())
+-                                                .setIsPriceTracked(false)
+-                                                .build())
+-                                .build());
+-            }
+-        }
 -    }
-+    } */
- 
+-
      /**
       * Gets the child of a folder at the specific position.
+      * @param folderId Id of the parent folder
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkItemsAdapter.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkItemsAdapter.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkItemsAdapter.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkItemsAdapter.java
@@ -1503,6 +1545,15 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
  import org.chromium.components.bookmarks.BookmarkId;
  import org.chromium.components.feature_engagement.EventConstants;
  import org.chromium.components.power_bookmarks.PowerBookmarkMeta;
+@@ -30,7 +27,7 @@ import java.util.List;
+ 
+ /** Controls the bookmarks save-flow. */
+ public class BookmarkSaveFlowMediator
+-        extends BookmarkModelObserver implements SubscriptionsManager.SubscriptionObserver {
++        extends BookmarkModelObserver {
+     private final Context mContext;
+     private final Runnable mCloseRunnable;
+ 
 @@ -40,9 +37,6 @@ public class BookmarkSaveFlowMediator
      private BookmarkId mBookmarkId;
      private PowerBookmarkMeta mPowerBookmarkMeta;
@@ -1588,6 +1639,43 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
      }
  
      void setPriceTrackingNotificationUiEnabled(boolean enabled) {
+@@ -180,9 +133,6 @@ public class BookmarkSaveFlowMediator
+ 
+     void destroy() {
+         mBookmarkModel.removeObserver(this);
+-        if (mSubscriptionsManager != null) {
+-            mSubscriptionsManager.removeObserver(this);
+-        }
+ 
+         mBookmarkModel = null;
+         mPropertyModel = null;
+@@ -203,10 +153,6 @@ public class BookmarkSaveFlowMediator
+                 this::handleNotificationSwitchToggle);
+     }
+ 
+-    void setSubscriptionForTesting(CommerceSubscription subscription) {
+-        mSubscription = subscription;
+-    }
+-
+     // BookmarkModelObserver implementation
+ 
+     @Override
+@@ -218,15 +164,4 @@ public class BookmarkSaveFlowMediator
+         }
+         bindBookmarkProperties(mBookmarkId, mPowerBookmarkMeta, mWasBookmarkMoved);
+     }
+-
+-    // SubscriptionsManager.SubscriptionObserver implementation
+-    @Override
+-    public void onSubscribe(List<CommerceSubscription> subscriptions) {
+-        setPriceTrackingToggleVisualsOnly(subscriptions.contains(mSubscription));
+-    }
+-
+-    @Override
+-    public void onUnsubscribe(List<CommerceSubscription> subscriptions) {
+-        setPriceTrackingToggleVisualsOnly(!subscriptions.contains(mSubscription));
+-    }
+ }
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkUtils.java b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkUtils.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkUtils.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/BookmarkUtils.java
