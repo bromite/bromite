@@ -1,3 +1,8 @@
+# 107.0.5304.96
+* bottom toolbar: fix for white strip at top in tab view (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2407)
+* dropped patches already merged upstream (partition DNS requests by top frame NIK, clipboard user gesture requirement removal)
+* disable StartSurface feature
+
 # 106.0.5249.163
 * enable ECH (Encrypted ClientHello) by default
 
