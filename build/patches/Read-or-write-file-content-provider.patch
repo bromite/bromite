@@ -24,13 +24,38 @@ Provide the API that clears the user data, the files or dirs are:
 - /data/data/org.chromium.chrome/app_chrome/Default/Cookies-journal
 - /storage/emulated/0/Android/data/org.chromium.chrome
 
----
- chrome/android/chrome_java_sources.gni | 1 +
- chrome/android/java/AndroidManifest.xml | 11 +
- chrome/android/proguard/main.flags | 1 +
- chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java | 176 +
- 4 files changed, 189 insertions(+), 0 deletion(-)
+Fix version: 1.2.1
+AP9-10127: Provide the APIs that get the file URI.
+Provide the APIs that get all files of the directory.
 
+---
+ chrome/android/BUILD.gn | 2 +
+ chrome/android/chrome_java_sources.gni | 1 +
+ chrome/android/java/AndroidManifest.xml | 21 +
+ chrome/android/proguard/main.flags | 1 +
+ chrome/android/java/res_template/xml/promethean_file_paths.xml | 10 +
+ chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java | 252 +
+ 6 files changed, 287 insertions(+), 0 deletion(-)
+
+diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
+--- a/chrome/android/BUILD.gn
++++ b/chrome/android/BUILD.gn
+@@ -1939,6 +1939,7 @@ jinja_template_resources("chrome_public_apk_template_resources") {
+   resources = [
+     "java/res_template/xml/file_paths.xml",
+     "java/res_template/xml/launchershortcuts.xml",
++    "java/res_template/xml/promethean_file_paths.xml",
+     "java/res_template/xml/searchable.xml",
+   ]
+   res_dir = "java/res_template"
+@@ -1950,6 +1951,7 @@ jinja_template_resources("chrome_test_apk_template_resources") {
+   resources = [
+     "java/res_template/xml/file_paths.xml",
+     "java/res_template/xml/launchershortcuts.xml",
++    "java/res_template/xml/promethean_file_paths.xml",
+     "java/res_template/xml/searchable.xml",
+   ]
+   res_dir = "java/res_template"
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
@@ -56,7 +81,7 @@ diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/Andro
      <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
      <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
      <uses-permission-sdk-23 android:name="android.permission.ACCESS_WIFI_STATE" />
-@@ -1304,6 +1308,13 @@ by a child template that "extends" this file.
+@@ -1304,6 +1308,23 @@ by a child template that "extends" this file.
            android:name="com.prometheanworld.telemetry.product_name"
            android:value="@string/app_name" />
 
@@ -66,6 +91,16 @@ diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/Andro
 +          android:exported="true"
 +          android:enabled="true"
 +          android:permission="org.chromium.chrome.permission.PROMETHEAN_PROVIDER" />
++
++      <provider
++          android:authorities="org.chromium.chrome.PrometheanFileProvider"
++          android:name="androidx.core.content.FileProvider"
++          android:exported="false"
++          android:grantUriPermissions="true" >
++          <meta-data
++              android:name="android.support.FILE_PROVIDER_PATHS"
++              android:resource="@xml/promethean_file_paths" />
++      </provider>
 +
        {% block base_application_definitions %}
        {% endblock %}
@@ -78,30 +113,49 @@ diff --git a/chrome/android/proguard/main.flags b/chrome/android/proguard/main.f
    public <init>();
  }
 +-keep class org.chromium.chrome.browser.PrometheanContentProvider {*;}
+diff --git a/chrome/android/java/res_template/xml/promethean_file_paths.xml b/chrome/android/java/res_template/xml/promethean_file_paths.xml
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/res_template/xml/promethean_file_paths.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<paths xmlns:android="http://schemas.android.com/apk/res/android">
++   <files-path
++       name="data"
++       path=".." />
++
++   <external-files-path
++       name="external"
++       path=".." />
++</paths>
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java b/chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java
 new file mode 100644
 --- /dev/null
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,252 @@
 +package org.chromium.chrome.browser;
 +
 +import android.content.ContentProvider;
 +import android.content.ContentValues;
++import android.content.Intent;
 +import android.content.UriMatcher;
 +import android.database.Cursor;
 +import android.database.MatrixCursor;
 +import android.net.Uri;
++import android.os.Bundle;
 +import android.text.TextUtils;
 +import android.util.Log;
 +
 +import androidx.annotation.NonNull;
 +import androidx.annotation.Nullable;
++import androidx.core.content.FileProvider;
 +
 +import java.io.BufferedReader;
 +import java.io.BufferedWriter;
 +import java.io.File;
 +import java.io.FileReader;
 +import java.io.FileWriter;
++import java.util.ArrayList;
 +import java.util.HashSet;
 +import java.util.Set;
 +
@@ -110,10 +164,15 @@ new file mode 100644
 +    private static final String TAG = "PrometheanContentProvider";
 +
 +    private static final String AUTHORITY = "org.chromium.chrome.PrometheanContentProvider";
++    private static final String FILE_PROVIDER_URI = "org.chromium.chrome.PrometheanFileProvider";
 +    private static final String PATH_DATA_DATA_LOCAL_STATE = "data-data/localState";
 +    private static final String PATH_CLEAR_USER_DATA = "clearUserData";
++    private static final String PATH_GET_FILE_URI = "getFileUri";
++    private static final String PATH_GET_ALL_FILES_OF_DIR = "getAllFilesOfDir";
 +    private static final int CODE_DATA_DATA_LOCAL_STATE = 1;
 +    private static final int CODE_CLEAR_USER_DATA = 2;
++    private static final int CODE_GET_FILE_URI = 3;
++    private static final int CODE_GET_ALL_FILES_OF_DIR = 4;
 +    private static final String KEY_DATA = "data";
 +    private static final UriMatcher URI_MATCHER = new UriMatcher(UriMatcher.NO_MATCH);
 +    private static final Set<String> CLEAR_FILES_OR_DIRS = new HashSet<>();
@@ -121,6 +180,8 @@ new file mode 100644
 +    static {
 +        URI_MATCHER.addURI(AUTHORITY, PATH_DATA_DATA_LOCAL_STATE, CODE_DATA_DATA_LOCAL_STATE);
 +        URI_MATCHER.addURI(AUTHORITY, PATH_CLEAR_USER_DATA, CODE_CLEAR_USER_DATA);
++        URI_MATCHER.addURI(AUTHORITY, PATH_GET_FILE_URI, CODE_GET_FILE_URI);
++        URI_MATCHER.addURI(AUTHORITY, PATH_GET_ALL_FILES_OF_DIR, CODE_GET_ALL_FILES_OF_DIR);
 +    }
 +
 +    @Override
@@ -141,7 +202,9 @@ new file mode 100644
 +        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/share_history");
 +        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/shared_proto_db");
 +        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/AutofillStrikeDatabase");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Session");
 +        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Session Storage");
++        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Top Sites");
 +        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Cookies");
 +        CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Cookies-journal");
 +        CLEAR_FILES_OR_DIRS.add(externalDir);
@@ -151,11 +214,38 @@ new file mode 100644
 +    @Nullable
 +    @Override
 +    public Cursor query(@NonNull Uri uri, @Nullable String[] projection, @Nullable String selection, @Nullable String[] selectionArgs, @Nullable String sortOrder) {
-+        if (URI_MATCHER.match(uri) == CODE_DATA_DATA_LOCAL_STATE) {
++        int code = URI_MATCHER.match(uri);
++        if (code == CODE_DATA_DATA_LOCAL_STATE) {
 +            String[] columnNames = {KEY_DATA};
 +            Object[] columnValues = {readFromLocalState()};
 +            MatrixCursor cursor = new MatrixCursor(columnNames);
 +            cursor.addRow(columnValues);
++            return cursor;
++        } else if (code == CODE_GET_FILE_URI) {
++            if (projection == null || projection.length == 0) {
++                return null;
++            }
++            MatrixCursor cursor = new MatrixCursor(new String[0]);
++            cursor.addRow(new Object[0]);
++            Bundle bundle = new Bundle();
++            for (String filePath : projection) {
++                bundle.putString(filePath, fileToUri(new File(filePath)));
++            }
++            cursor.setExtras(bundle);
++            return cursor;
++        } else if (code == CODE_GET_ALL_FILES_OF_DIR) {
++            if (projection == null || projection.length == 0) {
++                return null;
++            }
++            MatrixCursor cursor = new MatrixCursor(new String[0]);
++            cursor.addRow(new Object[0]);
++            Bundle bundle = new Bundle();
++            for (String filePath : projection) {
++                ArrayList<String> list = new ArrayList<>();
++                getAllFilesOfDir(new File(filePath), list);
++                bundle.putStringArrayList(filePath, list);
++            }
++            cursor.setExtras(bundle);
 +            return cursor;
 +        }
 +        return null;
@@ -254,6 +344,42 @@ new file mode 100644
 +            if (files != null) {
 +                for (File f : files) {
 +                    deleteFileOrDir(f);
++                }
++            }
++        }
++    }
++
++    private String fileToUri(File file) {
++        try {
++            if (!file.exists()) {
++                File parentFile = file.getParentFile();
++                if (parentFile != null && !parentFile.exists()) {
++                    parentFile.mkdirs();
++                }
++                file.createNewFile();
++            }
++            Uri uri = FileProvider.getUriForFile(getContext(), FILE_PROVIDER_URI, file);
++            getContext().grantUriPermission(getCallingPackage(), uri,
++                    Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
++            return uri.toString();
++        } catch (Throwable e) {
++            return null;
++        }
++    }
++
++    private void getAllFilesOfDir(File file, ArrayList<String> list) {
++        if (file == null || !file.exists()) {
++            return;
++        }
++        if (file.isFile()) {
++            list.add(file.getAbsolutePath());
++            return;
++        }
++        if (file.isDirectory()) {
++            File[] files = file.listFiles();
++            if (files != null && files.length > 0) {
++                for (File f : files) {
++                    getAllFilesOfDir(f, list);
 +                }
 +            }
 +        }
