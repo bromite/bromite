@@ -50,6 +50,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../StatusIndicatorSceneLayer.java            |  7 ++-
  .../browser/toolbar/ToolbarManager.java       | 37 +++++++++++--
  .../chrome/browser/ui/BottomContainer.java    | 19 +++++++
+ .../ui/system/StatusBarColorController.java   |  9 ++++
  chrome/browser/about_flags.cc                 |  5 ++
  .../scene_layer/tab_strip_scene_layer.cc      | 16 ++++--
  .../BrowserControlsMarginSupplier.java        |  6 +++
@@ -60,7 +61,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../flags/android/chrome_feature_list.cc      |  2 +
  .../browser/flags/CachedFeatureFlags.java     | 19 +++++++
  .../browser/flags/ChromeFeatureList.java      |  4 ++
- .../chrome/browser/ui/appmenu/AppMenu.java    | 25 +++++++++
+ .../chrome/browser/ui/appmenu/AppMenu.java    | 30 +++++++++++
  .../ui/appmenu/AppMenuHandlerImpl.java        | 11 ++++
  .../omnibox/LocationBarCoordinator.java       |  9 +++-
  .../browser/omnibox/UrlBarCoordinator.java    | 11 +++-
@@ -85,7 +86,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../accessibility/AccessibilitySettings.java  | 16 ++++++
  .../AccessibilitySettingsDelegate.java        |  6 +++
  .../render_widget_host_view_android.cc        |  3 ++
- 73 files changed, 768 insertions(+), 56 deletions(-)
+ 74 files changed, 782 insertions(+), 56 deletions(-)
 
 diff --git a/cc/base/features.cc b/cc/base/features.cc
 --- a/cc/base/features.cc
@@ -1493,6 +1494,32 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ui/BottomContai
          float offsetFromControls = mBrowserControlsStateProvider.getBottomControlOffset()
                  - mBrowserControlsStateProvider.getBottomControlsHeight();
          offsetFromControls -= mViewportInsetSupplier.get();
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ui/system/StatusBarColorController.java b/chrome/android/java/src/org/chromium/chrome/browser/ui/system/StatusBarColorController.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ui/system/StatusBarColorController.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ui/system/StatusBarColorController.java
+@@ -13,6 +13,9 @@ import android.view.Window;
+ import androidx.annotation.ColorInt;
+ import androidx.annotation.Nullable;
+ 
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
++import org.chromium.chrome.browser.flags.CachedFeatureFlags;
++
+ import org.chromium.base.ApiCompatibilityUtils;
+ import org.chromium.base.CallbackController;
+ import org.chromium.base.supplier.ObservableSupplier;
+@@ -347,6 +350,12 @@ public class StatusBarColorController
+         boolean needsDarkStatusBarIcons = !ColorUtils.shouldUseLightForegroundOnBackground(color);
+         ApiCompatibilityUtils.setStatusBarIconColor(root, needsDarkStatusBarIcons);
+         ApiCompatibilityUtils.setStatusBarColor(mWindow, color);
++        if (CachedFeatureFlags.isEnabled(ChromeFeatureList.MOVE_TOP_TOOLBAR_TO_BOTTOM) &&
++                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
++            UiUtils.setNavigationBarIconColor(mWindow.getDecorView().getRootView(),
++                needsDarkStatusBarIcons);
++            mWindow.setNavigationBarColor(color);
++        }
+     }
+ 
+     /**
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
@@ -1758,7 +1785,19 @@ diff --git a/chrome/browser/ui/android/appmenu/internal/java/src/org/chromium/ch
  
          int footerHeight = inflateFooter(footerResourceId, contentView, menuWidth);
          int headerHeight = inflateHeader(headerResourceId, contentView, menuWidth);
-@@ -349,6 +357,14 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
+@@ -302,6 +310,11 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
+         if (popupHeight + popupPosition[1] > visibleDisplayFrame.bottom) {
+             mPopup.setHeight(visibleDisplayFrame.height());
+         }
++        if (CachedFeatureFlags.isEnabled(ChromeFeatureList.MOVE_TOP_TOOLBAR_TO_BOTTOM)) {
++            // due to some unknown behaviour, the popup must be resized to
++            // allow selection without leaving touch
++            mPopup.setHeight(popupHeight-1);
++        }
+ 
+         try {
+             mPopup.showAtLocation(anchorView.getRootView(), Gravity.NO_GRAVITY, popupPosition[0],
+@@ -349,6 +362,14 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
          int anchorViewX = tempLocation[0];
          int anchorViewY = tempLocation[1];
  
@@ -1773,7 +1812,7 @@ diff --git a/chrome/browser/ui/android/appmenu/internal/java/src/org/chromium/ch
          int[] offsets = new int[2];
          // If we have a hardware menu button, locate the app menu closer to the estimated
          // hardware menu button location.
-@@ -539,6 +555,15 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
+@@ -539,6 +560,15 @@ class AppMenu implements OnItemClickListener, OnKeyListener, AppMenuClickHandler
          }
          int availableScreenSpace = Math.max(
                  anchorViewY, appDimensions.height() - anchorViewY - anchorViewImpactHeight);
