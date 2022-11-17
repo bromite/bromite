@@ -56,9 +56,9 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../flags/android/chrome_feature_list.cc      |   4 +-
  chrome/browser/history/history_tab_helper.cc  |  18 ++
  chrome/browser/history/history_tab_helper.h   |  10 +-
- .../android/offline_page_bridge.cc            |  13 +-
- .../android/offline_page_model_factory.cc     |  21 ++-
- .../android/request_coordinator_factory.cc    |  21 ++-
+ .../android/offline_page_bridge.cc            |  11 +-
+ .../android/offline_page_model_factory.cc     |  20 ++-
+ .../android/request_coordinator_factory.cc    |  26 ++-
  .../offline_page_model_factory.h              |   1 +
  .../offline_pages/recent_tab_helper.cc        |  19 ++-
  .../browser/offline_pages/recent_tab_helper.h |   3 +
@@ -82,7 +82,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../omnibox/browser/base_search_provider.cc   |   2 +-
  components/omnibox/browser/search_provider.cc |   4 +-
  .../host_content_settings_map_factory.cc      |   1 +
- 63 files changed, 680 insertions(+), 74 deletions(-)
+ 63 files changed, 683 insertions(+), 73 deletions(-)
  create mode 100644 chrome/android/java/res/xml/incognito_preferences.xml
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/AlwaysIncognitoLinkInterceptor.java
  create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/IncognitoSettings.java
@@ -1316,38 +1316,23 @@ diff --git a/chrome/browser/offline_pages/android/offline_page_bridge.cc b/chrom
  
  using base::android::ConvertJavaStringToUTF8;
  using base::android::ConvertUTF16ToJavaString;
-@@ -156,7 +159,13 @@ void ValidateFileCallback(
-     int64_t offline_id,
-     const GURL& url,
-     const base::FilePath& file_path,
-+    SimpleFactoryKey* key,
-     bool is_trusted) {
-+  // in always incognito, never trust input file (show file name in url)
-+  ProfileKey* profile_key = ProfileKey::FromSimpleFactoryKey(key);
-+  if(profile_key->GetPrefs()->GetBoolean(prefs::kIncognitoTabHistoryEnabled))
-+    is_trusted = false;
-+
-   // If trusted, the launch url will be the http/https url of the offline
-   // page. If the file path is content URI, directly open it. Otherwise, the
-   // launch url will be the file URL pointing to the archive file of the offline
-@@ -787,7 +796,7 @@ void OfflinePageBridge::GetPageByOfflineIdDone(
+@@ -785,9 +788,15 @@ void OfflinePageBridge::GetPageByOfflineIdDone(
+   }
+ 
    if (offline_page_model_->IsArchiveInInternalDir(offline_page->file_path)) {
++    bool is_trusted = true;
++    // in always incognito, never trust input file (show file name in url)
++    ProfileKey* profile_key = ProfileKey::FromSimpleFactoryKey(key_);
++    if(profile_key->GetPrefs()->GetBoolean(prefs::kIncognitoTabHistoryEnabled))
++      is_trusted = false;
++
      ValidateFileCallback(launch_location, j_callback_obj,
                           offline_page->offline_id, offline_page->url,
 -                         offline_page->file_path, true /* is_trusted*/);
-+                         offline_page->file_path, key_, true /* is_trusted*/);
++                         offline_page->file_path, is_trusted);
      return;
    }
  
-@@ -797,7 +806,7 @@ void OfflinePageBridge::GetPageByOfflineIdDone(
-                      offline_page->file_size, offline_page->digest),
-       base::BindOnce(&ValidateFileCallback, launch_location, j_callback_obj,
-                      offline_page->offline_id, offline_page->url,
--                     offline_page->file_path));
-+                     offline_page->file_path, key_));
- }
- 
- void OfflinePageBridge::GetSizeAndComputeDigestDone(
 diff --git a/chrome/browser/offline_pages/android/offline_page_model_factory.cc b/chrome/browser/offline_pages/android/offline_page_model_factory.cc
 --- a/chrome/browser/offline_pages/android/offline_page_model_factory.cc
 +++ b/chrome/browser/offline_pages/android/offline_page_model_factory.cc
@@ -1361,15 +1346,7 @@ diff --git a/chrome/browser/offline_pages/android/offline_page_model_factory.cc 
  
  namespace offline_pages {
  
-@@ -46,6 +49,7 @@ OfflinePageModel* OfflinePageModelFactory::GetForKey(SimpleFactoryKey* key) {
- OfflinePageModel* OfflinePageModelFactory::GetForBrowserContext(
-     content::BrowserContext* browser_context) {
-   Profile* profile = Profile::FromBrowserContext(browser_context);
-+  profile = profile->GetOriginalProfile();
-   return GetForKey(profile->GetProfileKey());
- }
- 
-@@ -54,13 +58,15 @@ std::unique_ptr<KeyedService> OfflinePageModelFactory::BuildServiceInstanceFor(
+@@ -54,13 +57,15 @@ std::unique_ptr<KeyedService> OfflinePageModelFactory::BuildServiceInstanceFor(
    scoped_refptr<base::SequencedTaskRunner> background_task_runner =
        base::ThreadPool::CreateSequencedTaskRunner({base::MayBlock()});
  
@@ -1387,7 +1364,7 @@ diff --git a/chrome/browser/offline_pages/android/offline_page_model_factory.cc 
    // If base::PathService::Get returns false, the temporary_archives_dir will be
    // empty, and no temporary pages will be saved during this chrome lifecycle.
    base::FilePath temporary_archives_dir;
-@@ -69,7 +75,6 @@ std::unique_ptr<KeyedService> OfflinePageModelFactory::BuildServiceInstanceFor(
+@@ -69,7 +74,6 @@ std::unique_ptr<KeyedService> OfflinePageModelFactory::BuildServiceInstanceFor(
          temporary_archives_dir.Append(chrome::kOfflinePageArchivesDirname);
    }
  
@@ -1395,7 +1372,7 @@ diff --git a/chrome/browser/offline_pages/android/offline_page_model_factory.cc 
    auto archive_manager = std::make_unique<DownloadArchiveManager>(
        temporary_archives_dir, persistent_archives_dir,
        DownloadPrefs::GetDefaultDownloadDirectory(), background_task_runner,
-@@ -87,4 +92,14 @@ std::unique_ptr<KeyedService> OfflinePageModelFactory::BuildServiceInstanceFor(
+@@ -87,4 +91,14 @@ std::unique_ptr<KeyedService> OfflinePageModelFactory::BuildServiceInstanceFor(
    return model;
  }
  
@@ -1443,7 +1420,19 @@ diff --git a/chrome/browser/offline_pages/android/request_coordinator_factory.cc
    // Depends on OfflinePageModelFactory in SimpleDependencyManager.
  }
  
-@@ -111,4 +118,16 @@ KeyedService* RequestCoordinatorFactory::BuildServiceInstanceFor(
+@@ -79,6 +86,11 @@ RequestCoordinator* RequestCoordinatorFactory::GetForBrowserContext(
+ 
+ KeyedService* RequestCoordinatorFactory::BuildServiceInstanceFor(
+     content::BrowserContext* context) const {
++  if(context->IsOffTheRecord() &&
++      Profile::FromBrowserContext(context)->GetOriginalProfile()
++        ->GetPrefs()->GetBoolean(prefs::kIncognitoTabHistoryEnabled) == false) {
++    return nullptr;
++  }
+   std::unique_ptr<OfflinerPolicy> policy(new OfflinerPolicy());
+   std::unique_ptr<Offliner> offliner;
+   OfflinePageModel* model =
+@@ -111,4 +123,16 @@ KeyedService* RequestCoordinatorFactory::BuildServiceInstanceFor(
    return request_coordinator;
  }
  
