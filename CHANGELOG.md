@@ -1,5 +1,6 @@
 # 107.0.5304.96
 * bottom toolbar: fix for white strip at top in tab view (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2407)
+* reverse tab order from top to bottom when using bottom toolbar (thanks to @uazo)
 * dropped patches already merged upstream (partition DNS requests by top frame NIK, clipboard user gesture requirement removal)
 * disable StartSurface feature
 
