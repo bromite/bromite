@@ -1,3 +1,8 @@
+# 107.0.5304.114
+* fix for drag selection not working with bottom toolbar (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2411)
+* fix for navbar color not matching site color (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2416)
+* clamp time resolution in WebWorkers' requestAnimationFrame (thanks to @uazo)
+
 # 107.0.5304.96
 * bottom toolbar: fix for white strip at top in tab view (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2407)
 * reverse tab order from top to bottom when using bottom toolbar (thanks to @uazo)
