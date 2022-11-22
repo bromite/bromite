@@ -1,0 +1,113 @@
+From 7cb9024da2dee317b5f898bf081beb7ed5892cb5 Mon Sep 17 00:00:00 2001
+From: "guangxi.Chen" <gxchen@nd.com.cn>
+Date: Tue, 22 Nov 2022 15:01:15 +0800
+Subject: [PATCH] AP9-10283 As an authenticated user, I want Chromium Settings
+ to be available.
+
+1.Introduce the interface of IDP to obtain the login status.
+2.Set whether the setting button is visible according to the login status.
+
+fix version: 1.2.1
+---
+ chrome/android/BUILD.gn                            |  2 ++
+ .../app/appmenu/AppMenuPropertiesDelegateImpl.java | 14 +++++++++++++-
+ third_party/android_deps/build.gradle              |  2 ++
+ .../src/main/groovy/BuildConfigGenerator.groovy    |  1 +
+ 4 files changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
+index 4486eb9a8a..21a0b9bdc0 100644
+--- a/chrome/android/BUILD.gn
++++ b/chrome/android/BUILD.gn
+@@ -325,6 +325,7 @@ java_cpp_template("vr_build_config") {
+ 
+ android_library("chrome_java") {
+   deps = [
++    "//third_party/android_deps:com_prometheanworld_identity_api_java",
+     ":base_module_java",
+     ":chrome_app_java_resources",
+     ":chrome_public_android_manifest",
+@@ -2576,6 +2577,7 @@ android_library("base_module_java") {
+   ]
+   deps = [
+     "//third_party/android_deps:com_prometheanworld_telemetry_java",
++    "//third_party/android_deps:com_prometheanworld_identity_api_java",
+     ":chrome_base_module_resources",
+     "//base:base_java",
+     "//chrome/browser/download/android:file_provider_java",
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
+index 1f31902be3..aa1c975b2d 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
+@@ -100,6 +100,9 @@ import java.util.Map;
+ import org.chromium.components.prefs.PrefService;
+ import org.chromium.components.user_prefs.UserPrefs;
+ import org.chromium.chrome.browser.preferences.Pref;
++import com.prometheanworld.identity.impl.PrometheanProfileImpl;
++import com.prometheanworld.identity.dto.response.LoginStatusResponse;
++import com.prometheanworld.identity.handler.response.LoginStatusHandler;
+ 
+ /**
+  * Base implementation of {@link AppMenuPropertiesDelegate} that handles hiding and showing menu
+@@ -125,6 +128,8 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+     private int mAddAppTitleShown;
+     private Map<CustomViewBinder, Integer> mCustomViewTypeOffsetMap;
+     private boolean mIsTypeSpecificBookmarkItemRowPresent;
++    private PrometheanProfileImpl profileImpl;
++    private boolean hasUserLogin = false;
+ 
+     @VisibleForTesting
+     @IntDef({MenuGroup.INVALID, MenuGroup.PAGE_MENU, MenuGroup.OVERVIEW_MODE_MENU,
+@@ -190,6 +195,13 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+         mTabModelSelector = tabModelSelector;
+         mToolbarManager = toolbarManager;
+         mDecorView = decorView;
++        profileImpl = new PrometheanProfileImpl(mContext);
++        profileImpl.getLoginStatus(new LoginStatusHandler() {
++            @Override
++            public void handle(LoginStatusResponse loginStatusResponse) {
++                hasUserLogin = loginStatusResponse.isLoggedIn;
++            }
++        });
+ 
+         if (overviewModeBehaviorSupplier != null) {
+             overviewModeBehaviorSupplier.onAvailable(mCallbackController.makeCancelable(
+@@ -521,9 +533,9 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate
+         // AP9-5181 Hide Bookmark functionality and Settings
+         menu.findItem(R.id.all_bookmarks_menu_id).setVisible(false);
+         menu.findItem(R.id.bookmark_all_tabs_menu_id).setVisible(false);
+-        menu.findItem(R.id.preferences_id).setVisible(false);
+         menu.findItem(R.id.view_source_id).setVisible(false);
+         menu.findItem(R.id.exit_id).setVisible(false);
++        menu.findItem(R.id.preferences_id).setVisible(hasUserLogin);
+ 
+         updateManagedByMenuItem(menu, currentTab);
+     }
+diff --git a/third_party/android_deps/build.gradle b/third_party/android_deps/build.gradle
+index 687cb26e2f..d3a9edcf90 100644
+--- a/third_party/android_deps/build.gradle
++++ b/third_party/android_deps/build.gradle
+@@ -122,6 +122,8 @@ dependencies {
+ 
+     // promethean telemetry
+     compile 'com.prometheanworld:telemetry:latest.release'
++    // idp library
++    compile 'com.prometheanworld:identity_api:latest.release'
+ 
+     // Upstream guava introduced versions with -android suffix starting with version
+     // 22 to remove incompatible code with android. Thus we keep two jars, one for
+diff --git a/third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy b/third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy
+index c42108e4f7..d74abad687 100644
+--- a/third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy
++++ b/third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy
+@@ -891,6 +891,7 @@ class BuildConfigGenerator extends DefaultTask {
+                 sb.append('  visibility = [ "//build/android/unused_resources:*" ]\n')
+                 break
+             case 'com_prometheanworld_telemetry':
++            case 'com_prometheanworld_identity_api':
+             case 'com_prometheanworld_activpanel':
+             case 'com_mixpanel_android_mixpanel_android':
+                 sb.append('  extract_native_libraries = true\n')
+-- 
+2.38.1.windows.1
+
