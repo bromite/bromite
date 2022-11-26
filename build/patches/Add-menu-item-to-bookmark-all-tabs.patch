@@ -5,8 +5,8 @@ Subject: Add menu item to bookmark all tabs
 License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
 ---
  chrome/android/java/res/menu/main_menu.xml    |  7 +++
- .../chrome/browser/ChromeTabbedActivity.java  | 26 ++++++++
- .../browser/bookmarks/BookmarkBridge.java     | 60 +++++++++++++++++++
+ .../chrome/browser/ChromeTabbedActivity.java  | 24 ++++++++
+ .../browser/bookmarks/BookmarkBridge.java     | 61 +++++++++++++++++++
  .../browser/bookmarks/BookmarkUtils.java      |  4 ++
  .../bookmarks/android/bookmark_bridge.cc      | 17 ++++++
  .../bookmarks/android/bookmark_bridge.h       |  4 ++
@@ -25,7 +25,7 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  components/bookmarks/browser/bookmark_node.h  |  5 ++
  components/bookmarks/browser/model_loader.cc  |  3 +-
  .../bookmark_specifics_conversions.cc         |  1 +
- 21 files changed, 202 insertions(+), 10 deletions(-)
+ 21 files changed, 201 insertions(+), 10 deletions(-)
 
 diff --git a/chrome/android/java/res/menu/main_menu.xml b/chrome/android/java/res/menu/main_menu.xml
 --- a/chrome/android/java/res/menu/main_menu.xml
@@ -54,16 +54,15 @@ diff --git a/chrome/android/java/res/menu/main_menu.xml b/chrome/android/java/re
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-@@ -77,6 +77,8 @@ import org.chromium.chrome.browser.back_press.MinimizeAppAndCloseTabBackPressHan
+@@ -77,6 +77,7 @@ import org.chromium.chrome.browser.back_press.MinimizeAppAndCloseTabBackPressHan
  import org.chromium.chrome.browser.bookmarks.BookmarkUtils;
  import org.chromium.chrome.browser.browserservices.intents.WebappConstants;
  import org.chromium.chrome.browser.compositor.CompositorViewHolder;
-+import org.chromium.chrome.browser.bookmarks.BookmarkBridge;
 +import org.chromium.chrome.browser.bookmarks.BookmarkModel;
  import org.chromium.chrome.browser.compositor.layouts.Layout;
  import org.chromium.chrome.browser.compositor.layouts.LayoutManagerChrome;
  import org.chromium.chrome.browser.compositor.layouts.LayoutManagerChromePhone;
-@@ -2203,6 +2205,8 @@ public class ChromeTabbedActivity extends ChromeActivity<ChromeActivityComponent
+@@ -2203,6 +2204,8 @@ public class ChromeTabbedActivity extends ChromeActivity<ChromeActivityComponent
              CloseAllTabsDialog.show(this, getModalDialogManagerSupplier(),
                      () -> getTabModelSelector().closeAllTabs(), /*isIncognito=*/false);
              RecordUserAction.record("MobileMenuCloseAllTabs");
@@ -72,7 +71,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedAct
          } else if (id == R.id.close_all_incognito_tabs_menu_id) {
              // Close only incognito tabs
              CloseAllTabsDialog.show(this, getModalDialogManagerSupplier(),
-@@ -2255,6 +2259,28 @@ public class ChromeTabbedActivity extends ChromeActivity<ChromeActivityComponent
+@@ -2255,6 +2258,27 @@ public class ChromeTabbedActivity extends ChromeActivity<ChromeActivityComponent
          mTabModalHandler.onOmniboxFocusChanged(hasFocus);
      }
  
@@ -84,17 +83,16 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedAct
 +            return;
 +        }
 +
-+        final BookmarkBridge bridge = mBookmarkBridgeSupplier.get();
-+        final BookmarkModel bookmarkModel = new BookmarkModel();
++        final BookmarkModel bookmarkModel = mBookmarkModelSupplier.get();
 +        bookmarkModel.finishLoadingBookmarkModel(() -> {
 +            for (int i = 0; i < tabModel.getCount(); i++) {
 +                Tab tab = tabModel.getTabAt(i);
 +                if (tab.isNativePage()) {
 +                    continue;
 +                }
-+                bridge.addToTabsCollection(this, tab);
++                bookmarkModel.addToTabsCollection(this, tab);
 +            }
-+            bridge.finishedAddingToTabsCollection(this, getSnackbarManager());
++            bookmarkModel.finishedAddingToTabsCollection(this, getSnackbarManager());
 +        });
 +    }
 +
@@ -123,15 +121,16 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
  import org.chromium.components.bookmarks.BookmarkId;
  import org.chromium.components.bookmarks.BookmarkItem;
  import org.chromium.components.bookmarks.BookmarkType;
-@@ -87,6 +92,7 @@ import java.io.File;
+@@ -86,6 +91,8 @@ import java.io.File;
+  * bookmark model stored in native.
   */
  class BookmarkBridge {
-     private final Profile mProfile;
 +    private static final String TAG = "BookmarkBridge";
++
+     private final Profile mProfile;
      private boolean mIsDestroyed;
      private boolean mIsDoingExtensiveChanges;
-     private long mNativeBookmarkBridge;
-@@ -393,6 +399,16 @@ class BookmarkBridge {
+@@ -393,6 +400,16 @@ class BookmarkBridge {
                  mNativeBookmarkBridge, BookmarkBridge.this);
      }
  
@@ -148,7 +147,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
      /**
       * @return Id representing the special "other" folder from bookmark model.
       */
-@@ -1030,6 +1046,49 @@ class BookmarkBridge {
+@@ -1030,6 +1047,49 @@ class BookmarkBridge {
                  mNativeBookmarkBridge, BookmarkBridge.this, title, url);
      }
  
@@ -198,7 +197,7 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/bookmarks/Bookm
      /**
       * @param url The URL of the reading list item.
       * @return The reading list item with the URL, or null if no such reading list item.
-@@ -1327,6 +1386,7 @@ class BookmarkBridge {
+@@ -1327,6 +1387,7 @@ class BookmarkBridge {
          void getAllFoldersWithDepths(long nativeBookmarkBridge, BookmarkBridge caller,
                  List<BookmarkId> folderList, List<Integer> depthList);
          BookmarkId getRootFolderId(long nativeBookmarkBridge, BookmarkBridge caller);
@@ -496,7 +495,7 @@ diff --git a/components/bookmarks/browser/bookmark_codec.h b/components/bookmark
    base::Value Encode(
        const BookmarkNode* bookmark_bar_node,
        const BookmarkNode* other_folder_node,
-+                     const BookmarkNode* tabs_folder_node,
++      const BookmarkNode* tabs_folder_node,
        const BookmarkNode* mobile_folder_node,
        const BookmarkNode::MetaInfoMap* model_meta_info_map,
        const BookmarkNode::MetaInfoMap* model_unsynced_meta_info_map,
