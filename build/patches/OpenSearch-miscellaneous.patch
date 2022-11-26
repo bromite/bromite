@@ -43,7 +43,19 @@ diff --git a/chrome/browser/ui/search_engines/search_engine_tab_helper.cc b/chro
  #include "base/metrics/histogram_macros.h"
  #include "chrome/browser/favicon/favicon_utils.h"
  #include "chrome/browser/profiles/profile.h"
-@@ -69,16 +70,20 @@ std::u16string SearchEngineTabHelper::GenerateKeywordFromNavigationEntry(
+@@ -46,8 +47,10 @@ void SearchEngineTabHelper::BindOpenSearchDescriptionDocumentHandler(
+     mojo::PendingReceiver<chrome::mojom::OpenSearchDescriptionDocumentHandler>
+         receiver) {
+   // Bind only for outermost main frames.
+-  if (rfh->GetParentOrOuterDocument())
++  if (rfh->GetParentOrOuterDocument()) {
++    LOG(INFO) << "OpenSearch: not on main frame";
+     return;
++  }
+ 
+   auto* web_contents = content::WebContents::FromRenderFrameHost(rfh);
+   if (!web_contents)
+@@ -73,16 +76,20 @@ std::u16string SearchEngineTabHelper::GenerateKeywordFromNavigationEntry(
      NavigationEntry* entry) {
    // Don't autogenerate keywords for pages that are the result of form
    // submissions.
@@ -66,7 +78,7 @@ diff --git a/chrome/browser/ui/search_engines/search_engine_tab_helper.cc b/chro
    }
  
    // Don't autogenerate keywords for referrers that
-@@ -86,10 +91,10 @@ std::u16string SearchEngineTabHelper::GenerateKeywordFromNavigationEntry(
+@@ -90,10 +97,10 @@ std::u16string SearchEngineTabHelper::GenerateKeywordFromNavigationEntry(
    // b) have a path.
    //
    // If we relax the path constraint, we need to be sure to sanitize the path
@@ -80,17 +92,7 @@ diff --git a/chrome/browser/ui/search_engines/search_engine_tab_helper.cc b/chro
      return std::u16string();
    }
  
-@@ -116,22 +121,27 @@ void SearchEngineTabHelper::PageHasOpenSearchDescriptionDocument(
- 
-   // Only accept messages from the main frame.
-   if (osdd_handler_receivers_.GetCurrentTargetFrame() !=
--      web_contents()->GetPrimaryMainFrame())
-+      web_contents()->GetPrimaryMainFrame()) {
-+    LOG(INFO) << "OpenSearch: frame mismatch on page " << page_url;
-     return;
-+  }
- 
-   // Make sure that the page is the current page and other basic checks.
+@@ -121,15 +128,18 @@ void SearchEngineTabHelper::PageHasOpenSearchDescriptionDocument(
    // When |page_url| has file: scheme, this method doesn't work because of
    // http://b/issue?id=863583. For that reason, this doesn't check and allow
    // urls referring to osdd urls with same schemes.
@@ -112,7 +114,7 @@ diff --git a/chrome/browser/ui/search_engines/search_engine_tab_helper.cc b/chro
  
    // If the current page is a form submit, find the last page that was not a
    // form submit and use its url to generate the keyword from.
-@@ -141,8 +151,10 @@ void SearchEngineTabHelper::PageHasOpenSearchDescriptionDocument(
+@@ -139,8 +149,10 @@ void SearchEngineTabHelper::PageHasOpenSearchDescriptionDocument(
         (index > 0) && IsFormSubmit(entry);
         entry = controller.GetEntryAtIndex(index))
      --index;
@@ -124,7 +126,7 @@ diff --git a/chrome/browser/ui/search_engines/search_engine_tab_helper.cc b/chro
  
    // Autogenerate a keyword for the autodetected case; in the other cases we'll
    // generate a keyword later after fetching the OSDD.
-@@ -150,6 +162,12 @@ void SearchEngineTabHelper::PageHasOpenSearchDescriptionDocument(
+@@ -148,6 +160,12 @@ void SearchEngineTabHelper::PageHasOpenSearchDescriptionDocument(
    if (keyword.empty())
      return;
  
@@ -137,7 +139,7 @@ diff --git a/chrome/browser/ui/search_engines/search_engine_tab_helper.cc b/chro
    auto* frame = web_contents()->GetPrimaryMainFrame();
    mojo::Remote<network::mojom::URLLoaderFactory> url_loader_factory;
    frame->CreateNetworkServiceDefaultFactory(
-@@ -157,6 +175,7 @@ void SearchEngineTabHelper::PageHasOpenSearchDescriptionDocument(
+@@ -155,6 +173,7 @@ void SearchEngineTabHelper::PageHasOpenSearchDescriptionDocument(
  
    // Download the OpenSearch description document. If this is successful, a
    // new keyword will be created when done.
@@ -145,7 +147,7 @@ diff --git a/chrome/browser/ui/search_engines/search_engine_tab_helper.cc b/chro
    TemplateURLFetcherFactory::GetForProfile(profile)->ScheduleDownload(
        keyword, osdd_url, entry->GetFavicon().url,
        frame->GetLastCommittedOrigin(), url_loader_factory.get(),
-@@ -198,11 +217,18 @@ void SearchEngineTabHelper::GenerateKeywordIfNecessary(
+@@ -196,11 +215,18 @@ void SearchEngineTabHelper::GenerateKeywordIfNecessary(
    if (last_index <= 0)
      return;
  
@@ -166,7 +168,7 @@ diff --git a/chrome/browser/ui/search_engines/search_engine_tab_helper.cc b/chro
    TemplateURLService* url_service =
        TemplateURLServiceFactory::GetForProfile(profile);
    if (!url_service)
-@@ -213,7 +239,6 @@ void SearchEngineTabHelper::GenerateKeywordIfNecessary(
+@@ -211,7 +237,6 @@ void SearchEngineTabHelper::GenerateKeywordIfNecessary(
      return;
    }
  
@@ -190,9 +192,9 @@ diff --git a/chrome/renderer/chrome_render_frame_observer.cc b/chrome/renderer/c
    GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
    if (!osdd_url.is_empty()) {
 +    LOG(INFO) << "OpenSearch: found OSDD URL: " << osdd_url;
-     mojo::AssociatedRemote<chrome::mojom::OpenSearchDescriptionDocumentHandler>
+     mojo::Remote<chrome::mojom::OpenSearchDescriptionDocumentHandler>
          osdd_handler;
-     render_frame()->GetRemoteAssociatedInterfaces()->GetInterface(
+     render_frame()->GetBrowserInterfaceBroker()->GetInterface(
 diff --git a/components/search_engines/template_url_fetcher.cc b/components/search_engines/template_url_fetcher.cc
 --- a/components/search_engines/template_url_fetcher.cc
 +++ b/components/search_engines/template_url_fetcher.cc
@@ -246,7 +248,7 @@ diff --git a/components/search_engines/template_url_service.h b/components/searc
    // regardless of |url| if the default search provider is managed by policy or
    // controlled by an extension.
    bool CanMakeDefault(const TemplateURL* url) const;
-@@ -636,9 +639,6 @@ class TemplateURLService : public WebDataServiceConsumer,
+@@ -646,9 +649,6 @@ class TemplateURLService : public WebDataServiceConsumer,
    // SetKeywordSearchTermsForURL is invoked.
    void UpdateKeywordSearchTermsForURL(const URLVisitedDetails& details);
  
