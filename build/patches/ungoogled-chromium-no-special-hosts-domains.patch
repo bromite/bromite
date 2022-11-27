@@ -7,20 +7,22 @@ Disable domain reliability detection
 
 License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
 ---
- .../domain_reliability/service_factory.cc     |  24 +--
- components/domain_reliability/BUILD.gn        |  42 ++--
+ .../domain_reliability/service_factory.cc     |  24 +-
+ .../from_gws_page_load_metrics_observer.cc    |   6 +-
+ components/domain_reliability/BUILD.gn        |  42 ++-
  .../domain_reliability/bake_in_configs.py     |   2 +-
- .../domain_reliability/context_manager.cc     |  22 +--
+ .../domain_reliability/context_manager.cc     |  22 +-
  .../domain_reliability/google_configs.cc      |  10 +-
  .../domain_reliability/google_configs.h       |   8 +-
  components/domain_reliability/uploader.cc     |   2 +-
- components/google/core/common/google_util.cc  | 186 +-----------------
+ components/google/core/common/google_util.cc  | 243 +-----------------
+ components/google/core/common/google_util.h   |   5 -
  .../browser/page_load_metrics_util.cc         |   4 +-
- .../common/page_load_metrics_util.cc          |  33 +---
+ .../common/page_load_metrics_util.cc          |  33 +--
  components/search_engines/template_url.cc     |   6 +-
  net/base/url_util.cc                          |  21 --
  services/network/network_context.cc           |   2 +-
- 13 files changed, 41 insertions(+), 321 deletions(-)
+ 15 files changed, 41 insertions(+), 389 deletions(-)
 
 diff --git a/chrome/browser/domain_reliability/service_factory.cc b/chrome/browser/domain_reliability/service_factory.cc
 --- a/chrome/browser/domain_reliability/service_factory.cc
@@ -61,6 +63,29 @@ diff --git a/chrome/browser/domain_reliability/service_factory.cc b/chrome/brows
  }
  
  }  // namespace domain_reliability
+diff --git a/chrome/browser/page_load_metrics/observers/from_gws_page_load_metrics_observer.cc b/chrome/browser/page_load_metrics/observers/from_gws_page_load_metrics_observer.cc
+--- a/chrome/browser/page_load_metrics/observers/from_gws_page_load_metrics_observer.cc
++++ b/chrome/browser/page_load_metrics/observers/from_gws_page_load_metrics_observer.cc
+@@ -394,8 +394,7 @@ FromGWSPageLoadMetricsLogger::~FromGWSPageLoadMetricsLogger() = default;
+ void FromGWSPageLoadMetricsLogger::SetPreviouslyCommittedUrl(const GURL& url) {
+   if (page_load_metrics::IsGoogleSearchResultUrl(url)) {
+     previously_committed_url_is_search_results_ = true;
+-    navigation_initiated_search_mode_ =
+-        google_util::GoogleSearchModeFromUrl(url);
++    navigation_initiated_search_mode_ = google_util::GoogleSearchMode::kWeb;
+   }
+   previously_committed_url_is_search_redirector_ =
+       page_load_metrics::IsGoogleSearchRedirectorUrl(url);
+@@ -412,8 +411,7 @@ void FromGWSPageLoadMetricsLogger::SetNavigationStateForSidePanel(
+   initiating_side_panel_url_ = initiating_side_panel_url;
+   navigation_initiated_via_link_ = navigation_initiated_via_link;
+   if (page_load_metrics::IsGoogleSearchResultUrl(initiating_side_panel_url)) {
+-    navigation_initiated_search_mode_ =
+-        google_util::GoogleSearchModeFromUrl(initiating_side_panel_url);
++    navigation_initiated_search_mode_ = google_util::GoogleSearchMode::kWeb;
+   }
+ }
+ 
 diff --git a/components/domain_reliability/BUILD.gn b/components/domain_reliability/BUILD.gn
 --- a/components/domain_reliability/BUILD.gn
 +++ b/components/domain_reliability/BUILD.gn
@@ -241,14 +266,10 @@ diff --git a/components/domain_reliability/uploader.cc b/components/domain_relia
 diff --git a/components/google/core/common/google_util.cc b/components/google/core/common/google_util.cc
 --- a/components/google/core/common/google_util.cc
 +++ b/components/google/core/common/google_util.cc
-@@ -27,63 +27,7 @@
+@@ -31,60 +31,6 @@ namespace google_util {
  
- namespace google_util {
+ namespace {
  
--// Helpers --------------------------------------------------------------------
--
--namespace {
--
 -bool IsPathHomePageBase(base::StringPiece path) {
 -  return (path == "/") || (path == "/webhp");
 -}
@@ -302,11 +323,11 @@ diff --git a/components/google/core/common/google_util.cc b/components/google/co
 -  std::string www_domain = base::StrCat({"www.", domain_in_lower_case});
 -  return base::EqualsCaseInsensitiveASCII(host_minus_tld, www_domain);
 -}
-+// Global functions -----------------------------------------------------------
- 
+-
  // True if |url| is a valid URL with HTTP or HTTPS scheme. If |port_permission|
  // is DISALLOW_NON_STANDARD_PORTS, this also requires |url| to use the standard
-@@ -99,14 +43,7 @@ bool IsValidURL(const GURL& url, PortPermission port_permission) {
+ // port for its scheme (80 for HTTP, 443 for HTTPS).
+@@ -99,40 +45,7 @@ bool IsValidURL(const GURL& url, PortPermission port_permission) {
  
  bool IsCanonicalHostGoogleHostname(base::StringPiece canonical_host,
                                     SubdomainPermission subdomain_permission) {
@@ -318,14 +339,21 @@ diff --git a/components/google/core/common/google_util.cc b/components/google/co
 -      base::MakeFixedFlatSet<base::StringPiece>({GOOGLE_TLD_LIST});
 -  return IsValidHostName(canonical_host, "google", subdomain_permission,
 -                         google_tlds);
-+  return false;
- }
- 
- bool IsCanonicalHostYoutubeHostname(base::StringPiece canonical_host,
-@@ -122,17 +59,7 @@ bool IsCanonicalHostYoutubeHostname(base::StringPiece canonical_host,
- // Google subdomains for google search, and an HTTP or HTTPS scheme. Requires
- // |url| to use the standard port for its scheme (80 for HTTP, 443 for HTTPS).
- bool IsGoogleSearchSubdomainUrl(const GURL& url) {
+-}
+-
+-bool IsCanonicalHostYoutubeHostname(base::StringPiece canonical_host,
+-                                    SubdomainPermission subdomain_permission) {
+-  static constexpr auto youtube_tlds =
+-      base::MakeFixedFlatSet<base::StringPiece>({YOUTUBE_TLD_LIST});
+-
+-  return IsValidHostName(canonical_host, "youtube", subdomain_permission,
+-                         youtube_tlds);
+-}
+-
+-// True if |url| is a valid URL with a host that is in the static list of
+-// Google subdomains for google search, and an HTTP or HTTPS scheme. Requires
+-// |url| to use the standard port for its scheme (80 for HTTP, 443 for HTTPS).
+-bool IsGoogleSearchSubdomainUrl(const GURL& url) {
 -  if (!IsValidURL(url, PortPermission::DISALLOW_NON_STANDARD_PORTS))
 -    return false;
 -
@@ -341,7 +369,7 @@ diff --git a/components/google/core/common/google_util.cc b/components/google/co
  }
  
  }  // namespace
-@@ -141,16 +68,6 @@ bool IsGoogleSearchSubdomainUrl(const GURL& url) {
+@@ -141,16 +54,6 @@ bool IsGoogleSearchSubdomainUrl(const GURL& url) {
  
  const char kGoogleHomepageURL[] = "https://www.google.com/";
  
@@ -358,7 +386,7 @@ diff --git a/components/google/core/common/google_util.cc b/components/google/co
  std::string GetGoogleLocale(const std::string& application_locale) {
    // Google does not recognize "nb" for Norwegian Bokmal; it uses "no".
    return (application_locale == "nb") ? "no" : application_locale;
-@@ -163,25 +80,7 @@ GURL AppendGoogleLocaleParam(const GURL& url,
+@@ -163,25 +66,7 @@ GURL AppendGoogleLocaleParam(const GURL& url,
  }
  
  std::string GetGoogleCountryCode(const GURL& google_homepage_url) {
@@ -385,7 +413,7 @@ diff --git a/components/google/core/common/google_util.cc b/components/google/co
  }
  
  GURL GetGoogleSearchURL(const GURL& google_homepage_url) {
-@@ -227,93 +126,24 @@ bool IsGoogleDomainUrl(const GURL& url,
+@@ -227,93 +112,24 @@ bool IsGoogleDomainUrl(const GURL& url,
  
  bool IsGoogleHostname(base::StringPiece host,
                        SubdomainPermission subdomain_permission) {
@@ -483,6 +511,73 @@ diff --git a/components/google/core/common/google_util.cc b/components/google/co
    return false;
  }
  
+@@ -382,51 +198,4 @@ GURL AppendToAsyncQueryParam(const GURL& url,
+   return url.ReplaceComponents(replacements);
+ }
+ 
+-GoogleSearchMode GoogleSearchModeFromUrl(const GURL& url) {
+-  static_assert(GoogleSearchMode::kMaxValue == GoogleSearchMode::kFlights,
+-                "This function should be updated if new values are added to "
+-                "GoogleSearchMode");
+-
+-  base::StringPiece query_str = url.query_piece();
+-  url::Component query(0, static_cast<int>(url.query_piece().length()));
+-  url::Component key, value;
+-  GoogleSearchMode mode = GoogleSearchMode::kUnspecified;
+-  while (url::ExtractQueryKeyValue(query_str.data(), &query, &key, &value)) {
+-    base::StringPiece key_str = query_str.substr(key.begin, key.len);
+-    if (key_str != "tbm") {
+-      continue;
+-    }
+-    if (mode != GoogleSearchMode::kUnspecified) {
+-      // There is more than one tbm parameter, which is not expected. Return
+-      // kUnknown to signify the result can't be trusted.
+-      return GoogleSearchMode::kUnknown;
+-    }
+-    base::StringPiece value_str = query_str.substr(value.begin, value.len);
+-    if (value_str == "isch") {
+-      mode = GoogleSearchMode::kImages;
+-    } else if (value_str == "web") {
+-      mode = GoogleSearchMode::kWeb;
+-    } else if (value_str == "nws") {
+-      mode = GoogleSearchMode::kNews;
+-    } else if (value_str == "shop") {
+-      mode = GoogleSearchMode::kShopping;
+-    } else if (value_str == "vid") {
+-      mode = GoogleSearchMode::kVideos;
+-    } else if (value_str == "bks") {
+-      mode = GoogleSearchMode::kBooks;
+-    } else if (value_str == "flm") {
+-      mode = GoogleSearchMode::kFlights;
+-    } else if (value_str == "lcl") {
+-      mode = GoogleSearchMode::kLocal;
+-    } else {
+-      mode = GoogleSearchMode::kUnknown;
+-    }
+-  }
+-  if (mode == GoogleSearchMode::kUnspecified) {
+-    // No tbm query parameter means this is the Web mode.
+-    mode = GoogleSearchMode::kWeb;
+-  }
+-  return mode;
+-}
+-
+ }  // namespace google_util
+diff --git a/components/google/core/common/google_util.h b/components/google/core/common/google_util.h
+--- a/components/google/core/common/google_util.h
++++ b/components/google/core/common/google_util.h
+@@ -154,11 +154,6 @@ GURL AppendToAsyncQueryParam(const GURL& url,
+                              const std::string& key,
+                              const std::string& value);
+ 
+-// Returns Google Search mode used by the user. This corresponds to the tab
+-// (e.g. web result, image results, video results, etc.) the user is on. This
+-// information is extracted from the "tbm" query parameter on the Search URL.
+-GoogleSearchMode GoogleSearchModeFromUrl(const GURL& url);
+-
+ }  // namespace google_util
+ 
+ #endif  // COMPONENTS_GOOGLE_CORE_COMMON_GOOGLE_UTIL_H_
 diff --git a/components/page_load_metrics/browser/page_load_metrics_util.cc b/components/page_load_metrics/browser/page_load_metrics_util.cc
 --- a/components/page_load_metrics/browser/page_load_metrics_util.cc
 +++ b/components/page_load_metrics/browser/page_load_metrics_util.cc
