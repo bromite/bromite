@@ -4,9 +4,10 @@
 * drop patch for SDK21 to prevent crashes on download
 * fix patch to ignore enterprise policies for secure DNS (fixes https://github.com/bromite/bromite/issues/2463)
 * stop using SM-G960U as model provided via client hints and Javascript (fixes https://github.com/bromite/bromite/issues/2465)
-* temptative fix for OfflinePageModelFactory crash (fixes https://github.com/bromite/bromite/issues/2419)
+* temptative fix for OfflinePageModelFactory crash (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2419)
 * fix fingerprinting vector via Window.requestAnimationFrame() (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2370)
 * remove patch for offline measurements background task (fixes https://github.com/bromite/bromite/issues/2468)
+* enable PermuteTLSExtensions (fixes https://github.com/bromite/bromite/issues/2467)
 
 # 107.0.5304.114
 * fix for drag selection not working with bottom toolbar (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2411)
