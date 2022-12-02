@@ -1,7 +1,18 @@
+# 108.0.5359.75
+* drop patch to mark all favicons ON_DEMAND (fixed by upstream, see https://bugs.chromium.org/p/chromium/issues/detail?id=1096660)
+* enable AutomaticLazyFrameLoadingToAds and AutomaticLazyFrameLoadingToEmbeds features
+* drop patch for SDK21 to prevent crashes on download
+* fix patch to ignore enterprise policies for secure DNS (fixes https://github.com/bromite/bromite/issues/2463)
+* stop using SM-G960U as model provided via client hints and Javascript (fixes https://github.com/bromite/bromite/issues/2465)
+* temptative fix for OfflinePageModelFactory crash (fixes https://github.com/bromite/bromite/issues/2419)
+* fix fingerprinting vector via Window.requestAnimationFrame() (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2370)
+* remove patch for offline measurements background task (fixes https://github.com/bromite/bromite/issues/2468)
+
 # 107.0.5304.114
 * fix for drag selection not working with bottom toolbar (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2411)
 * fix for navbar color not matching site color (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2416)
 * clamp time resolution in WebWorkers' requestAnimationFrame (thanks to @uazo)
+* drop patch for AV1 codec support (already in upstream)
 
 # 107.0.5304.96
 * bottom toolbar: fix for white strip at top in tab view (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2407)
