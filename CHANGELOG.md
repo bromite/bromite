@@ -1,3 +1,8 @@
+# 108.0.5359.106
+* fix crash when using always incognito (fixes https://github.com/bromite/bromite/issues/2482)
+* enable third-party storage partitioning (fixes https://github.com/bromite/bromite/issues/2337)
+* disable features ExperimentsForAgsa, KeepPrefetchedContentSuggestions, CriticalClientHint, AcceptCHFrame (accidentally enabled but not effective in 108.0.5359.75)
+
 # 108.0.5359.75
 * drop patch to mark all favicons ON_DEMAND (fixed by upstream, see https://bugs.chromium.org/p/chromium/issues/detail?id=1096660)
 * enable AutomaticLazyFrameLoadingToAds and AutomaticLazyFrameLoadingToEmbeds features
@@ -8,6 +13,7 @@
 * fix fingerprinting vector via Window.requestAnimationFrame() (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2370)
 * remove patch for offline measurements background task (fixes https://github.com/bromite/bromite/issues/2468)
 * enable PermuteTLSExtensions (fixes https://github.com/bromite/bromite/issues/2467)
+* hide "turn on enhanced protection" in security interstitials
 
 # 107.0.5304.114
 * fix for drag selection not working with bottom toolbar (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2411)
