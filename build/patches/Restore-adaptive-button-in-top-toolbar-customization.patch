@@ -1,0 +1,287 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Wed, 7 Dec 2022 20:32:15 +0100
+Subject: Restore adaptive-button-in-top-toolbar-customization
+
+This reverts commit 18d03b9cca4e90d2a446ea28266876d8c5fdc4f0.
+Voice button and legacy share/voice functionality is not restored.
+
+License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
+---
+ .../chrome/browser/settings/MainSettings.java |  5 +-
+ .../browser/share/ShareButtonController.java  | 37 +++++++++++
+ chrome/browser/about_flags.cc                 |  6 --
+ chrome/browser/flag-metadata.json             |  3 +-
+ .../AdaptiveToolbarButtonController.java      |  6 +-
+ .../adaptive/AdaptiveToolbarFeatures.java     | 63 +++++++++++++++++++
+ .../AdaptiveToolbarStatePredictor.java        |  7 ++-
+ .../AdaptiveToolbarStatePredictorTest.java    | 15 +++++
+ 8 files changed, 132 insertions(+), 10 deletions(-)
+
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
+@@ -39,6 +39,7 @@ import org.chromium.chrome.browser.password_manager.PasswordManagerLauncher;
+ import org.chromium.chrome.browser.preferences.Pref;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.search_engines.TemplateUrlServiceFactory;
++import org.chromium.chrome.browser.toolbar.adaptive.AdaptiveToolbarFeatures;
+ import org.chromium.chrome.browser.toolbar.adaptive.AdaptiveToolbarStatePredictor;
+ import org.chromium.chrome.browser.tracing.settings.DeveloperSettings;
+ import org.chromium.components.browser_ui.settings.ChromeBasePreference;
+@@ -167,7 +168,9 @@ public class MainSettings extends PreferenceFragmentCompat
+ 
+         new AdaptiveToolbarStatePredictor(null).recomputeUiState(uiState -> {
+             // We don't show the toolbar shortcut settings page if disabled from finch.
+-            if (uiState.canShowUi) return;
++            // Note, we can still have the old data collection experiment running for which
++            // |canShowUi| might be true. In that case, just hide the settings page.
++            if (uiState.canShowUi && !AdaptiveToolbarFeatures.isSingleVariantModeEnabled()) return;
+             getPreferenceScreen().removePreference(findPreference(PREF_TOOLBAR_SHORTCUT));
+         });
+     }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/share/ShareButtonController.java b/chrome/android/java/src/org/chromium/chrome/browser/share/ShareButtonController.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/share/ShareButtonController.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/share/ShareButtonController.java
+@@ -95,6 +95,43 @@ public class ShareButtonController extends BaseButtonDataProvider {
+         return mShareUtils.shouldEnableShare(tab);
+     }
+ 
++/*    @Override
++    public ButtonData get(Tab tab) {
++        updateButtonVisibility(tab);
++        maybeSetIphCommandBuilder(tab);
++        return mButtonData;
++    }
++
++    private void updateButtonVisibility(Tab tab) {
++        if (tab == null || tab.getWebContents() == null || mTabProvider == null
++                || mTabProvider.get() == null || !isFeatureEnabled()) {
++            mButtonData.setCanShow(false);
++            return;
++        }
++
++        final boolean isDeviceWideEnough =
++                mScreenWidthDp >= AdaptiveToolbarFeatures.getDeviceMinimumWidthForShowingButton();
++        if (mShareDelegateSupplier.get() == null || !isDeviceWideEnough) {
++            mButtonData.setCanShow(false);
++            return;
++        }
++
++        mButtonData.setCanShow(mShareUtils.shouldEnableShare(tab));
++    }
++
++    private static boolean isFeatureEnabled() {
++        return (AdaptiveToolbarFeatures.isSingleVariantModeEnabled()
++                       && AdaptiveToolbarFeatures.getSingleVariantMode()
++                               == AdaptiveToolbarButtonVariant.SHARE)
++                || AdaptiveToolbarFeatures.isCustomizationEnabled();
++    }
++
++    private void notifyObservers(boolean hint) {
++        for (ButtonDataObserver observer : mObservers) {
++            observer.buttonDataChanged(hint);
++        }
++    } */
++
+     /**
+      * Returns an IPH for this button. Only called once native is initialized and when {@code
+      * AdaptiveToolbarFeatures.isCustomizationEnabled()} is true.
+diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
+--- a/chrome/browser/about_flags.cc
++++ b/chrome/browser/about_flags.cc
+@@ -571,18 +571,12 @@ const FeatureEntry::FeatureParam kAdaptiveButtonCustomization_Share[] = {
+     {"default_segment", "share"},
+     {"show_ui_only_after_ready", "false"},
+     {"ignore_segmentation_results", "true"}};
+-const FeatureEntry::FeatureParam kAdaptiveButtonCustomization_Voice[] = {
+-    {"default_segment", "voice"},
+-    {"show_ui_only_after_ready", "false"},
+-    {"ignore_segmentation_results", "true"}};
+ const FeatureEntry::FeatureVariation
+     kAdaptiveButtonInTopToolbarCustomizationVariations[] = {
+         {"New Tab", kAdaptiveButtonCustomization_NewTab,
+          std::size(kAdaptiveButtonCustomization_NewTab), nullptr},
+         {"Share", kAdaptiveButtonCustomization_Share,
+          std::size(kAdaptiveButtonCustomization_Share), nullptr},
+-        {"Voice", kAdaptiveButtonCustomization_Voice,
+-         std::size(kAdaptiveButtonCustomization_Voice), nullptr},
+ };
+ 
+ const FeatureEntry::FeatureParam kContextualPageActionPriceTracking_Quiet[] = {
+diff --git a/chrome/browser/flag-metadata.json b/chrome/browser/flag-metadata.json
+--- a/chrome/browser/flag-metadata.json
++++ b/chrome/browser/flag-metadata.json
+@@ -54,9 +54,10 @@
+     "expiry_milestone": 99
+   },
+   {
++    // restored in Bromite
+     "name": "adaptive-button-in-top-toolbar-customization",
+     "owners": [ "shaktisahu", "chrome-segmentation-platform@google.com" ],
+-    "expiry_milestone": 107
++    "expiry_milestone": -1
+   },
+   {
+     "name": "adaptive-charging",
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarButtonController.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarButtonController.java
+--- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarButtonController.java
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarButtonController.java
+@@ -234,7 +234,11 @@ public class AdaptiveToolbarButtonController
+ 
+     @Override
+     public void onFinishNativeInitialization() {
+-        if (AdaptiveToolbarFeatures.isCustomizationEnabled()) {
++        if (AdaptiveToolbarFeatures.isSingleVariantModeEnabled()) {
++            @AdaptiveToolbarButtonVariant
++            int variant = AdaptiveToolbarFeatures.getSingleVariantMode();
++            setSingleProvider(variant);
++        } else if (AdaptiveToolbarFeatures.isCustomizationEnabled()) {
+             mAdaptiveToolbarStatePredictor.recomputeUiState(uiState -> {
+                 mSessionButtonVariant = uiState.canShowUi ? uiState.toolbarButtonState
+                                                           : AdaptiveToolbarButtonVariant.UNKNOWN;
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarFeatures.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarFeatures.java
+--- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarFeatures.java
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarFeatures.java
+@@ -16,8 +16,18 @@ import java.lang.annotation.RetentionPolicy;
+ 
+ /**
+  * A utility class for handling feature flags used by {@link AdaptiveToolbarButtonController}.
++ *
++ * <p>TODO(shaktisahu): This class supports both the data collection and the customization
++ * experiment. Cleanup once the former is no longer needed.
+  */
+ public class AdaptiveToolbarFeatures {
++    /** Adaptive toolbar button is always empty. */
++    public static final String ALWAYS_NONE = "always-none";
++    /** Adaptive toolbar button opens a new tab. */
++    public static final String ALWAYS_NEW_TAB = "always-new-tab";
++    /** Adaptive toolbar button shares the current tab. */
++    public static final String ALWAYS_SHARE = "always-share";
++
+     /** Finch default group for new tab variation. */
+     static final String NEW_TAB = "new-tab";
+     /** Finch default group for share variation. */
+@@ -30,6 +40,7 @@ public class AdaptiveToolbarFeatures {
+     private static final String VARIATION_PARAM_DISABLE_UI = "disable_ui";
+     private static final String VARIATION_PARAM_IGNORE_SEGMENTATION_RESULTS =
+             "ignore_segmentation_results";
++    private static final String VARIATION_PARAM_SINGLE_VARIANT_MODE = "mode";
+     private static final String VARIATION_PARAM_SHOW_UI_ONLY_AFTER_READY =
+             "show_ui_only_after_ready";
+     @VisibleForTesting
+@@ -104,6 +115,21 @@ public class AdaptiveToolbarFeatures {
+         return false;
+     }
+ 
++    /**
++     * Returns whether the adaptive toolbar is enabled in single variant mode. Returns true also to
++     * provide legacy support for feature flags {@code ShareButtonInTopToolbar} and {@code
++     * VoiceButtonInTopToolbar}.
++     *
++     * <p>Must be called with the {@link FeatureList} initialized.
++     */
++    public static boolean isSingleVariantModeEnabled() {
++        if (isCustomizationEnabled()) return false;
++        if (ChromeFeatureList.isEnabled(ChromeFeatureList.ADAPTIVE_BUTTON_IN_TOP_TOOLBAR)) {
++            return true;
++        }
++        return false;
++    }
++
+     /**
+      * Returns whether the adaptive toolbar is enabled with segmentation and customization.
+      *
+@@ -187,12 +213,49 @@ public class AdaptiveToolbarFeatures {
+                         ChromeFeatureList.CONTEXTUAL_PAGE_ACTIONS, "enable_ui", true);
+     }
+ 
++    /**
++     * When the adaptive toolbar is configured in a single button variant mode, returns the {@link
++     * AdaptiveToolbarButtonVariant} being used.
++     *
++     * <p>This methods avoids parsing param strings more than once. Tests need to call {@link
++     * #clearParsedParamsForTesting()} to clear the cached values.
++     *
++     * <p>Must be called with the {@link FeatureList} initialized.
++     *
++     * <p>TODO(shaktisahu): Have a similar method for segmentation.
++     */
++    @AdaptiveToolbarButtonVariant
++    public static int getSingleVariantMode() {
++        assert isSingleVariantModeEnabled();
++        if (sButtonVariant != null) return sButtonVariant;
++
++        String mode = ChromeFeatureList.getFieldTrialParamByFeature(
++                ChromeFeatureList.ADAPTIVE_BUTTON_IN_TOP_TOOLBAR,
++                VARIATION_PARAM_SINGLE_VARIANT_MODE);
++        switch (mode) {
++            case ALWAYS_NONE:
++                sButtonVariant = AdaptiveToolbarButtonVariant.NONE;
++                break;
++            case ALWAYS_NEW_TAB:
++                sButtonVariant = AdaptiveToolbarButtonVariant.NEW_TAB;
++                break;
++            case ALWAYS_SHARE:
++                sButtonVariant = AdaptiveToolbarButtonVariant.SHARE;
++                break;
++            default:
++                sButtonVariant = AdaptiveToolbarButtonVariant.UNKNOWN;
++                break;
++        }
++        return sButtonVariant;
++    }
++
+     /**
+      * Returns the default variant to be shown in segmentation experiment when the backend results
+      * are unavailable or not configured.
+      */
+     @AdaptiveToolbarButtonVariant
+     static int getSegmentationDefault() {
++        assert !isSingleVariantModeEnabled();
+         assert isCustomizationEnabled();
+         if (sButtonVariant != null) return sButtonVariant;
+         String defaultSegment = getDefaultSegment();
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarStatePredictor.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarStatePredictor.java
+--- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarStatePredictor.java
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarStatePredictor.java
+@@ -97,7 +97,12 @@ public class AdaptiveToolbarStatePredictor {
+ 
+         // Early return if the feature isn't enabled.
+         if (!AdaptiveToolbarFeatures.isCustomizationEnabled()) {
+-            callback.onResult(new UiState(false, AdaptiveToolbarButtonVariant.UNKNOWN,
++            boolean canShowUi = AdaptiveToolbarFeatures.isSingleVariantModeEnabled();
++            @AdaptiveToolbarButtonVariant
++            int toolbarButtonState = AdaptiveToolbarFeatures.isSingleVariantModeEnabled()
++                    ? AdaptiveToolbarFeatures.getSingleVariantMode()
++                    : AdaptiveToolbarButtonVariant.UNKNOWN;
++            callback.onResult(new UiState(canShowUi, toolbarButtonState,
+                     AdaptiveToolbarButtonVariant.UNKNOWN, AdaptiveToolbarButtonVariant.UNKNOWN));
+             return;
+         }
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarStatePredictorTest.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarStatePredictorTest.java
+--- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarStatePredictorTest.java
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/adaptive/AdaptiveToolbarStatePredictorTest.java
+@@ -71,6 +71,21 @@ public class AdaptiveToolbarStatePredictorTest {
+         statePredictor.recomputeUiState(verifyResultCallback(expected));
+     }
+ 
++    @Test
++    @SmallTest
++    @EnableFeatures({ChromeFeatureList.ADAPTIVE_BUTTON_IN_TOP_TOOLBAR,
++            ChromeFeatureList.VOICE_SEARCH_AUDIO_CAPTURE_POLICY})
++    @DisableFeatures({ChromeFeatureList.ADAPTIVE_BUTTON_IN_TOP_TOOLBAR_CUSTOMIZATION_V2})
++    public void
++    testWorksWithDataCollectionFeatureFlag() {
++        ShadowChromeFeatureList.sParamValues.put("mode", "always-voice");
++        AdaptiveToolbarStatePredictor statePredictor = buildStatePredictor(
++                true, AdaptiveToolbarButtonVariant.VOICE, true, AdaptiveToolbarButtonVariant.SHARE);
++        UiState expected = new UiState(true, AdaptiveToolbarButtonVariant.VOICE,
++                AdaptiveToolbarButtonVariant.UNKNOWN, AdaptiveToolbarButtonVariant.UNKNOWN);
++        statePredictor.recomputeUiState(verifyResultCallback(expected));
++    }
++
+     @Test
+     @SmallTest
+     public void testManualOverride() {
+--
+2.25.1

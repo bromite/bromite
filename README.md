@@ -158,6 +158,7 @@ New flags:
 * `#move-top-toolbar-to-bottom`, disabled by default
 * `#site-engagement`, enabled by default
 * `#offline-pages-auto-save`, disabled by default, allows auto-saving of pages when device goes offline
+* `#adaptive-button-in-top-toolbar-customization`, disabled by default, allows having a new tab or share button on the address bar
 
 ### Site settings
 
