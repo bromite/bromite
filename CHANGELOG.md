@@ -1,3 +1,5 @@
+# 108.0.5359.156
+
 # 108.0.5359.109
 * reintroduce adaptive-button-in-top-toolbar-customization flag
 
