@@ -2,32 +2,30 @@ From: csagan5 <32685696+csagan5@users.noreply.github.com>
 Date: Sat, 28 Apr 2018 08:30:26 +0200
 Subject: Reduce HTTP headers in DoH requests to bare minimum
 
+License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
 ---
- net/base/load_flags_list.h              | 9 +++++++++
+ net/base/load_flags_list.h              | 6 ++++++
  net/dns/dns_transaction.cc              | 2 +-
- net/url_request/url_request_http_job.cc | 8 +++++++-
- 3 files changed, 17 insertions(+), 2 deletions(-)
+ net/url_request/url_request_http_job.cc | 8 ++++++--
+ 3 files changed, 13 insertions(+), 3 deletions(-)
 
 diff --git a/net/base/load_flags_list.h b/net/base/load_flags_list.h
 --- a/net/base/load_flags_list.h
 +++ b/net/base/load_flags_list.h
-@@ -101,3 +101,12 @@ LOAD_FLAG(RESTRICTED_PREFETCH, 1 << 15)
+@@ -101,3 +101,9 @@ LOAD_FLAG(RESTRICTED_PREFETCH, 1 << 15)
  // is considered privileged, and therefore this flag must only be set from a
  // trusted process.
  LOAD_FLAG(CAN_USE_RESTRICTED_PREFETCH, 1 << 16)
-+
-+
-+
-+
 +// This load will not send Accept-Language or User-Agent headers, and not
 +// advertise brotli encoding.
 +// Used to comply with IETF (draft) DNS-over-HTTPS:
 +// "Implementors SHOULD NOT set non-essential HTTP headers in DoH client requests."
 +LOAD_FLAG(MINIMAL_HEADERS, 1 << 19)
++
 diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
 --- a/net/dns/dns_transaction.cc
 +++ b/net/dns/dns_transaction.cc
-@@ -439,7 +439,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
+@@ -445,7 +445,7 @@ class DnsHTTPAttempt : public DnsAttempt, public URLRequest::Delegate {
      // avoid deadlock and enable the use of preconfigured IP addresses.
      request_->SetSecureDnsPolicy(SecureDnsPolicy::kBootstrap);
      request_->SetLoadFlags(request_->load_flags() | LOAD_DISABLE_CACHE |
@@ -39,7 +37,7 @@ diff --git a/net/dns/dns_transaction.cc b/net/dns/dns_transaction.cc
 diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_request_http_job.cc
 --- a/net/url_request/url_request_http_job.cc
 +++ b/net/url_request/url_request_http_job.cc
-@@ -321,6 +321,7 @@ void URLRequestHttpJob::OnGotFirstPartySetMetadata(
+@@ -341,6 +341,7 @@ void URLRequestHttpJob::OnGotFirstPartySetCacheFilterMatchInfo(
    // fields in the referrer.
    GURL referrer(request_->referrer());
  
@@ -47,7 +45,7 @@ diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_reque
    // Our consumer should have made sure that this is a safe referrer (e.g. via
    // URLRequestJob::ComputeReferrerForPolicy).
    if (referrer.is_valid()) {
-@@ -328,11 +329,14 @@ void URLRequestHttpJob::OnGotFirstPartySetMetadata(
+@@ -348,11 +349,14 @@ void URLRequestHttpJob::OnGotFirstPartySetCacheFilterMatchInfo(
      request_info_.extra_headers.SetHeader(HttpRequestHeaders::kReferer,
                                            referer_value);
    }
@@ -62,25 +60,12 @@ diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_reque
  
    AddExtraHeaders();
  
-@@ -605,6 +609,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
-       if (request_->Supports(SourceStream::SourceType::TYPE_DEFLATE)) {
-         advertised_encoding_names.push_back("deflate");
-       }
-+      if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS)) {
-       // Advertise "br" encoding only if transferred data is opaque to proxy.
-       if (request()->context()->enable_brotli() &&
-           request_->Supports(SourceStream::SourceType::TYPE_BROTLI)) {
-@@ -613,6 +618,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
-           advertised_encoding_names.push_back("br");
-         }
-       }
-+      } // minimal headers
-       if (!advertised_encoding_names.empty()) {
-         // Tell the server what compression formats are supported.
-         request_info_.extra_headers.SetHeader(
-@@ -622,7 +628,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
-     }
-   }
+@@ -608,9 +612,9 @@ void URLRequestHttpJob::StartTransactionInternal() {
+ void URLRequestHttpJob::AddExtraHeaders() {
+   request_info_.extra_headers.SetAcceptEncodingIfMissing(
+       request()->url(), request()->accepted_stream_types(),
+-      request()->context()->enable_brotli());
++      !(request_info_.load_flags & LOAD_MINIMAL_HEADERS) && request()->context()->enable_brotli());
  
 -  if (http_user_agent_settings_) {
 +  if (!(request_info_.load_flags & LOAD_MINIMAL_HEADERS) && http_user_agent_settings_) {

@@ -52,13 +52,13 @@ cd /tank/chromium4allen/src
 
 ## Prepare Chromium
 
-The patches are intended to be applied to the `101.0.4951.69` tag of
+The patches are intended to be applied to the `108.0.5359.156` tag of
 the Chromium repo. Before continuing, make sure you are on that tag in
 the Chromium source repo:
 
 ```
 git fetch origin
-git checkout -B promethean-101.0.4951.69 101.0.4951.69
+git checkout -B promethean-108.0.5359.156 108.0.5359.156
 gclient sync --with_branch_heads --with_tags
 gclient runhooks
 ```
@@ -88,7 +88,7 @@ done
 ```
 
 All patches should apply cleanly. If they did not, make sure you have
-checked out the proper Chromium tag (101.0.4951.69).
+checked out the proper Chromium tag (108.0.5359.156).
 
 ## Getting the third dependencies
 
@@ -160,11 +160,11 @@ If you do not have an upstream remote, add it with:
 
    git describe --tags --abbrev=0 upstream/master
 
-This will give you output like `101.0.4951.69` which we'll use as an example going forward.
+This will give you output like `108.0.5359.156` which we'll use as an example going forward.
 
 4. Create a new branch based on this tag
 
-   git checkout -b upstream-101.0.4951.69 101.0.4951.69
+   git checkout -b upstream-108.0.5359.156 108.0.5359.156
 
 5. Rebase this branch on the current master
 
@@ -179,6 +179,7 @@ collecting any conflicts and putting them into a separate commit. The
 procedure is largely the same but start out by adding a commit with
 the conflicts pre-resolved. Then rebase onto `origin/master` and -- if
 the rebase succeeds cleanly -- push the new branch.
+
 
 # Bromite - Take back your browser
 <a href="https://github.com/bromite/bromite/releases/latest">
@@ -209,7 +210,9 @@ Minimal UI changes are applied to help curbing the idea of "browser as an advert
 
 Please donate to support development of Bromite and the costs for the build system.
 
-[&rarr; Support development with a donation](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=JP3XTQPVRNET2): [![paypal](https://www.bromite.org/assets/img/btn_donate_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=JP3XTQPVRNET2)
+## &rarr; Support development with a donation
+
+Patreon: https://www.patreon.com/csagan5
 
 <a href="bitcoin:bc1qlx7h0lj9z88g2xfeuwsrtfs77sxuhrxf2t28sw">BTC donations address</a>: `bc1qlx7h0lj9z88g2xfeuwsrtfs77sxuhrxf2t28sw`
 
@@ -268,7 +271,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * HTTPS-only mode enabled by default
 * disable TLS resumption by default
 * partition DoH requests by top-frame NIK
-* add option to use home page as NTP
+* strict site isolation and strict origin isolation
 
 ## Features not related to privacy
 * browser automatic updates, enabled by default
@@ -298,6 +301,7 @@ ETH donations address: `0x5d392F8FBf3465afe05B1Adc575e248D33B891F6`
 * keyboard dictionary hints in address bar
 * always allow `view-source:` URLs
 * allow moving navigation bar to bottom
+* add option to use home page as NTP
 
 You can inspect all functionality/privacy changes by reading the [patches](https://github.com/bromite/bromite/tree/master/build/patches) and/or the [CHANGELOG](./CHANGELOG.md).
 
@@ -318,7 +322,7 @@ Flags which have been retired from upstream Chromium but are still available in 
 New flags:
 
 * `#fingerprinting-canvas-image-data-noise`, `#fingerprinting-client-rects-noise` and `#fingerprinting-canvas-measuretext-noise`, enabled by default
-* `#enable-incognito-snapshots-in-android-recents`, disabled by default
+* `#incognito-screenshot`, disabled by default
 * `#max-connections-per-host`
 * `#resume-background-video`
 * `#ipv6-probing`
@@ -329,11 +333,13 @@ New flags:
 * `#allow-user-certificates`, disabled by default
 * `#cleartext-permitted`, enabled by default, can be used to disable all cleartext-HTTP traffic
 * `#omnibox-autocomplete-filtering`, can be used to restrict omnibox autocomplete results
-* `#disable-external-intent-requests`
+* `#disable-external-intent-requests`, can be used to disable opening any external app for any URL
 * `#enable-userscripts-log`, see https://github.com/bromite/bromite/wiki/UserScripts#flags
 * `#certificate-transparency-enabled`, enabled by default; see https://chromium.googlesource.com/chromium/src/+/master/net/docs/certificate-transparency.md
 * `#move-top-toolbar-to-bottom`, disabled by default
 * `#site-engagement`, enabled by default
+* `#offline-pages-auto-save`, disabled by default, allows auto-saving of pages when device goes offline
+* `#adaptive-button-in-top-toolbar-customization`, disabled by default, allows having a new tab or share button on the address bar
 
 ### Site settings
 
@@ -390,6 +396,8 @@ Please refer to [official Chromium build documentation](https://www.chromium.org
 The Chromium version tag used as base for the patches is available here: [RELEASE](./build/RELEASE); this is always corresponding to the git tag for every release.
 The GN args used to build Bromite are available here: [bromite.gn_args](./build/bromite.gn_args).
 The patches are to be applied second the order specified in the `bromite_patches_list.txt` file (you can use `git am`).
+
+NOTE: no official support is provided for builds.
 
 ## How to build the filters
 

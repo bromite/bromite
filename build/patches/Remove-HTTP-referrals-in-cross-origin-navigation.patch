@@ -1,0 +1,110 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Wed, 21 Sep 2022 12:28:17 +0000
+Subject: Remove HTTP referrals in cross origin navigation
+
+The patch removes the referrals if the navigation is cross-origin and occurs in the top frame.
+The value is not removed across iframes because the referrals are statically defined
+by the HTML and the Javascript of the page, and therefore they do not tell anything about the
+user. Also, some services may not work, such as video iframes.
+A preference is also introduced to completely removes referrals management, for advanced users.
+
+Original License: GPL-2.0-or-later - https://spdx.org/licenses/GPL-2.0-or-later.html
+License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
+---
+ chrome/android/java/res/xml/privacy_preferences.xml       | 4 ++++
+ .../chrome/browser/privacy/settings/PrivacySettings.java  | 8 ++++++++
+ .../browser/ui/android/strings/android_chrome_strings.grd | 3 +++
+ content/browser/renderer_host/navigation_request.cc       | 7 +++++++
+ services/network/public/cpp/resource_request.h            | 2 +-
+ 5 files changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
+--- a/chrome/android/java/res/xml/privacy_preferences.xml
++++ b/chrome/android/java/res/xml/privacy_preferences.xml
+@@ -60,6 +60,10 @@ found in the LICENSE file.
+         android:title="@string/close_tabs_on_exit_title"
+         android:summary="@string/close_tabs_on_exit_summary"
+         android:defaultValue="false" />
++    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
++        android:key="enable_referrers"
++        android:title="@string/enable_referrers_title"
++        android:defaultValue="false" />
+     <Preference
+         android:fragment="org.chromium.chrome.browser.privacy.settings.DoNotTrackSettings"
+         android:key="do_not_track"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
+@@ -61,6 +61,7 @@ public class PrivacySettings
+     private static final String PREF_HTTPS_FIRST_MODE = "https_first_mode";
+     private static final String PREF_SECURE_DNS = "secure_dns";
+     private static final String PREF_DO_NOT_TRACK = "do_not_track";
++    private static final String PREF_ENABLE_REFERRERS = "enable_referrers";
+     private static final String PREF_CLEAR_BROWSING_DATA = "clear_browsing_data";
+     private static final String PREF_PRIVACY_GUIDE = "privacy_guide";
+     private static final String PREF_INCOGNITO_LOCK = "incognito_lock";
+@@ -174,6 +175,9 @@ public class PrivacySettings
+         } else if (PREF_CAN_MAKE_PAYMENT.equals(key)) {
+             UserPrefs.get(Profile.getLastUsedRegularProfile())
+                     .setBoolean(Pref.CAN_MAKE_PAYMENT_ENABLED, (boolean) newValue);
++        } else if (PREF_ENABLE_REFERRERS.equals(key)) {
++            UserPrefs.get(Profile.getLastUsedRegularProfile())
++                    .setBoolean(Pref.ENABLE_REFERRERS, (boolean) newValue);
+         } else if (PREF_HTTPS_FIRST_MODE.equals(key)) {
+             UserPrefs.get(Profile.getLastUsedRegularProfile())
+                     .setBoolean(Pref.HTTPS_ONLY_MODE_ENABLED, (boolean) newValue);
+@@ -227,6 +231,10 @@ public class PrivacySettings
+                             : R.string.text_off);
+         }
+ 
++        ChromeSwitchPreference enableReferrerPref = findPreference(PREF_ENABLE_REFERRERS);
++        enableReferrerPref.setChecked(prefService.getBoolean(Pref.ENABLE_REFERRERS));
++        enableReferrerPref.setOnPreferenceChangeListener(this);
++
+         Preference preloadPagesPreference = findPreference(PREF_PRELOAD_PAGES);
+         if (preloadPagesPreference != null) {
+             preloadPagesPreference.setSummary(
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -879,6 +879,9 @@ CHAR_LIMIT guidelines:
+ 
+ For example, some websites may respond to this request by showing you ads that aren’t based on other websites you’ve visited. Many websites will still collect and use your browsing data — for example to improve security, to provide content, ads and recommendations, and to generate reporting statistics.
+       </message>
++      <message name="IDS_ENABLE_REFERRERS_TITLE" desc="Title for 'Enable referrers' preference">
++        Enable HTTP Referer header
++      </message>
+       <message name="IDS_CAN_MAKE_PAYMENT_TITLE" desc="Title for preference to allow websites to know whether you have payment methods available through PaymentRequest.CanMakePayment interface">
+         Access payment methods
+       </message>
+diff --git a/content/browser/renderer_host/navigation_request.cc b/content/browser/renderer_host/navigation_request.cc
+--- a/content/browser/renderer_host/navigation_request.cc
++++ b/content/browser/renderer_host/navigation_request.cc
+@@ -431,6 +431,13 @@ void AddAdditionalRequestHeaders(
+         blink::mojom::Referrer(GURL(), network::mojom::ReferrerPolicy::kNever);
+   }
+ 
++  if (!url::IsSameOriginWith(referrer->url.GetAsReferrer(), url) &&
++      frame_tree_node->IsOutermostMainFrame()) {
++    // remove referrer if the navigation is done on the top frame
++    *referrer =
++        blink::mojom::Referrer(GURL(), network::mojom::ReferrerPolicy::kNever);
++  }
++
+   // Next, set the HTTP Origin if needed.
+   if (NeedsHTTPOrigin(headers, method)) {
+     url::Origin origin_header_value = initiator_origin.value_or(url::Origin());
+diff --git a/services/network/public/cpp/resource_request.h b/services/network/public/cpp/resource_request.h
+--- a/services/network/public/cpp/resource_request.h
++++ b/services/network/public/cpp/resource_request.h
+@@ -130,7 +130,7 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
+   std::vector<GURL> navigation_redirect_chain;
+ 
+   GURL referrer;
+-  net::ReferrerPolicy referrer_policy = net::ReferrerPolicy::NEVER_CLEAR;
++  net::ReferrerPolicy referrer_policy = net::ReferrerPolicy::REDUCE_GRANULARITY_ON_TRANSITION_CROSS_ORIGIN;
+   net::HttpRequestHeaders headers;
+   net::HttpRequestHeaders cors_exempt_headers;
+   int load_flags = 0;
+--
+2.25.1

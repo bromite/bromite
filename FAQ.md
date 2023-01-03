@@ -38,7 +38,7 @@ No.
 We cannot add add-ons to Bromite (merely some features).
 
 ## Is Bromite on Play Store?
-No, and this is unlikely to change. Many limitations apply for submissions there, including which ads are allowed to be blocked.
+No, and this is not going to change. Many limitations apply for submissions there, including which ads are allowed to be blocked.
 
 Bromite favors user freedom in software choice: the device is yours so you get to choose which software to run on it, end of the story.
 
@@ -85,7 +85,11 @@ Various Android browsers get some fee to ship their apps with a specific default
 Changing the default search engine would lead to an endless series of requests to change it based on personal preferences, thus no change is made to the default.
 See also: https://github.com/bromite/bromite/wiki/SearchEngines
 
-## Some sites show ads, how can I fix this?
+## Some websites show ads, how can I fix this?
 You can compare the blocked URLs with a desktop browser and Bromite (using [remote debugging](https://developer.chrome.com/docs/devtools/remote-debugging/)) and figure out some new filter rules to be added.
 If the ads are blocked via cosmetic filtering then blocking them is not possible with Bromite's engine and you might need something like an [user script](https://github.com/bromite/bromite/wiki/UserScripts) instead.
 See also: https://github.com/bromite/bromite/wiki/AdBlocking
+
+## This JavaScript/WebGL website is not performing well with Bromite, how can I fix this?
+Bromite comes with [JavaScript JIT](https://hacks.mozilla.org/2017/02/a-crash-course-in-just-in-time-jit-compilers/) disabled by default; if you trust the website you can enable it.
+For more information about this, search "javascript jit vulnerabilities" on your favorite search engine.

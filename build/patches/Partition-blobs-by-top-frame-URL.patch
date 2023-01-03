@@ -1,0 +1,217 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Tue, 20 Sep 2022 07:20:01 +0000
+Subject: Partition blobs by top frame URL
+
+Verifies that the blob was created with the same top frame URL
+or, if not defined, by the same agent cluster.
+
+Original License: GPL-2.0-or-later - https://spdx.org/licenses/GPL-2.0-or-later.html
+License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
+---
+ storage/browser/blob/blob_url_store_impl.cc   | 37 ++++++++++++++++++-
+ storage/browser/blob/blob_url_store_impl.h    | 14 ++++++-
+ .../public/mojom/blob/blob_url_store.mojom    | 12 ++++--
+ .../core/fileapi/public_url_manager.cc        | 17 +++++++++
+ 4 files changed, 75 insertions(+), 5 deletions(-)
+
+diff --git a/storage/browser/blob/blob_url_store_impl.cc b/storage/browser/blob/blob_url_store_impl.cc
+--- a/storage/browser/blob/blob_url_store_impl.cc
++++ b/storage/browser/blob/blob_url_store_impl.cc
+@@ -72,6 +72,20 @@ BlobURLStoreImpl::~BlobURLStoreImpl() {
+   }
+ }
+ 
++bool BlobURLStoreImpl::IsSamePartition(
++    const GURL& blob_url,
++    const base::UnguessableToken& unsafe_agent_cluster_id,
++    const absl::optional<net::SchemefulSite>& unsafe_top_level_site) {
++  const absl::optional<net::SchemefulSite>& top_level_site =
++    registry_->GetUnsafeTopLevelSite(blob_url);
++  if (top_level_site.has_value())
++    return top_level_site == unsafe_top_level_site;
++
++  absl::optional<base::UnguessableToken> agent_cluster_id =
++    registry_->GetUnsafeAgentClusterID(blob_url);
++  return agent_cluster_id == unsafe_agent_cluster_id;
++}
++
+ void BlobURLStoreImpl::Register(
+     mojo::PendingRemote<blink::mojom::Blob> blob,
+     const GURL& url,
+@@ -102,11 +116,18 @@ void BlobURLStoreImpl::Revoke(const GURL& url) {
+   urls_.erase(url);
+ }
+ 
+-void BlobURLStoreImpl::Resolve(const GURL& url, ResolveCallback callback) {
++void BlobURLStoreImpl::Resolve(const GURL& url,
++    const base::UnguessableToken& unsafe_agent_cluster_id,
++    const absl::optional<net::SchemefulSite>& unsafe_top_level_site,
++    ResolveCallback callback) {
+   if (!registry_) {
+     std::move(callback).Run(mojo::NullRemote(), absl::nullopt);
+     return;
+   }
++  if (!IsSamePartition(url, unsafe_agent_cluster_id, unsafe_top_level_site)) {
++    std::move(callback).Run(mojo::NullRemote(), absl::nullopt);
++    return;
++  }
+   mojo::PendingRemote<blink::mojom::Blob> blob = registry_->GetBlobFromUrl(url);
+   std::move(callback).Run(std::move(blob),
+                           registry_->GetUnsafeAgentClusterID(url));
+@@ -115,6 +136,8 @@ void BlobURLStoreImpl::Resolve(const GURL& url, ResolveCallback callback) {
+ void BlobURLStoreImpl::ResolveAsURLLoaderFactory(
+     const GURL& url,
+     mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver,
++    const base::UnguessableToken& unsafe_agent_cluster_id,
++    const absl::optional<net::SchemefulSite>& unsafe_top_level_site,
+     ResolveAsURLLoaderFactoryCallback callback) {
+   if (!registry_) {
+     BlobURLLoaderFactory::Create(mojo::NullRemote(), url, std::move(receiver));
+@@ -122,6 +145,12 @@ void BlobURLStoreImpl::ResolveAsURLLoaderFactory(
+     return;
+   }
+ 
++  if (!IsSamePartition(url, unsafe_agent_cluster_id, unsafe_top_level_site)) {
++    BlobURLLoaderFactory::Create(mojo::NullRemote(), url, std::move(receiver));
++    std::move(callback).Run(absl::nullopt, absl::nullopt);
++    return;
++  }
++
+   BlobURLLoaderFactory::Create(registry_->GetBlobFromUrl(url), url,
+                                std::move(receiver));
+   std::move(callback).Run(registry_->GetUnsafeAgentClusterID(url),
+@@ -131,11 +160,17 @@ void BlobURLStoreImpl::ResolveAsURLLoaderFactory(
+ void BlobURLStoreImpl::ResolveForNavigation(
+     const GURL& url,
+     mojo::PendingReceiver<blink::mojom::BlobURLToken> token,
++    const base::UnguessableToken& unsafe_agent_cluster_id,
++    const absl::optional<net::SchemefulSite>& unsafe_top_level_site,
+     ResolveForNavigationCallback callback) {
+   if (!registry_) {
+     std::move(callback).Run(absl::nullopt);
+     return;
+   }
++  if (!IsSamePartition(url, unsafe_agent_cluster_id, unsafe_top_level_site)) {
++    std::move(callback).Run(absl::nullopt);
++    return;
++  }
+   mojo::PendingRemote<blink::mojom::Blob> blob = registry_->GetBlobFromUrl(url);
+   if (!blob) {
+     std::move(callback).Run(absl::nullopt);
+diff --git a/storage/browser/blob/blob_url_store_impl.h b/storage/browser/blob/blob_url_store_impl.h
+--- a/storage/browser/blob/blob_url_store_impl.h
++++ b/storage/browser/blob/blob_url_store_impl.h
+@@ -40,14 +40,21 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobURLStoreImpl
+       const absl::optional<net::SchemefulSite>& unsafe_top_level_site,
+       RegisterCallback callback) override;
+   void Revoke(const GURL& url) override;
+-  void Resolve(const GURL& url, ResolveCallback callback) override;
++  void Resolve(const GURL& url,
++               const base::UnguessableToken& unsafe_agent_cluster_id,
++               const absl::optional<net::SchemefulSite>& unsafe_top_level_site,
++               ResolveCallback callback) override;
+   void ResolveAsURLLoaderFactory(
+       const GURL& url,
+       mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver,
++      const base::UnguessableToken& unsafe_agent_cluster_id,
++      const absl::optional<net::SchemefulSite>& unsafe_top_level_site,
+       ResolveAsURLLoaderFactoryCallback callback) override;
+   void ResolveForNavigation(
+       const GURL& url,
+       mojo::PendingReceiver<blink::mojom::BlobURLToken> token,
++      const base::UnguessableToken& unsafe_agent_cluster_id,
++      const absl::optional<net::SchemefulSite>& unsafe_top_level_site,
+       ResolveForNavigationCallback callback) override;
+ 
+  private:
+@@ -55,6 +62,11 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobURLStoreImpl
+   // Returns false and reports a bad mojo message if not.
+   bool BlobUrlIsValid(const GURL& url, const char* method) const;
+ 
++  bool IsSamePartition(
++      const GURL& blob_url,
++      const base::UnguessableToken& unsafe_agent_cluster_id,
++      const absl::optional<net::SchemefulSite>& unsafe_top_level_site);
++
+   const blink::StorageKey storage_key_;
+ 
+   base::WeakPtr<BlobUrlRegistry> registry_;
+diff --git a/third_party/blink/public/mojom/blob/blob_url_store.mojom b/third_party/blink/public/mojom/blob/blob_url_store.mojom
+--- a/third_party/blink/public/mojom/blob/blob_url_store.mojom
++++ b/third_party/blink/public/mojom/blob/blob_url_store.mojom
+@@ -28,7 +28,9 @@ interface BlobURLStore {
+   Revoke(url.mojom.Url url);
+ 
+   // Resolves a public Blob URL.
+-  Resolve(url.mojom.Url url) => (
++  Resolve(url.mojom.Url url,
++          mojo_base.mojom.UnguessableToken unsafe_agent_cluster_id,
++          network.mojom.SchemefulSite? unsafe_top_level_site) => (
+     pending_remote<blink.mojom.Blob>? blob,
+     // TODO(https://crbug.com/1224926): Remove this once experiment is over.
+     mojo_base.mojom.UnguessableToken? unsafe_agent_cluster_id);
+@@ -42,7 +44,9 @@ interface BlobURLStore {
+   // both the blob URL and all other references to the blob have been dropped.
+   ResolveAsURLLoaderFactory(
+     url.mojom.Url url,
+-    pending_receiver<network.mojom.URLLoaderFactory> factory) => (
++    pending_receiver<network.mojom.URLLoaderFactory> factory,
++    mojo_base.mojom.UnguessableToken unsafe_agent_cluster_id,
++    network.mojom.SchemefulSite? unsafe_top_level_site) => (
+     // TODO(https://crbug.com/1224926): Remove these once experiment is over.
+     mojo_base.mojom.UnguessableToken? unsafe_agent_cluster_id,
+     network.mojom.SchemefulSite? unsafe_top_level_site);
+@@ -52,7 +56,9 @@ interface BlobURLStore {
+   // refer to, even after the URL is revoked.
+   // As long as the token is alive, the resolved blob will also be kept alive.
+   ResolveForNavigation(url.mojom.Url url,
+-                       pending_receiver<BlobURLToken> token) => (
++                       pending_receiver<BlobURLToken> token,
++                       mojo_base.mojom.UnguessableToken unsafe_agent_cluster_id,
++                       network.mojom.SchemefulSite? unsafe_top_level_site) => (
+     // TODO(https://crbug.com/1224926): Remove this once experiment is over.
+     mojo_base.mojom.UnguessableToken? unsafe_agent_cluster_id);
+ };
+diff --git a/third_party/blink/renderer/core/fileapi/public_url_manager.cc b/third_party/blink/renderer/core/fileapi/public_url_manager.cc
+--- a/third_party/blink/renderer/core/fileapi/public_url_manager.cc
++++ b/third_party/blink/renderer/core/fileapi/public_url_manager.cc
+@@ -56,6 +56,21 @@ static void RemoveFromNullOriginMapIfNecessary(const KURL& blob_url) {
+     BlobURLNullOriginMap::GetInstance()->Remove(blob_url);
+ }
+ 
++static absl::optional<BlinkSchemefulSite> GetInsecureTopLevelSite(
++    ExecutionContext* execution_context) {
++  absl::optional<BlinkSchemefulSite> top_level_site;
++  if (execution_context->IsWindow()) {
++    auto* window = To<LocalDOMWindow>(execution_context);
++    if (window->top() && window->top()->GetFrame()) {
++      top_level_site = BlinkSchemefulSite(window->top()
++                                              ->GetFrame()
++                                              ->GetSecurityContext()
++                                              ->GetSecurityOrigin());
++    }
++  }
++  return top_level_site;
++}
++
+ }  // namespace
+ 
+ PublicURLManager::PublicURLManager(ExecutionContext* context)
+@@ -217,6 +232,7 @@ void PublicURLManager::Resolve(
+ 
+   url_store_->ResolveAsURLLoaderFactory(
+       url, std::move(factory_receiver),
++      GetExecutionContext()->GetAgentClusterID(), GetInsecureTopLevelSite(GetExecutionContext()),
+       WTF::BindOnce(std::move(metrics_callback),
+                     WrapPersistent(GetExecutionContext())));
+ }
+@@ -258,6 +274,7 @@ void PublicURLManager::Resolve(
+ 
+   url_store_->ResolveForNavigation(
+       url, std::move(token_receiver),
++      GetExecutionContext()->GetAgentClusterID(), GetInsecureTopLevelSite(GetExecutionContext()),
+       WTF::BindOnce(std::move(metrics_callback),
+                     WrapPersistent(GetExecutionContext())));
+ }
+--
+2.25.1

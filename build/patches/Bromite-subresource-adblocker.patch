@@ -1,0 +1,1908 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sat, 14 Sep 2019 10:20:08 +0200
+Subject: Bromite subresource adblocker
+
+Add option to configure the ad blocker filters URL
+Disable look-alike, metrics, ablation and navigation throttles
+Do not use experiments to enable/disable presets
+Always enable ad filtering
+Download filters by checking Last-Modified header first
+Fix RestoreForeignSessionTab by recreating the tab (issue #681)
+Enable AutomaticLazyFrameLoadingToAds and AutomaticLazyFrameLoadingToEmbeds features
+
+License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
+---
+ chrome/android/BUILD.gn                       |   1 +
+ chrome/android/chrome_java_resources.gni      |   2 +
+ chrome/android/chrome_java_sources.gni        |   2 +
+ .../java/res/layout/adblock_editor.xml        |  67 +++++
+ chrome/android/java/res/values/styles.xml     |  18 ++
+ chrome/android/java/res/values/values.xml     |   2 +
+ .../java/res/xml/adblock_preferences.xml      |  25 ++
+ .../android/java/res/xml/main_preferences.xml |   5 +
+ .../browser/settings/AdBlockEditor.java       |  91 ++++++
+ .../browser/settings/AdBlockPreferences.java  |  61 ++++
+ .../chrome/browser/tabmodel/TabModelImpl.java |   2 +-
+ chrome/app/generated_resources.grd            |  10 +
+ chrome/browser/after_startup_task_utils.cc    |   4 +
+ chrome/browser/browser_process.h              |   6 +
+ chrome/browser/browser_process_impl.cc        |  20 ++
+ chrome/browser/browser_process_impl.h         |   2 +
+ chrome/browser/chrome_browser_main.cc         |   3 +
+ .../flags/android/cached_feature_flags.cc     |  11 +
+ .../browser/flags/CachedFeatureFlags.java     |  10 +
+ .../net/system_network_context_manager.cc     |   4 +
+ .../sessions/session_restore_android.cc       |   4 +-
+ .../strings/android_chrome_strings.grd        |  14 +
+ chrome/common/pref_names.cc                   |   3 +
+ chrome/common/pref_names.h                    |   1 +
+ .../strings/android/site_settings.grdp        |   4 +-
+ components/component_updater/BUILD.gn         |   7 +
+ .../adblock_updater_service.cc                | 271 ++++++++++++++++++
+ .../adblock_updater_service.h                 | 100 +++++++
+ .../download_filters_task.cc                  | 224 +++++++++++++++
+ .../component_updater/download_filters_task.h | 130 +++++++++
+ ...ent_subresource_filter_throttle_manager.cc |  11 +
+ .../content/browser/ruleset_service.cc        |  33 ++-
+ .../content/browser/ruleset_service.h         |   7 +-
+ .../content/browser/ruleset_version.h         |   4 +
+ .../browser/verified_ruleset_dealer.cc        |   4 +
+ .../browser/subresource_filter_features.cc    | 116 +-------
+ .../core/common/indexed_ruleset.cc            |   5 +-
+ .../navigation_throttle_runner.cc             |   5 -
+ third_party/blink/common/features.cc          |  12 +-
+ 39 files changed, 1166 insertions(+), 135 deletions(-)
+ create mode 100644 chrome/android/java/res/layout/adblock_editor.xml
+ create mode 100644 chrome/android/java/res/xml/adblock_preferences.xml
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockPreferences.java
+ create mode 100644 components/component_updater/adblock_updater_service.cc
+ create mode 100644 components/component_updater/adblock_updater_service.h
+ create mode 100644 components/component_updater/download_filters_task.cc
+ create mode 100644 components/component_updater/download_filters_task.h
+
+diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
+--- a/chrome/android/BUILD.gn
++++ b/chrome/android/BUILD.gn
+@@ -372,6 +372,7 @@ if (current_toolchain == default_toolchain) {
+       "//chrome/android/modules/image_editor/provider:java",
+       "//chrome/android/modules/stack_unwinder/provider:java",
+       "//chrome/android/webapk/libs/client:client_java",
++      "//chrome/browser/endpoint_fetcher:java",
+       "//chrome/android/webapk/libs/common:common_java",
+       "//chrome/android/webapk/libs/common:splash_java",
+       "//chrome/android/webapk/libs/runtime_library:webapk_service_aidl_java",
+diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_java_resources.gni
+--- a/chrome/android/chrome_java_resources.gni
++++ b/chrome/android/chrome_java_resources.gni
+@@ -447,6 +447,7 @@ chrome_java_resources = [
+   "java/res/layout/account_chooser_dialog_title.xml",
+   "java/res/layout/account_divider_preference.xml",
+   "java/res/layout/account_management_account_row.xml",
++  "java/res/layout/adblock_editor.xml",
+   "java/res/layout/auto_sign_in_first_run_dialog.xml",
+   "java/res/layout/autofill_billing_address_dropdown.xml",
+   "java/res/layout/autofill_card_unmask_prompt.xml",
+@@ -641,6 +642,7 @@ chrome_java_resources = [
+   "java/res/values/values.xml",
+   "java/res/xml/about_chrome_preferences.xml",
+   "java/res/xml/account_management_preferences.xml",
++  "java/res/xml/adblock_preferences.xml",
+   "java/res/xml/autofill_assistant_preferences.xml",
+   "java/res/xml/bookmark_widget_info.xml",
+   "java/res/xml/clear_browsing_data_preferences_tab.xml",
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -907,6 +907,8 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/permissions/PermissionSettingsBridge.java",
+   "java/src/org/chromium/chrome/browser/permissions/PermissionUpdateRequester.java",
+   "java/src/org/chromium/chrome/browser/photo_picker/DecoderServiceImpl.java",
++  "java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java",
++  "java/src/org/chromium/chrome/browser/settings/AdBlockPreferences.java",
+   "java/src/org/chromium/chrome/browser/policy/PolicyAuditor.java",
+   "java/src/org/chromium/chrome/browser/policy/PolicyAuditorBridge.java",
+   "java/src/org/chromium/chrome/browser/prerender/ChromePrerenderServiceImpl.java",
+diff --git a/chrome/android/java/res/layout/adblock_editor.xml b/chrome/android/java/res/layout/adblock_editor.xml
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/res/layout/adblock_editor.xml
+@@ -0,0 +1,67 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright 2015 The Chromium Authors. All rights reserved.
++     Use of this source code is governed by a BSD-style license that can be
++     found in the LICENSE file. -->
++
++<FrameLayout
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    xmlns:tools="http://schemas.android.com/tools"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent" >
++
++    <ScrollView
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:id="@+id/scroll_view"
++        android:fillViewport="true" >
++
++        <LinearLayout
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:orientation="vertical"
++            android:focusableInTouchMode="true" >
++
++            <com.google.android.material.textfield.TextInputLayout
++                android:id="@+id/adblock_url"
++                android:paddingTop="16dp"
++                android:paddingStart="@dimen/pref_autofill_content_spacing"
++                android:paddingEnd="@dimen/pref_autofill_content_spacing"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content" >
++                <!-- TODO(crbug.com/900912): Fix and remove lint ignore -->
++                <EditText
++                    tools:ignore="Autofill"
++                    android:id="@+id/adblock_url_edit"
++                    android:layout_width="match_parent"
++                    android:layout_height="wrap_content"
++                    android:inputType="textUri"
++                    android:singleLine="true"
++                    android:hint="@string/options_adblock_edit_label" />
++            </com.google.android.material.textfield.TextInputLayout>
++
++            <Space style="@style/ButtonBarTopSpacer" />
++            <View style="@style/ButtonBarTopDivider" />
++
++            <LinearLayout style="@style/ButtonBar" >
++                <org.chromium.ui.widget.ButtonCompat
++                    android:id="@+id/adblock_reset"
++                    style="@style/ButtonBarButton"
++                    android:text="@string/reset" />
++
++                <org.chromium.ui.widget.ButtonCompat
++                    android:id="@+id/adblock_cancel"
++                    style="@style/ButtonBarButton"
++                    android:text="@string/cancel" />
++
++                <org.chromium.ui.widget.ButtonCompat
++                    android:id="@+id/adblock_save"
++                    style="@style/ButtonBarButton"
++                    android:text="@string/save" />
++            </LinearLayout>
++        </LinearLayout>
++    </ScrollView>
++
++    <include layout="@layout/settings_action_bar_shadow"/>
++
++</FrameLayout>
+diff --git a/chrome/android/java/res/values/styles.xml b/chrome/android/java/res/values/styles.xml
+--- a/chrome/android/java/res/values/styles.xml
++++ b/chrome/android/java/res/values/styles.xml
+@@ -180,6 +180,24 @@ found in the LICENSE file.
+         </item>
+     </style>
+ 
++    <style name="ButtonBarTopSpacer" parent="ButtonBarTopSpacerLight">
++        <item name="android:minHeight">5dp</item>
++    </style>
++    <style name="ButtonBar" parent="@android:style/Holo.Light.ButtonBar.AlertDialog">
++        <item name="android:layout_width">match_parent</item>
++        <item name="android:layout_height">wrap_content</item>
++        <item name="android:divider">?android:attr/dividerVertical</item>
++        <item name="android:dividerPadding">0dp</item>
++        <item name="android:showDividers">middle</item>
++    </style>
++    <style name="ButtonBarButton" parent="@style/TextButton">
++        <item name="android:layout_width">0dp</item>
++        <item name="android:layout_height">match_parent</item>
++        <item name="android:layout_weight">1</item>
++        <item name="android:paddingStart">4dp</item>
++        <item name="android:paddingEnd">4dp</item>
++    </style>
++
+     <!-- Button bar styles -->
+     <style name="ButtonBarTopSpacerLight">
+         <item name="android:layout_width">0dp</item>
+diff --git a/chrome/android/java/res/values/values.xml b/chrome/android/java/res/values/values.xml
+--- a/chrome/android/java/res/values/values.xml
++++ b/chrome/android/java/res/values/values.xml
+@@ -27,6 +27,8 @@ found in the LICENSE file.
+     <!-- Compositor Tab Title Text -->
+     <bool name="compositor_tab_title_fake_bold_text">true</bool>
+ 
++    <string name="adblock_help_url">https://www.bromite.org/custom-filters</string>
++
+     <string name="proxy_title">Proxy configuration</string>
+     <string name="proxy_url">chrome://proxy</string>
+ 
+diff --git a/chrome/android/java/res/xml/adblock_preferences.xml b/chrome/android/java/res/xml/adblock_preferences.xml
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/res/xml/adblock_preferences.xml
+@@ -0,0 +1,25 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright 2015 The Chromium Authors. All rights reserved.
++     Use of this source code is governed by a BSD-style license that can be
++     found in the LICENSE file. -->
++
++<PreferenceScreen
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto">
++
++    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
++        android:key="adblock_switch"
++        android:summaryOn="@string/text_on"
++        android:summaryOff="@string/text_off" />
++
++    <org.chromium.chrome.browser.about_settings.HyperlinkPreference
++        android:key="adblock_help"
++        android:title="@string/adblock_help"
++        app:url="@string/adblock_help_url" />
++
++    <Preference
++        android:key="adblock_edit"
++        android:title="@string/options_adblock_edit_label"
++        android:fragment="org.chromium.chrome.browser.settings.AdBlockEditor" />
++
++</PreferenceScreen>
+diff --git a/chrome/android/java/res/xml/main_preferences.xml b/chrome/android/java/res/xml/main_preferences.xml
+--- a/chrome/android/java/res/xml/main_preferences.xml
++++ b/chrome/android/java/res/xml/main_preferences.xml
+@@ -44,6 +44,11 @@ found in the LICENSE file.
+         android:key="privacy"
+         android:order="10"
+         android:title="@string/prefs_privacy_security"/>
++    <Preference
++        android:fragment="org.chromium.chrome.browser.settings.AdBlockPreferences"
++        android:key="adblock"
++        android:order="13"
++        android:title="@string/prefs_adblock"/>
+     <Preference
+         android:key="notifications"
+         android:order="12"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockEditor.java
+@@ -0,0 +1,91 @@
++// Copyright 2015 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.settings;
++
++import android.os.Bundle;
++import androidx.fragment.app.Fragment;
++import android.text.Editable;
++import android.text.TextWatcher;
++import android.view.LayoutInflater;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.Button;
++import android.widget.EditText;
++
++import org.chromium.components.browser_ui.settings.SettingsUtils;
++import org.chromium.chrome.browser.flags.CachedFeatureFlags;
++import org.chromium.chrome.R;
++import org.chromium.components.url_formatter.UrlFormatter;
++
++/**
++ * Provides the Java-UI for editing AdBlock preferences.
++ */
++public class AdBlockEditor extends Fragment implements TextWatcher {
++    private EditText mAdBlockFiltersUrlEdit;
++    private Button mSaveButton;
++    private Button mResetButton;
++
++    @Override
++    public View onCreateView(LayoutInflater inflater, ViewGroup container,
++            Bundle savedInstanceState) {
++        super.onCreate(savedInstanceState);
++        getActivity().setTitle(R.string.options_adblock_edit_title);
++
++        View v = inflater.inflate(R.layout.adblock_editor, container, false);
++        View scrollView = v.findViewById(R.id.scroll_view);
++        scrollView.getViewTreeObserver().addOnScrollChangedListener(
++                SettingsUtils.getShowShadowOnScrollListener(v, v.findViewById(R.id.shadow)));
++        mAdBlockFiltersUrlEdit = (EditText) v.findViewById(R.id.adblock_url_edit);
++        mAdBlockFiltersUrlEdit.setText(CachedFeatureFlags.getAdBlockFiltersURL());
++        mAdBlockFiltersUrlEdit.addTextChangedListener(this);
++        mAdBlockFiltersUrlEdit.requestFocus();
++
++        initializeSaveCancelResetButtons(v);
++        return v;
++    }
++
++    @Override
++    public void beforeTextChanged(CharSequence s, int start, int count, int after) {
++    }
++
++    @Override
++    public void onTextChanged(CharSequence s, int start, int before, int count) {
++        mSaveButton.setEnabled(s.length() != 0);
++        mResetButton.setEnabled(true);
++    }
++
++    @Override
++    public void afterTextChanged(Editable s) {
++    }
++
++    private void initializeSaveCancelResetButtons(View v) {
++        mResetButton = (Button) v.findViewById(R.id.adblock_reset);
++        mResetButton.setOnClickListener(new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                mAdBlockFiltersUrlEdit.setText(CachedFeatureFlags.getAdBlockFiltersURL());
++            }
++        });
++
++        mSaveButton = (Button) v.findViewById(R.id.adblock_save);
++        mSaveButton.setEnabled(false);
++        mSaveButton.setOnClickListener(new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                CachedFeatureFlags.setAdBlockFiltersURL(
++                        UrlFormatter.fixupUrl(mAdBlockFiltersUrlEdit.getText().toString()).getSpec());
++                getActivity().finish();
++            }
++        });
++
++        Button button = (Button) v.findViewById(R.id.adblock_cancel);
++        button.setOnClickListener(new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                getActivity().finish();
++            }
++        });
++    }
++}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockPreferences.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockPreferences.java
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/AdBlockPreferences.java
+@@ -0,0 +1,61 @@
++// Copyright 2015 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.settings;
++
++import android.os.Bundle;
++import androidx.preference.Preference;
++import androidx.preference.PreferenceFragmentCompat;
++import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
++
++import org.chromium.content_public.browser.BrowserContextHandle;
++import org.chromium.components.browser_ui.site_settings.SiteSettingsPreferenceFragment;
++import org.chromium.components.browser_ui.site_settings.WebsitePreferenceBridge;
++import org.chromium.components.content_settings.ContentSettingsType;
++import org.chromium.components.browser_ui.settings.SettingsUtils;
++import org.chromium.chrome.browser.flags.CachedFeatureFlags;
++import androidx.annotation.VisibleForTesting;
++import org.chromium.chrome.R;
++
++/**
++ * Fragment that allows the user to configure AdBlock related preferences.
++ */
++public class AdBlockPreferences extends SiteSettingsPreferenceFragment {
++    @VisibleForTesting
++    public static final String PREF_ADBLOCK_SWITCH = "adblock_switch";
++    private static final String PREF_ADBLOCK_EDIT = "adblock_edit";
++
++    private Preference mAdBlockEdit;
++
++    @Override
++    public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
++        getActivity().setTitle(R.string.options_adblock_title);
++        SettingsUtils.addPreferencesFromResource(this, R.xml.adblock_preferences);
++
++        BrowserContextHandle browserContextHandle =
++                getSiteSettingsDelegate().getBrowserContextHandle();
++
++        ChromeSwitchPreference mAdBlockSwitch =
++                (ChromeSwitchPreference) findPreference(PREF_ADBLOCK_SWITCH);
++        boolean isAdBlockEnabled = !WebsitePreferenceBridge.isCategoryEnabled(browserContextHandle, ContentSettingsType.ADS);
++        mAdBlockSwitch.setChecked(isAdBlockEnabled);
++        mAdBlockSwitch.setOnPreferenceChangeListener((preference, newValue) -> {
++            WebsitePreferenceBridge.setCategoryEnabled(browserContextHandle, ContentSettingsType.ADS, !(boolean) newValue);
++            return true;
++        });
++
++        mAdBlockEdit = findPreference(PREF_ADBLOCK_EDIT);
++        updateCurrentAdBlockUrl();
++    }
++
++    private void updateCurrentAdBlockUrl() {
++        mAdBlockEdit.setSummary(CachedFeatureFlags.getAdBlockFiltersURL());
++    }
++
++    @Override
++    public void onResume() {
++        super.onResume();
++        updateCurrentAdBlockUrl();
++    }
++}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java
+@@ -705,7 +705,7 @@ public class TabModelImpl extends TabModelJniBridge {
+     protected boolean createTabWithWebContents(
+             Tab parent, Profile profile, WebContents webContents) {
+         return getTabCreator(profile.isOffTheRecord())
+-                .createTabWithWebContents(parent, webContents, TabLaunchType.FROM_RECENT_TABS);
++                .createTabWithWebContents(parent, webContents, TabLaunchType.FROM_LINK);
+     }
+ 
+     @Override
+diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -12468,6 +12468,16 @@ Please help our engineers fix this problem. Tell us what happened right before y
+       Never show this again.
+     </message>
+ 
++    <!-- Ad Blocking preferences -->
++    <if expr="is_android">
++      <message name="IDS_OPTIONS_ADBLOCK_TITLE" desc="The title of the Ad Blocking option on Android" formatter_data="android_java">
++        Ad Blocking
++      </message>
++      <message name="IDS_OPTIONS_ADBLOCK_SUMMARY" desc="The title of the Ad Blocking summary on Android" formatter_data="android_java">
++        Configure Ad Blocking and filters URL
++      </message>
++    </if>
++
+     <!-- Ad Blocking UI strings. -->
+     <message name="IDS_BLOCKED_ADS_PROMPT_TOOLTIP" desc="Explanation that Chrome blocked ads on this site. To be shown as a tooltip on the Ads blocked desktop bubble">
+       Ads blocked on this site
+diff --git a/chrome/browser/after_startup_task_utils.cc b/chrome/browser/after_startup_task_utils.cc
+--- a/chrome/browser/after_startup_task_utils.cc
++++ b/chrome/browser/after_startup_task_utils.cc
+@@ -28,6 +28,8 @@
+ #include "chromeos/startup/browser_params_proxy.h"
+ #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+ 
++#include "chrome/browser/browser_process.h"
++
+ using content::BrowserThread;
+ 
+ namespace {
+@@ -123,6 +125,8 @@ void SetBrowserStartupIsComplete() {
+     ScheduleTask(base::WrapUnique(queued_task));
+   g_after_startup_tasks.Get().clear();
+   g_after_startup_tasks.Get().shrink_to_fit();
++  // initialize AdBlock engine scheduled updates
++  g_browser_process->adblock_updater()->Start();
+ }
+ 
+ // Observes the first visible page load and sets the startup complete
+diff --git a/chrome/browser/browser_process.h b/chrome/browser/browser_process.h
+--- a/chrome/browser/browser_process.h
++++ b/chrome/browser/browser_process.h
+@@ -21,6 +21,7 @@
+ #include "build/chromeos_buildflags.h"
+ #include "chrome/common/buildflags.h"
+ #include "media/media_buildflags.h"
++#include "components/component_updater/adblock_updater_service.h"
+ 
+ class BackgroundModeManager;
+ class BrowserProcessPlatformPart;
+@@ -66,6 +67,10 @@ namespace component_updater {
+ class ComponentUpdateService;
+ }
+ 
++namespace adblock_updater {
++class AdBlockUpdaterService;
++}
++
+ namespace extensions {
+ class EventRouterForwarder;
+ }
+@@ -229,6 +234,7 @@ class BrowserProcess {
+ #endif
+ 
+   virtual component_updater::ComponentUpdateService* component_updater() = 0;
++  virtual adblock_updater::AdBlockUpdaterService* adblock_updater() = 0;
+ 
+   virtual MediaFileSystemRegistry* media_file_system_registry() = 0;
+ 
+diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_process_impl.cc
+--- a/chrome/browser/browser_process_impl.cc
++++ b/chrome/browser/browser_process_impl.cc
+@@ -1071,6 +1071,26 @@ BrowserProcessImpl::component_updater() {
+   return component_updater_.get();
+ }
+ 
++adblock_updater::AdBlockUpdaterService*
++BrowserProcessImpl::adblock_updater() {
++  if (adblock_updater_)
++    return adblock_updater_.get();
++
++  if (!BrowserThread::CurrentlyOn(BrowserThread::UI))
++    return nullptr;
++
++  std::unique_ptr<component_updater::UpdateScheduler> scheduler =
++      std::make_unique<component_updater::TimerUpdateScheduler>();
++
++  adblock_updater_ = std::make_unique<adblock_updater::AdBlockUpdaterService>(
++          g_browser_process->system_network_context_manager()->GetSharedURLLoaderFactory(),
++          std::move(scheduler),
++          g_browser_process->subresource_filter_ruleset_service(),
++          local_state()->GetString(prefs::kAdBlockFiltersURL));
++
++  return adblock_updater_.get();
++}
++
+ void BrowserProcessImpl::OnKeepAliveStateChanged(bool is_keeping_alive) {
+   if (is_keeping_alive)
+     Pin();
+diff --git a/chrome/browser/browser_process_impl.h b/chrome/browser/browser_process_impl.h
+--- a/chrome/browser/browser_process_impl.h
++++ b/chrome/browser/browser_process_impl.h
+@@ -192,6 +192,7 @@ class BrowserProcessImpl : public BrowserProcess,
+ #endif
+ 
+   component_updater::ComponentUpdateService* component_updater() override;
++  adblock_updater::AdBlockUpdaterService* adblock_updater() override;
+   MediaFileSystemRegistry* media_file_system_registry() override;
+   WebRtcLogUploader* webrtc_log_uploader() override;
+   network_time::NetworkTimeTracker* network_time_tracker() override;
+@@ -375,6 +376,7 @@ class BrowserProcessImpl : public BrowserProcess,
+   // to concerns over integrity of data shared between profiles,
+   // but some users of component updater only install per-user.
+   std::unique_ptr<component_updater::ComponentUpdateService> component_updater_;
++  std::unique_ptr<adblock_updater::AdBlockUpdaterService> adblock_updater_;
+ 
+ #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+   // Used to create a singleton instance of SodaInstallerImpl, which can be
+diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -415,6 +415,9 @@ StartupProfileInfo CreateInitialProfile(
+   // missing code in the above test.
+   CHECK(profile_info.profile) << "Cannot get default profile.";
+ 
++  // force AdBlock updater initialisation
++  g_browser_process->adblock_updater();
++
+ #else
+ #if BUILDFLAG(IS_CHROMEOS_LACROS)
+   // Lacros has a special "primary" profile that is tied to the active ChromeOS
+diff --git a/chrome/browser/flags/android/cached_feature_flags.cc b/chrome/browser/flags/android/cached_feature_flags.cc
+--- a/chrome/browser/flags/android/cached_feature_flags.cc
++++ b/chrome/browser/flags/android/cached_feature_flags.cc
+@@ -8,6 +8,9 @@
+ 
+ #include "base/android/jni_string.h"
+ #include "base/feature_list.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/common/pref_names.h"
++#include "components/prefs/pref_service.h"
+ #include "content/public/common/content_features.h"
+ #include "content/public/common/network_service_util.h"
+ 
+@@ -42,3 +45,11 @@ static jboolean JNI_CachedFeatureFlags_IsNetworkServiceWarmUpEnabled(
+   return content::IsOutOfProcessNetworkService() &&
+          base::FeatureList::IsEnabled(features::kWarmUpNetworkProcess);
+ }
++
++static ScopedJavaLocalRef<jstring> JNI_CachedFeatureFlags_GetAdBlockFiltersURL(JNIEnv* env) {
++  return base::android::ConvertUTF8ToJavaString(env, g_browser_process->local_state()->GetString(prefs::kAdBlockFiltersURL));
++}
++
++static void JNI_CachedFeatureFlags_SetAdBlockFiltersURL(JNIEnv* env, const JavaParamRef<jstring>& url) {
++  g_browser_process->local_state()->SetString(prefs::kAdBlockFiltersURL, base::android::ConvertJavaStringToUTF8(env, url));
++}
+diff --git a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
+--- a/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
++++ b/chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/CachedFeatureFlags.java
+@@ -278,6 +278,14 @@ public class CachedFeatureFlags {
+                 ChromeFeatureList.isEnabled(ChromeFeatureList.BACKGROUND_THREAD_POOL));
+     }
+ 
++     public static void setAdBlockFiltersURL(String url) {
++         CachedFeatureFlagsJni.get().setAdBlockFiltersURL(url);
++     }
++
++     public static String getAdBlockFiltersURL() {
++         return CachedFeatureFlagsJni.get().getAdBlockFiltersURL();
++     }
++
+     /**
+      * Caches flags that must take effect on startup but are set via native code.
+      */
+@@ -524,5 +532,7 @@ public class CachedFeatureFlags {
+     @NativeMethods
+     interface Natives {
+         boolean isNetworkServiceWarmUpEnabled();
++        void setAdBlockFiltersURL(String url);
++        String getAdBlockFiltersURL();
+     }
+ }
+diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/browser/net/system_network_context_manager.cc
+--- a/chrome/browser/net/system_network_context_manager.cc
++++ b/chrome/browser/net/system_network_context_manager.cc
+@@ -421,6 +421,8 @@ SystemNetworkContextManager::SystemNetworkContextManager(
+       ssl_config_service_manager_(local_state_),
+       proxy_config_monitor_(local_state_),
+       stub_resolver_config_reader_(local_state_) {
++  local_state_->SetDefaultPrefValue(prefs::kAdBlockFiltersURL,
++                                    base::Value("https://www.bromite.org/filters/filters.dat"));
+ #if !BUILDFLAG(IS_ANDROID)
+   // QuicAllowed was not part of Android policy.
+   const base::Value* value =
+@@ -499,6 +501,8 @@ SystemNetworkContextManager::~SystemNetworkContextManager() {
+ void SystemNetworkContextManager::RegisterPrefs(PrefRegistrySimple* registry) {
+   StubResolverConfigReader::RegisterPrefs(registry);
+ 
++  registry->RegisterStringPref(prefs::kAdBlockFiltersURL, std::string());
++
+   // Static auth params
+   registry->RegisterStringPref(prefs::kAuthSchemes,
+                                "basic,digest,ntlm,negotiate");
+diff --git a/chrome/browser/sessions/session_restore_android.cc b/chrome/browser/sessions/session_restore_android.cc
+--- a/chrome/browser/sessions/session_restore_android.cc
++++ b/chrome/browser/sessions/session_restore_android.cc
+@@ -42,7 +42,9 @@ content::WebContents* SessionRestore::RestoreForeignSessionTab(
+   TabAndroid* current_tab = TabAndroid::FromWebContents(web_contents);
+   DCHECK(current_tab);
+   if (disposition == WindowOpenDisposition::CURRENT_TAB) {
+-    current_tab->SwapWebContents(std::move(new_web_contents), false, false);
++    int active_tab_index = tab_model->GetActiveIndex();
++    tab_model->CreateTab(current_tab, new_web_contents.release());
++    tab_model->CloseTabAt(active_tab_index);
+   } else {
+     DCHECK(disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB ||
+            disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB);
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -215,6 +215,20 @@ CHAR_LIMIT guidelines:
+         Enter VR
+       </message>
+ 
++      <!-- AdBlock settings -->
++      <message name="IDS_PREFS_ADBLOCK" desc="Title of the AdBlock Settings screen. [CHAR-LIMIT=32]">
++        AdBlock settings
++      </message>
++      <message name="IDS_OPTIONS_ADBLOCK_EDIT_TITLE" desc="The title of the screen that allows users to change the URL that is used to fetch the ad blocker filters.">
++        Edit filters URL
++      </message>
++      <message name="IDS_OPTIONS_ADBLOCK_EDIT_LABEL" desc="The label for the edit text field that allows the user to change the URL that is used to fetch the ad blocker filters.">
++        Filters URL
++      </message>
++      <message name="IDS_ADBLOCK_HELP" desc="The title of the hyperlink that allows users to visit the web page with instructions for custom ad blocker filters.">
++        Visit help page
++      </message>
++
+       <!-- Notification channels -->
+       <message name="IDS_NOTIFICATION_CATEGORY_GROUP_GENERAL" desc='Subheading for "General" section of a list of notification categories. [CHAR_LIMIT=32]'>
+         General
+diff --git a/chrome/common/pref_names.cc b/chrome/common/pref_names.cc
+--- a/chrome/common/pref_names.cc
++++ b/chrome/common/pref_names.cc
+@@ -2383,6 +2383,9 @@ const char kAudioCaptureAllowed[] = "hardware.audio_capture_enabled";
+ // capture devices without prompt.
+ const char kAudioCaptureAllowedUrls[] = "hardware.audio_capture_allowed_urls";
+ 
++// Holds the URL to an indexed subresource filters file.
++const char kAdBlockFiltersURL[] = "adblock.filters_url";
++
+ // A pref holding the value of the policy used to explicitly allow or deny
+ // access to video capture devices.  When enabled or not set, the user is
+ // prompted for device access.  When disabled, access to video capture devices
+diff --git a/chrome/common/pref_names.h b/chrome/common/pref_names.h
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -32,6 +32,7 @@ extern const char kDownloadBubbleEnabled[];
+ extern const char kForceEphemeralProfiles[];
+ extern const char kHomePageIsNewTabPage[];
+ extern const char kHomePage[];
++extern const char kAdBlockFiltersURL[];
+ extern const char kHttpsOnlyModeEnabled[];
+ extern const char kImportantSitesDialogHistory[];
+ extern const char kProfileCreationTime[];
+diff --git a/components/browser_ui/strings/android/site_settings.grdp b/components/browser_ui/strings/android/site_settings.grdp
+--- a/components/browser_ui/strings/android/site_settings.grdp
++++ b/components/browser_ui/strings/android/site_settings.grdp
+@@ -303,8 +303,8 @@
+   <message name="IDS_INTRUSIVE_ADS_INFORMATION" desc="The extra information at the top of the Site Details page when the site tends to show intrusive ads">
+     This site shows intrusive or misleading ads
+   </message>
+-  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_ADS_BLOCKED" desc="A setting that, if turned on, will block intrusive or misleading ads on sites that have a history of showing such ads.">
+-    Block ads on sites that show intrusive or misleading ads
++  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_ADS_BLOCKED" desc="A setting that, if turned on, will block ads.">
++    Block ads based on the current filters
+   </message>
+   <message name="IDS_WEBSITE_SETTINGS_CATEGORY_ADS_BLOCKED_LIST" desc="Summary text explaining that the Ads permission is set to block ads on some sites. To be shown in the list of permission categories.">
+     Blocked on some sites
+diff --git a/components/component_updater/BUILD.gn b/components/component_updater/BUILD.gn
+--- a/components/component_updater/BUILD.gn
++++ b/components/component_updater/BUILD.gn
+@@ -10,6 +10,12 @@ static_library("component_updater") {
+     "component_updater_command_line_config_policy.h",
+     "component_updater_paths.cc",
+     "component_updater_paths.h",
++
++    "adblock_updater_service.cc",
++    "adblock_updater_service.h",
++    "download_filters_task.cc",
++    "download_filters_task.h",
++
+     "component_updater_service.cc",
+     "component_updater_service.h",
+     "component_updater_service_internal.h",
+@@ -37,6 +43,7 @@ static_library("component_updater") {
+     "//components/prefs",
+     "//components/update_client",
+     "//components/version_info",
++    "//services/network/public/mojom",
+     "//third_party/boringssl:boringssl",
+     "//ui/base",
+     "//url",
+diff --git a/components/component_updater/adblock_updater_service.cc b/components/component_updater/adblock_updater_service.cc
+new file mode 100644
+--- /dev/null
++++ b/components/component_updater/adblock_updater_service.cc
+@@ -0,0 +1,271 @@
++/*
++    This file is part of Bromite.
++
++    Bromite is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    Bromite is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with Bromite. If not, see <https://www.gnu.org/licenses/>.
++*/
++
++#include "components/component_updater/adblock_updater_service.h"
++
++#include <algorithm>
++#include <map>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "base/bind.h"
++#include "base/callback.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/logging.h"
++#include "base/threading/thread_checker.h"
++#include "base/threading/thread_task_runner_handle.h"
++#include "base/time/time.h"
++#include "base/timer/timer.h"
++#include "url/gurl.h"
++#include "base/strings/safe_sprintf.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_split.h"
++namespace adblock_updater {
++
++// all constants express seconds
++// these could be made configurable
++const int initial_check_delay = 5,
++      next_check_delay = 60*60*24*7, // 1 week
++      on_demand_check_delay = 60; // minimum 1 minute between each on-demand check
++
++AdBlockUpdaterService::AdBlockUpdaterService(scoped_refptr<network::SharedURLLoaderFactory> shared_url_network_factory, std::unique_ptr<component_updater::UpdateScheduler> scheduler,
++   subresource_filter::RulesetService* ruleset_service, std::string filters_url)
++ : ruleset_service_(ruleset_service), shared_url_network_factory_(shared_url_network_factory), scheduler_(std::move(scheduler)) {
++  DCHECK(ruleset_service);
++
++  filters_url_ = filters_url;
++}
++
++AdBlockUpdaterService::~AdBlockUpdaterService() {
++  DCHECK(thread_checker_.CalledOnValidThread());
++}
++
++void AdBlockUpdaterService::AddObserver(Observer* observer) {
++  DCHECK(thread_checker_.CalledOnValidThread());
++  observer_list_.AddObserver(observer);
++}
++
++void AdBlockUpdaterService::RemoveObserver(Observer* observer) {
++  DCHECK(thread_checker_.CalledOnValidThread());
++  observer_list_.RemoveObserver(observer);
++}
++
++void AdBlockUpdaterService::NotifyObservers(Event event) {
++  DCHECK(thread_checker_.CalledOnValidThread());
++  for (auto& observer : observer_list_)
++    observer.OnEvent(event);
++}
++
++void AdBlockUpdaterService::Start() {
++  DCHECK(thread_checker_.CalledOnValidThread());
++
++  // avoid multiple scheduling
++  if (scheduled_)
++    return;
++  scheduled_ = true;
++
++  LOG(INFO) << "AdBlockUpdaterService: starting up. "
++          << "First update attempt will take place in "
++          << initial_check_delay << " seconds. "
++          << "Next update attempt will take place in "
++          << next_check_delay << " seconds. ";
++
++  scheduler_->Schedule(
++      base::Seconds(initial_check_delay),
++      base::Seconds(next_check_delay),
++      base::BindRepeating(&AdBlockUpdaterService::OnDemandScheduledUpdate,
++                 base::Unretained(this)), base::DoNothing());
++}
++
++void AdBlockUpdaterService::OnDemandScheduledUpdate(component_updater::UpdateScheduler::OnFinishedCallback on_finished) {
++  //TODO: call on_finished
++  OnDemandUpdateAsNeeded(false, Callback());
++}
++
++bool AdBlockUpdaterService::OnDemandUpdate(Callback on_finished) {
++  return OnDemandUpdateAsNeeded(true, std::move(on_finished));
++}
++
++bool AdBlockUpdaterService::OnDemandUpdateAsNeeded(bool is_foreground, Callback on_finished) {
++  DCHECK(thread_checker_.CalledOnValidThread());
++
++  // Check if the request is too early
++  if (!last_update_.is_null()) {
++    base::TimeDelta delta =
++        base::TimeTicks::Now() - last_update_;
++    if (delta < base::Seconds(on_demand_check_delay)) {
++      LOG(INFO) << "AdBlockUpdaterService: update not necessary.";
++      return false;
++    }
++  }
++
++  if (is_updating_) {
++    base::ThreadTaskRunnerHandle::Get()->PostTask(
++        FROM_HERE, base::BindOnce(std::move(on_finished),
++                                    Error::UPDATE_IN_PROGRESS));
++    return false;
++  }
++  is_updating_ = true;
++
++  base::ThreadTaskRunnerHandle::Get()->PostTask(
++      FROM_HERE, base::BindOnce(&AdBlockUpdaterService::NotifyObservers, base::Unretained(this), Event::ADBLOCK_CHECKING_FOR_UPDATES));
++
++  base::Time::Exploded e = {0};
++  base::Time min_last_modified = base::Time();
++  auto version = ruleset_service_->GetMostRecentlyIndexedVersion();
++  LOG(INFO) << "AdBlockUpdaterService: MostRecentIndexedVersion = " << version.content_version;
++  std::vector<std::string> tokens =
++      base::SplitString(version.content_version, ".", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
++  int i = 0;
++  bool failed = false;
++  for (const std::string& token : tokens) {
++    // parse as number
++    int n = 0;
++    if (!base::StringToInt(token, &n)) {
++      failed = true;
++      break;
++    }
++
++    switch (i++) {
++      case 0:
++        e.year = 2019 + n;
++        break;
++      case 1:
++        e.month = n + 1;
++        break;
++      case 2:
++        e.day_of_month = n + 1;
++        break;
++      case 3:
++        e.second = n % 60;
++        n -= e.second;
++        n /= 60;
++        e.minute = n % 60;
++        e.hour = n / 60;
++        break;
++      default:
++        failed = true;
++        break;
++    }
++  }
++
++  if (failed) {
++    LOG(WARNING) << "AdBlockUpdaterService: failed to parse most recent version as x.y.z.w dot-separated integers";
++  } else {
++    if (!base::Time::FromUTCExploded(e, &min_last_modified))
++      LOG(WARNING) << "AdBlockUpdaterService: failed to convert version to time.";
++  }
++
++  // avoid making a new request if version-based time is recent enough
++  if (!failed) {
++    base::TimeDelta delta =
++        base::Time::Now() - min_last_modified;
++    if (delta < base::Seconds(on_demand_check_delay)) {
++      LOG(INFO) << "AdBlockUpdaterService: update check not yet needed.";
++      is_updating_ = false;
++      return false;
++    }
++  }
++
++  last_update_ = base::TimeTicks::Now();
++  auto task = base::MakeRefCounted<DownloadFiltersTask>(
++      shared_url_network_factory_,
++      is_foreground, filters_url_,
++      min_last_modified,
++      base::BindOnce(&AdBlockUpdaterService::OnUpdateComplete, base::Unretained(this),
++                     std::move(on_finished)));
++
++  // run task now; task is responsible for downloading the filters (if Last-Modified header is more recent)
++  // and then clearing the 'is_updating' status
++  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
++      base::BindOnce(&DownloadFiltersTask::Run, base::Unretained(task.get())));
++  tasks_.insert(task);
++
++  base::ThreadTaskRunnerHandle::Get()->PostTask(
++      FROM_HERE, base::BindOnce(&AdBlockUpdaterService::NotifyObservers, base::Unretained(this), Event::ADBLOCK_UPDATE_DOWNLOADING));
++
++  return true;
++}
++
++void AdBlockUpdaterService::OnUpdateComplete(Callback on_finished,
++                                        scoped_refptr<DownloadFiltersTask> task,
++                                        Error error) {
++  DCHECK(thread_checker_.CalledOnValidThread());
++
++  auto file_path = task->file_path();
++  if (error == Error::NONE) {
++    base::ThreadTaskRunnerHandle::Get()->PostTask(
++        FROM_HERE, base::BindOnce(&AdBlockUpdaterService::NotifyObservers, base::Unretained(this), Event::ADBLOCK_UPDATE_READY));
++
++    subresource_filter::UnindexedRulesetInfo ruleset_info;
++    ruleset_info.ruleset_path = file_path;
++    ruleset_info.delete_ruleset_path = true;
++    ruleset_info.content_version = "0.0.0.0";
++    DCHECK(!ruleset_info.ruleset_path.empty());
++
++    // convert Last-Modified timestamp fetched by the DownloadFiltersTask to a semver version
++    auto t = task->last_modified();
++    bool ignore_version = t.is_null();
++    if (!ignore_version) {
++      base::Time::Exploded e;
++      t.UTCExplode(&e);
++
++      // convert time to version
++      const int major = e.year - 2019,
++                minor = e.month - 1,
++                patch = e.day_of_month - 1,
++                revision = (e.hour*60+e.minute)*60 + e.second;
++      if (major < 0)
++         LOG(WARNING) << "AdBlockUpdaterService: too old Last-Modified header, ignoring version check.";
++      else {
++        char version_buffer[32];
++        base::strings::SafeSNPrintf(version_buffer, sizeof(version_buffer), "%d.%d.%d.%d",
++                                major, minor, patch, revision);
++
++        ruleset_info.content_version = version_buffer;
++
++        LOG(INFO) << "AdBlockUpdaterService: indexing filters with version " << ruleset_info.content_version;
++      }
++    } else
++      LOG(WARNING) << "AdBlockUpdaterService: invalid Last-Modified header, ignoring version check.";
++    ruleset_service_->IndexAndStoreAndPublishRulesetIfNeeded(ruleset_info, ignore_version);
++
++    base::ThreadTaskRunnerHandle::Get()->PostTask(
++        FROM_HERE, base::BindOnce(&AdBlockUpdaterService::NotifyObservers, base::Unretained(this), Event::ADBLOCK_UPDATED));
++  } else if (error == Error::UPDATE_NOT_NEEDED) {
++    base::ThreadTaskRunnerHandle::Get()->PostTask(
++        FROM_HERE, base::BindOnce(&AdBlockUpdaterService::NotifyObservers, base::Unretained(this), Event::ADBLOCK_NOT_UPDATED));
++  } else {
++    base::ThreadTaskRunnerHandle::Get()->PostTask(
++        FROM_HERE, base::BindOnce(&AdBlockUpdaterService::NotifyObservers, base::Unretained(this), Event::ADBLOCK_UPDATE_ERROR));
++  }
++
++  //TODO: run these only when index-and-store is actually finished?
++  // would require exposing the callback in IndexAndStoreAndPublishRulesetIfNeeded
++  if (!on_finished.is_null()) {
++    base::ThreadTaskRunnerHandle::Get()->PostTask(
++        FROM_HERE, base::BindOnce(std::move(on_finished), error));
++  }
++
++  // mark as not updating
++  is_updating_ = false;
++  tasks_.erase(task);
++}
++
++}  // namespace adblock_updater
+diff --git a/components/component_updater/adblock_updater_service.h b/components/component_updater/adblock_updater_service.h
+new file mode 100644
+--- /dev/null
++++ b/components/component_updater/adblock_updater_service.h
+@@ -0,0 +1,100 @@
++/*
++    This file is part of Bromite.
++
++    Bromite is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    Bromite is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with Bromite. If not, see <https://www.gnu.org/licenses/>.
++*/
++
++#ifndef COMPONENTS_ADBLOCK_UPDATER_SERVICE_H
++#define COMPONENTS_ADBLOCK_UPDATER_SERVICE_H
++
++#include <stdint.h>
++
++#include <memory>
++#include <string>
++#include <vector>
++
++#include "base/callback_forward.h"
++#include "base/gtest_prod_util.h"
++#include "base/memory/ref_counted.h"
++#include "base/observer_list.h"
++#include "base/version.h"
++#include "build/build_config.h"
++#include "components/component_updater/update_scheduler.h"
++#include "url/gurl.h"
++#include "components/component_updater/download_filters_task.h"
++#include "components/subresource_filter/content/browser/ruleset_service.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++
++namespace adblock_updater {
++
++// Called when a non-blocking call in this module completes.
++using Callback = base::OnceCallback<void(Error error)>;
++
++class Observer {
++   public:
++    virtual ~Observer() {}
++
++    // Called by the update service when a state change happens.
++    virtual void OnEvent(Event event) = 0;
++};
++
++// The AdBlock update service is in charge of downloading and saving the
++// AdBlock filters.
++//
++// All methods are safe to call ONLY from the browser's main thread.
++class AdBlockUpdaterService {
++ public:
++  AdBlockUpdaterService(scoped_refptr<network::SharedURLLoaderFactory> shared_url_network_factory, std::unique_ptr<component_updater::UpdateScheduler> scheduler,
++                        subresource_filter::RulesetService* ruleset_service, std::string filters_url);
++  ~AdBlockUpdaterService();
++
++  // Adds an observer for this class. An observer should not be added more
++  // than once. The caller retains the ownership of the observer object.
++  void AddObserver(Observer* observer);
++
++  // Removes an observer. It is safe for an observer to be removed while
++  // the observers are being notified.
++  void RemoveObserver(Observer* observer);
++
++  // Will schedule automatic updates, run in background.
++  void Start();
++
++  // To be called for an user-triggered update.
++  // Will not result in an actual update if the last update was too recently triggered.
++  bool OnDemandUpdate(Callback on_finished);
++
++ private:
++  void NotifyObservers(Event event);
++  void OnDemandScheduledUpdate(component_updater::UpdateScheduler::OnFinishedCallback on_finished);
++  bool OnDemandUpdateAsNeeded(bool is_foreground, Callback on_finished);
++  void OnUpdateComplete(Callback callback, scoped_refptr<DownloadFiltersTask> task, Error error);
++
++  base::ObserverList<Observer>::Unchecked observer_list_;
++  base::ThreadChecker thread_checker_;
++  base::TimeTicks last_update_;
++
++  subresource_filter::RulesetService* ruleset_service_;
++  std::string filters_url_;
++
++  scoped_refptr<network::SharedURLLoaderFactory> shared_url_network_factory_;
++  std::unique_ptr<component_updater::UpdateScheduler> scheduler_;
++
++  bool is_updating_ = false;
++  bool scheduled_ = false;
++  std::set<scoped_refptr<DownloadFiltersTask>> tasks_;
++};
++
++}  // namespace adblock_updater
++
++#endif  // COMPONENTS_ADBLOCK_UPDATER_SERVICE_H
+diff --git a/components/component_updater/download_filters_task.cc b/components/component_updater/download_filters_task.cc
+new file mode 100644
+--- /dev/null
++++ b/components/component_updater/download_filters_task.cc
+@@ -0,0 +1,224 @@
++/*
++    This file is part of Bromite.
++
++    Bromite is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    Bromite is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with Bromite. If not, see <https://www.gnu.org/licenses/>.
++*/
++#include "components/component_updater/download_filters_task.h"
++
++#include <utility>
++
++#include "base/files/file_util.h"
++#include "base/bind.h"
++#include "base/location.h"
++#include "base/threading/thread_task_runner_handle.h"
++#include "base/logging.h"
++#include "net/base/load_flags.h"
++#include "url/gurl.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
++
++namespace adblock_updater {
++
++// maximum 10MB for the filters file
++const int kMaxBodySize = 1024 * 1024 * 10;
++
++const int kMaxRetriesOnNetworkChange = 3;
++
++const net::NetworkTrafficAnnotationTag traffic_annotation =
++    net::DefineNetworkTrafficAnnotation("update_client", R"(
++        semantics {
++          sender: "Bromite AdBlock filters updater"
++          description:
++            "The AdBlock filters updater is responsible for updating the subresource filters."
++          trigger: "Manual or automatic AdBlock filters updates."
++          data:
++            "Subresource filters rulesets, binary format"
++          destination: WEBSITE
++        }
++        )");
++
++DownloadFiltersTask::DownloadFiltersTask(scoped_refptr<network::SharedURLLoaderFactory> shared_url_network_factory,
++                       bool is_foreground, const std::string& filters_url, base::Time min_last_modified,
++                       Callback callback)
++    : shared_url_network_factory_(shared_url_network_factory),
++      is_foreground_(is_foreground),
++      complete_callback_(std::move(callback)) {
++  DCHECK(!filters_url.empty());
++  filters_url_ = GURL(filters_url);
++  min_last_modified_ = min_last_modified;
++
++  if (filters_url.empty()) {
++    return;
++  }
++
++  createSimpleURLLoader(!min_last_modified_.is_null());
++}
++
++void DownloadFiltersTask::createSimpleURLLoader(bool headers_only) {
++  // always reset response-related fields
++  response_code_ = -1;
++  final_url_ = GURL();
++  download_start_time_ = base::TimeTicks();
++
++  auto resource_request = std::make_unique<network::ResourceRequest>();
++  resource_request->url = filters_url_;
++  resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++  resource_request->load_flags = net::LOAD_BYPASS_CACHE | net::LOAD_DISABLE_CACHE | net::LOAD_DO_NOT_SAVE_COOKIES;
++  resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++  if (headers_only)
++    // will chain two requests - first one is to check last modified header alone
++    resource_request->method = "HEAD";
++  else
++    resource_request->method = "GET";
++
++  simple_url_loader_ = network::SimpleURLLoader::Create(
++      std::move(resource_request), traffic_annotation);
++  simple_url_loader_->SetRetryOptions(
++      kMaxRetriesOnNetworkChange,
++      network::SimpleURLLoader::RetryMode::RETRY_ON_NETWORK_CHANGE);
++  simple_url_loader_->SetAllowPartialResults(false);
++  simple_url_loader_->SetOnResponseStartedCallback(base::BindOnce(
++      &DownloadFiltersTask::OnResponseStarted, base::Unretained(this)));
++}
++
++DownloadFiltersTask::~DownloadFiltersTask() {
++  DCHECK(thread_checker_.CalledOnValidThread());
++}
++
++void DownloadFiltersTask::Run() {
++  DCHECK(thread_checker_.CalledOnValidThread());
++
++  // will not be initialized if the URL was empty
++  if (!simple_url_loader_) {
++    TaskComplete(Error::INVALID_ARGUMENT);
++    return;
++  }
++
++  download_start_time_ = base::TimeTicks::Now();
++  if (min_last_modified_.is_null()) {
++    internalDownload();
++  } else {
++    simple_url_loader_->DownloadHeadersOnly(
++      shared_url_network_factory_.get(),
++      base::BindOnce(&DownloadFiltersTask::OnHeadersDownloadComplete, base::Unretained(this))
++    );
++  }
++}
++
++void DownloadFiltersTask::internalDownload() {
++  simple_url_loader_->DownloadToTempFile(
++      shared_url_network_factory_.get(),
++      base::BindOnce(&DownloadFiltersTask::OnDownloadComplete, base::Unretained(this)),
++      kMaxBodySize);
++}
++
++void DownloadFiltersTask::OnHeadersDownloadComplete(scoped_refptr<net::HttpResponseHeaders> headers) {
++  // something went wrong
++  if (headers == nullptr) {
++    OnDownloadComplete(base::FilePath());
++    return;
++  }
++
++  // ignoring 'headers' as 'Last-Modified' has already been picked up by OnResponseStarted
++  const base::TimeDelta dt =
++          last_modified_ - min_last_modified_;
++
++  if (dt.InSeconds() > 0) {
++    // prepare for next simple URL loader and trigger download
++    createSimpleURLLoader(false);
++    internalDownload();
++    return;
++  }
++
++  // the remote filters are not more recent than known ones
++  TaskComplete(Error::UPDATE_NOT_NEEDED);
++}
++
++void DownloadFiltersTask::OnResponseStarted(
++    const GURL& final_url,
++    const network::mojom::URLResponseHead& response_head) {
++
++  final_url_ = final_url;
++  response_code_ = response_head.headers ? response_head.headers->response_code() : -1;
++
++  if (!response_head.headers->GetLastModifiedValue(&last_modified_))
++    LOG(WARNING) << "DownloadFiltersTask: fetching URL '" << final_url.spec() << "' with method " << (min_last_modified_.is_null() ? "GET" : "HEAD") << " (no Last-Modified header)";
++  else
++    LOG(INFO) << "DownloadFiltersTask: fetching URL '" << final_url.spec() << "' with method " << (min_last_modified_.is_null() ? "GET" : "HEAD");
++}
++
++void DownloadFiltersTask::OnDownloadComplete(base::FilePath file_path) {
++  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
++  int net_error = simple_url_loader_->NetError();
++  int64_t content_size = simple_url_loader_->GetContentSize();
++
++  const base::TimeTicks download_end_time(base::TimeTicks::Now());
++  const base::TimeDelta download_time =
++      download_end_time >= download_start_time_
++          ? download_end_time - download_start_time_
++          : base::TimeDelta();
++
++  // Consider a 5xx response from the server as an indication to terminate
++  // the request and avoid overloading the server in this case.
++  // is not accepting requests for the moment.
++  int error = -1;
++  if (!file_path.empty() && response_code_ == 200) {
++    DCHECK_EQ(0, net_error);
++    error = 0;
++  } else if (response_code_ != -1) {
++    error = response_code_;
++  } else {
++    error = net_error;
++  }
++
++  LOG(INFO) << "DownloadFiltersTask: downloaded " << content_size << " bytes in "
++          << download_time.InMilliseconds() << "ms from '" << final_url_.spec()
++          << "' to '" << file_path << "' with net_error " << net_error << " and error " << error;
++
++  if (error) {
++    TaskComplete(Error::DOWNLOAD_ERROR);
++    return;
++  }
++
++  file_path_ = file_path;
++  TaskComplete(Error::NONE);
++}
++
++void DownloadFiltersTask::Cancel() {
++  DCHECK(thread_checker_.CalledOnValidThread());
++
++  LOG(INFO) << "DownloadFiltersTask: update cancelled";
++
++  // deletion of the simple_url_loader_ will cause cancellation of its active request, if any
++
++  TaskComplete(Error::UPDATE_CANCELED);
++}
++
++void DownloadFiltersTask::TaskComplete(Error error) {
++  DCHECK(thread_checker_.CalledOnValidThread());
++
++  base::ThreadTaskRunnerHandle::Get()->PostTask(
++      FROM_HERE, base::BindOnce(std::move(complete_callback_),
++                                scoped_refptr<DownloadFiltersTask>(this), error));
++}
++
++base::Time DownloadFiltersTask::last_modified() {
++  return last_modified_;
++}
++
++base::FilePath DownloadFiltersTask::file_path() {
++  return file_path_;
++}
++
++}  // namespace adblock_updater
+diff --git a/components/component_updater/download_filters_task.h b/components/component_updater/download_filters_task.h
+new file mode 100644
+--- /dev/null
++++ b/components/component_updater/download_filters_task.h
+@@ -0,0 +1,130 @@
++/*
++    This file is part of Bromite.
++
++    Bromite is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    Bromite is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with Bromite. If not, see <https://www.gnu.org/licenses/>.
++*/
++
++#ifndef COMPONENTS_DOWNLOAD_FILTERS_TASK_H_
++#define COMPONENTS_DOWNLOAD_FILTERS_TASK_H_
++
++#include <string>
++#include <vector>
++
++#include "base/callback.h"
++#include "base/memory/ref_counted.h"
++#include "base/threading/thread_checker.h"
++#include "components/update_client/network.h"
++#include "url/gurl.h"
++#include "base/files/file_path.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "services/network/public/cpp/simple_url_loader.h"
++
++namespace adblock_updater {
++
++// Errors generated as a result of calling Run() or by the service itself (UPDATE_IN_PROGRESS or UPDATE_CANCELED)
++enum class Error {
++  NONE = 0,
++  UPDATE_IN_PROGRESS = 1,
++  UPDATE_CANCELED = 2,
++  UPDATE_NOT_NEEDED = 3,
++  DOWNLOAD_ERROR = 4,
++  INVALID_ARGUMENT = 5,
++  MAX_VALUE,
++};
++
++enum class Event {
++      // Sent before the update client does an update check.
++      ADBLOCK_CHECKING_FOR_UPDATES = 1,
++
++      // Sent after the new filters have been downloaded but before the install
++      // or the upgrade is attempted.
++      ADBLOCK_UPDATE_READY,
++
++      // Sent when filters are being downloaded.
++      ADBLOCK_UPDATE_DOWNLOADING,
++
++      // Sent when filters have been successfully updated.
++      ADBLOCK_UPDATED,
++
++      // Sent when filters have not been updated because there
++      // was no new version available
++      //TODO: implement this with the headers check
++      ADBLOCK_NOT_UPDATED,
++
++      // Sent when an error ocurred during an update for any reason, including
++      // the update check itself failed, or the download of the update payload
++      // failed, or applying the update failed.
++      ADBLOCK_UPDATE_ERROR,
++};
++
++// Defines a specialized task for updating AdBlock filters.
++class DownloadFiltersTask : public base::RefCounted<DownloadFiltersTask> {
++ public:
++  DownloadFiltersTask(const DownloadFiltersTask&) = delete;
++  DownloadFiltersTask& operator=(const DownloadFiltersTask&) = delete;
++
++  using Callback =
++      base::OnceCallback<void(scoped_refptr<DownloadFiltersTask> task, Error error)>;
++
++  // |shared_url_network_factory| is injected here for the URL loader factory.
++  // |is_foreground| is true when the update task is initiated by the user.
++  // |filters_url| is the URL to load filters from.
++  // |complete_callback| is called to return the execution flow back to creator of
++  //    this task when the task is done.
++  DownloadFiltersTask(scoped_refptr<network::SharedURLLoaderFactory> shared_url_network_factory,
++                       bool is_foreground, const std::string& filters_url, base::Time min_last_modified,
++                       Callback complete_callback);
++
++  void Run();
++
++  void Cancel();
++
++  base::FilePath file_path();
++
++  base::Time last_modified();
++
++ private:
++  ~DownloadFiltersTask();
++
++  void OnDownloadProgress(uint64_t current);
++  void OnResponseStarted(const GURL& final_url,
++                         const network::mojom::URLResponseHead& response_head);
++  void OnDownloadComplete(base::FilePath file_path);
++  void OnHeadersDownloadComplete(scoped_refptr<net::HttpResponseHeaders> headers);
++  void createSimpleURLLoader(bool);
++  void internalDownload();
++
++  // Called when the task has completed either because the task has run or
++  // it has been canceled.
++  void TaskComplete(Error error);
++
++  base::ThreadChecker thread_checker_;
++  scoped_refptr<network::SharedURLLoaderFactory> shared_url_network_factory_;
++  const bool is_foreground_;
++  Callback complete_callback_;
++  std::unique_ptr<network::SimpleURLLoader> simple_url_loader_;
++
++  // fields populated while downloading
++  base::TimeTicks download_start_time_;
++  GURL final_url_, filters_url_;
++  int response_code_;
++  base::Time last_modified_, min_last_modified_;
++  base::FilePath file_path_;
++
++  friend class base::RefCounted<DownloadFiltersTask>;
++};
++
++}  // namespace update_client
++
++#endif  // COMPONENTS_DOWNLOAD_FILTERS_TASK_H_
+diff --git a/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc b/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc
+--- a/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc
++++ b/components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.cc
+@@ -667,6 +667,17 @@ ContentSubresourceFilterThrottleManager::
+       throttle->NotifyPageActivationWithRuleset(EnsureRulesetHandle(),
+                                                 ad_tagging_state);
+     }
++
++    //TODO: could use same logic as in SubresourceFilterSafeBrowsingActivationThrottle::NotifyResult()
++    {
++      subresource_filter::ActivationDecision ignored_decision;
++      mojom::ActivationState ad_filtering_state;
++      ad_filtering_state.activation_level = profile_interaction_manager_->OnPageActivationComputed(
++	      navigation_handle, mojom::ActivationLevel::kEnabled, &ignored_decision);
++      throttle->NotifyPageActivationWithRuleset(EnsureRulesetHandle(),
++                                                ad_filtering_state);
++    }
++
+     return throttle;
+   }
+ 
+diff --git a/components/subresource_filter/content/browser/ruleset_service.cc b/components/subresource_filter/content/browser/ruleset_service.cc
+--- a/components/subresource_filter/content/browser/ruleset_service.cc
++++ b/components/subresource_filter/content/browser/ruleset_service.cc
+@@ -45,9 +45,7 @@ namespace {
+ 
+ void RecordIndexAndWriteRulesetResult(
+     RulesetService::IndexAndWriteRulesetResult result) {
+-  UMA_HISTOGRAM_ENUMERATION(
+-      "SubresourceFilter.WriteRuleset.Result", static_cast<int>(result),
+-      static_cast<int>(RulesetService::IndexAndWriteRulesetResult::MAX));
++  VLOG(1) << "SubresourceFilter.WriteRuleset.Result: " << static_cast<int>(result);
+ }
+ 
+ // Implements operations on a `sentinel file`, which is used as a safeguard to
+@@ -227,10 +225,13 @@ RulesetService::RulesetService(
+ RulesetService::~RulesetService() {}
+ 
+ void RulesetService::IndexAndStoreAndPublishRulesetIfNeeded(
+-    const UnindexedRulesetInfo& unindexed_ruleset_info) {
+-  if (unindexed_ruleset_info.content_version.empty())
++    const UnindexedRulesetInfo& unindexed_ruleset_info, bool ignore_recent_version) {
++  if (unindexed_ruleset_info.content_version.empty()) {
++    LOG(INFO) << "RulesetService: ignoring update with empty version.";
+     return;
++  }
+ 
++  if (!ignore_recent_version) {
+   // Trying to store a ruleset with the same version for a second time would
+   // not only be futile, but would fail on Windows due to "File System
+   // Tunneling" as long as the previously stored copy of the rules is still
+@@ -240,13 +241,16 @@ void RulesetService::IndexAndStoreAndPublishRulesetIfNeeded(
+   if (most_recently_indexed_version.IsCurrentFormatVersion() &&
+       most_recently_indexed_version.content_version ==
+           unindexed_ruleset_info.content_version) {
++    LOG(INFO) << "RulesetService: ignoring update with equal or older version.";
+     return;
+   }
++  }
+ 
+   // Before initialization, retain information about the most recently supplied
+   // unindexed ruleset, to be processed during initialization.
+   if (!is_initialized_) {
+     queued_unindexed_ruleset_info_ = unindexed_ruleset_info;
++    LOG(INFO) << "RulesetService: ignoring update while not initialized.";
+     return;
+   }
+ 
+@@ -265,6 +269,18 @@ IndexedRulesetVersion RulesetService::GetMostRecentlyIndexedVersion() const {
+ IndexedRulesetVersion RulesetService::IndexAndWriteRuleset(
+     const base::FilePath& indexed_ruleset_base_dir,
+     const UnindexedRulesetInfo& unindexed_ruleset_info) {
++  IndexedRulesetVersion version = IndexAndWriteRulesetInternal(indexed_ruleset_base_dir, unindexed_ruleset_info);
++  // cleanup temporary file when done
++  if (unindexed_ruleset_info.delete_ruleset_path) {
++    base::DeleteFile(unindexed_ruleset_info.ruleset_path);
++  }
++  return version;
++}
++
++// static
++IndexedRulesetVersion RulesetService::IndexAndWriteRulesetInternal(
++    const base::FilePath& indexed_ruleset_base_dir,
++    const UnindexedRulesetInfo& unindexed_ruleset_info) {
+   base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                 base::BlockingType::MAY_BLOCK);
+ 
+@@ -272,6 +288,7 @@ IndexedRulesetVersion RulesetService::IndexAndWriteRuleset(
+       unindexed_ruleset_info);
+ 
+   if (!unindexed_ruleset_stream_generator.ruleset_stream()) {
++    LOG(WARNING) << "RulesetService: failed to open: " << unindexed_ruleset_info.ruleset_path;
+     RecordIndexAndWriteRulesetResult(
+         IndexAndWriteRulesetResult::FAILED_OPENING_UNINDEXED_RULESET);
+     return IndexedRulesetVersion();
+@@ -285,6 +302,7 @@ IndexedRulesetVersion RulesetService::IndexAndWriteRuleset(
+           indexed_ruleset_base_dir, indexed_version);
+ 
+   if (!base::CreateDirectory(indexed_ruleset_version_dir)) {
++    LOG(WARNING) << "RulesetService: failed to create version dir: " << indexed_ruleset_version_dir;
+     RecordIndexAndWriteRulesetResult(
+         IndexAndWriteRulesetResult::FAILED_CREATING_VERSION_DIR);
+     return IndexedRulesetVersion();
+@@ -310,6 +328,7 @@ IndexedRulesetVersion RulesetService::IndexAndWriteRuleset(
+ 
+   RulesetIndexer indexer;
+   if (!(*g_index_ruleset_func)(&unindexed_ruleset_stream_generator, &indexer)) {
++    LOG(WARNING) << "RulesetService: failed parsing.";
+     RecordIndexAndWriteRulesetResult(
+         IndexAndWriteRulesetResult::FAILED_PARSING_UNINDEXED_RULESET);
+     return IndexedRulesetVersion();
+@@ -330,6 +349,8 @@ IndexedRulesetVersion RulesetService::IndexAndWriteRuleset(
+   if (result != IndexAndWriteRulesetResult::SUCCESS)
+     return IndexedRulesetVersion();
+ 
++  LOG(INFO) << "RulesetService: successful parsing.";
++
+   DCHECK(indexed_version.IsValid());
+   return indexed_version;
+ }
+@@ -454,6 +475,7 @@ void RulesetService::IndexAndStoreRuleset(
+ void RulesetService::OnWrittenRuleset(WriteRulesetCallback result_callback,
+                                       const IndexedRulesetVersion& version) {
+   DCHECK(!result_callback.is_null());
++  LOG(INFO) << "RulesetService: valid version: " << version.IsValid();
+   if (!version.IsValid())
+     return;
+   version.SaveToPrefs(local_state_);
+@@ -466,7 +488,6 @@ void RulesetService::OpenAndPublishRuleset(
+       IndexedRulesetLocator::GetRulesetDataFilePath(
+           IndexedRulesetLocator::GetSubdirectoryPathForVersion(
+               indexed_ruleset_base_dir_, version));
+-
+   publisher_->TryOpenAndSetRulesetFile(
+       file_path, version.checksum,
+       base::BindOnce(&RulesetService::OnRulesetSet, AsWeakPtr()));
+diff --git a/components/subresource_filter/content/browser/ruleset_service.h b/components/subresource_filter/content/browser/ruleset_service.h
+--- a/components/subresource_filter/content/browser/ruleset_service.h
++++ b/components/subresource_filter/content/browser/ruleset_service.h
+@@ -184,7 +184,7 @@ class RulesetService : public base::SupportsWeakPtr<RulesetService> {
+   //
+   // Virtual so that it can be mocked out in tests.
+   virtual void IndexAndStoreAndPublishRulesetIfNeeded(
+-      const UnindexedRulesetInfo& unindexed_ruleset_info);
++      const UnindexedRulesetInfo& unindexed_ruleset_info, bool ignore_recent_version = false);
+ 
+   // Get the ruleset version associated with the current local_state_.
+   IndexedRulesetVersion GetMostRecentlyIndexedVersion() const;
+@@ -217,6 +217,11 @@ class RulesetService : public base::SupportsWeakPtr<RulesetService> {
+       const base::FilePath& indexed_ruleset_base_dir,
+       const UnindexedRulesetInfo& unindexed_ruleset_info);
+ 
++  // internal function used to wrap the temporary file deletion for unindexed rulesets
++  static IndexedRulesetVersion IndexAndWriteRulesetInternal(
++      const base::FilePath& indexed_ruleset_base_dir,
++      const UnindexedRulesetInfo& unindexed_ruleset_info);
++
+   // Reads the rules via the |unindexed_ruleset_stream_generator|, and indexes
+   // them using |indexer|. Returns whether the entire ruleset could be parsed.
+   static bool IndexRuleset(
+diff --git a/components/subresource_filter/content/browser/ruleset_version.h b/components/subresource_filter/content/browser/ruleset_version.h
+--- a/components/subresource_filter/content/browser/ruleset_version.h
++++ b/components/subresource_filter/content/browser/ruleset_version.h
+@@ -53,6 +53,10 @@ struct UnindexedRulesetInfo {
+   // can be indicated not only by setting |license_path| to empty, but also by
+   // setting it to any non existent path.
+   base::FilePath license_path;
++
++  // Whether to delete or not the ruleset path once done indexing; useful for disposal
++  // of temporary files.
++  bool delete_ruleset_path;
+ };
+ 
+ // Encapsulates the combination of the binary format version of the indexed
+diff --git a/components/subresource_filter/content/browser/verified_ruleset_dealer.cc b/components/subresource_filter/content/browser/verified_ruleset_dealer.cc
+--- a/components/subresource_filter/content/browser/verified_ruleset_dealer.cc
++++ b/components/subresource_filter/content/browser/verified_ruleset_dealer.cc
+@@ -11,6 +11,7 @@
+ #include "base/check.h"
+ #include "base/files/file.h"
+ #include "base/location.h"
++#include "base/logging.h"
+ #include "base/metrics/histogram_macros.h"
+ #include "base/notreached.h"
+ #include "base/task/task_runner_util.h"
+@@ -39,6 +40,9 @@ RulesetFilePtr VerifiedRulesetDealer::OpenAndSetRulesetFile(
+   TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("loading"),
+                "VerifiedRulesetDealer::OpenAndSetRulesetFile", "file_valid",
+                file->IsValid());
++
++  LOG(INFO) << "OpenAndSetRulesetFile: " << file_path << " is valid: " << file->IsValid();
++
+   if (file->IsValid()) {
+     SetRulesetFile(file->Duplicate());
+     expected_checksum_ = expected_checksum;
+diff --git a/components/subresource_filter/core/browser/subresource_filter_features.cc b/components/subresource_filter/core/browser/subresource_filter_features.cc
+--- a/components/subresource_filter/core/browser/subresource_filter_features.cc
++++ b/components/subresource_filter/core/browser/subresource_filter_features.cc
+@@ -54,72 +54,7 @@ class CommaSeparatedStrings {
+   const std::vector<base::StringPiece> pieces_;
+ };
+ 
+-std::string TakeVariationParamOrReturnEmpty(
+-    std::map<std::string, std::string>* params,
+-    const std::string& key) {
+-  auto it = params->find(key);
+-  if (it == params->end())
+-    return std::string();
+-  std::string value = std::move(it->second);
+-  params->erase(it);
+-  return value;
+-}
+-
+-mojom::ActivationLevel ParseActivationLevel(
+-    const base::StringPiece activation_level) {
+-  if (base::EqualsCaseInsensitiveASCII(activation_level,
+-                                       kActivationLevelEnabled))
+-    return mojom::ActivationLevel::kEnabled;
+-  else if (base::EqualsCaseInsensitiveASCII(activation_level,
+-                                            kActivationLevelDryRun))
+-    return mojom::ActivationLevel::kDryRun;
+-  return mojom::ActivationLevel::kDisabled;
+-}
+-
+-ActivationScope ParseActivationScope(const base::StringPiece activation_scope) {
+-  if (base::EqualsCaseInsensitiveASCII(activation_scope,
+-                                       kActivationScopeAllSites))
+-    return ActivationScope::ALL_SITES;
+-  else if (base::EqualsCaseInsensitiveASCII(activation_scope,
+-                                            kActivationScopeActivationList))
+-    return ActivationScope::ACTIVATION_LIST;
+-  return ActivationScope::NO_SITES;
+-}
+-
+-ActivationList ParseActivationList(std::string activation_lists_string) {
+-  CommaSeparatedStrings activation_lists(std::move(activation_lists_string));
+-  if (activation_lists.CaseInsensitiveContains(
+-          kActivationListPhishingInterstitial)) {
+-    return ActivationList::PHISHING_INTERSTITIAL;
+-  } else if (activation_lists.CaseInsensitiveContains(
+-                 kActivationListSocialEngineeringAdsInterstitial)) {
+-    return ActivationList::SOCIAL_ENG_ADS_INTERSTITIAL;
+-  } else if (activation_lists.CaseInsensitiveContains(
+-                 kActivationListSubresourceFilter)) {
+-    return ActivationList::SUBRESOURCE_FILTER;
+-  } else if (activation_lists.CaseInsensitiveContains(
+-                 kActivationListBetterAds)) {
+-    return ActivationList::BETTER_ADS;
+-  }
+-  return ActivationList::NONE;
+-}
+-
+-// Will return a value between 0 and 1 inclusive.
+-double ParsePerformanceMeasurementRate(const std::string& rate) {
+-  double value = 0.0;
+-  if (!base::StringToDouble(rate, &value) || value < 0)
+-    return 0.0;
+-  return value < 1 ? value : 1;
+-}
+-
+-int ParseInt(const base::StringPiece value) {
+-  int result = 0;
+-  base::StringToInt(value, &result);
+-  return result;
+-}
+-
+-std::vector<Configuration> FillEnabledPresetConfigurations(
+-    std::map<std::string, std::string>* params) {
++std::vector<Configuration> FillEnabledPresetConfigurations() {
+   // If ad tagging is enabled, turn on the dryrun automatically.
+   bool ad_tagging_enabled = base::FeatureList::IsEnabled(kAdTagging);
+   const struct {
+@@ -127,23 +62,16 @@ std::vector<Configuration> FillEnabledPresetConfigurations(
+     bool enabled_by_default;
+     Configuration (*factory_method)();
+   } kAvailablePresetConfigurations[] = {
+-      {kPresetLiveRunOnPhishingSites, true,
++      {kPresetLiveRunOnPhishingSites, false,
+        &Configuration::MakePresetForLiveRunOnPhishingSites},
+       {kPresetPerformanceTestingDryRunOnAllSites, ad_tagging_enabled,
+        &Configuration::MakePresetForPerformanceTestingDryRunOnAllSites},
+       {kPresetLiveRunForBetterAds, true,
+        &Configuration::MakePresetForLiveRunForBetterAds}};
+ 
+-  CommaSeparatedStrings enabled_presets(
+-      TakeVariationParamOrReturnEmpty(params, kEnablePresetsParameterName));
+-  CommaSeparatedStrings disabled_presets(
+-      TakeVariationParamOrReturnEmpty(params, kDisablePresetsParameterName));
+-
+   std::vector<Configuration> enabled_configurations;
+   for (const auto& available_preset : kAvailablePresetConfigurations) {
+-    if ((enabled_presets.CaseInsensitiveContains(available_preset.name) ||
+-         available_preset.enabled_by_default) &&
+-        !disabled_presets.CaseInsensitiveContains(available_preset.name)) {
++    if (available_preset.enabled_by_default) {
+       enabled_configurations.push_back(available_preset.factory_method());
+     }
+   }
+@@ -151,46 +79,10 @@ std::vector<Configuration> FillEnabledPresetConfigurations(
+   return enabled_configurations;
+ }
+ 
+-Configuration ParseExperimentalConfiguration(
+-    std::map<std::string, std::string>* params) {
+-  Configuration configuration;
+-
+-  // ActivationConditions:
+-  configuration.activation_conditions.activation_scope = ParseActivationScope(
+-      TakeVariationParamOrReturnEmpty(params, kActivationScopeParameterName));
+-
+-  configuration.activation_conditions.activation_list = ParseActivationList(
+-      TakeVariationParamOrReturnEmpty(params, kActivationListsParameterName));
+-
+-  configuration.activation_conditions.priority =
+-      ParseInt(TakeVariationParamOrReturnEmpty(
+-          params, kActivationPriorityParameterName));
+-
+-  // ActivationOptions:
+-  configuration.activation_options.activation_level = ParseActivationLevel(
+-      TakeVariationParamOrReturnEmpty(params, kActivationLevelParameterName));
+-
+-  configuration.activation_options.performance_measurement_rate =
+-      ParsePerformanceMeasurementRate(TakeVariationParamOrReturnEmpty(
+-          params, kPerformanceMeasurementRateParameterName));
+-
+-  // GeneralSettings:
+-  configuration.general_settings.ruleset_flavor =
+-      TakeVariationParamOrReturnEmpty(params, kRulesetFlavorParameterName);
+-
+-  return configuration;
+-}
+-
+ std::vector<Configuration> ParseEnabledConfigurations() {
+-  std::map<std::string, std::string> params;
+-  base::GetFieldTrialParamsByFeature(kSafeBrowsingSubresourceFilter, &params);
+-
+   std::vector<Configuration> configs;
+   if (base::FeatureList::IsEnabled(kSafeBrowsingSubresourceFilter))
+-    configs = FillEnabledPresetConfigurations(&params);
+-
+-  Configuration experimental_config = ParseExperimentalConfiguration(&params);
+-  configs.push_back(std::move(experimental_config));
++    configs = FillEnabledPresetConfigurations();
+ 
+   return configs;
+ }
+diff --git a/components/subresource_filter/core/common/indexed_ruleset.cc b/components/subresource_filter/core/common/indexed_ruleset.cc
+--- a/components/subresource_filter/core/common/indexed_ruleset.cc
++++ b/components/subresource_filter/core/common/indexed_ruleset.cc
+@@ -5,6 +5,7 @@
+ #include "components/subresource_filter/core/common/indexed_ruleset.h"
+ 
+ #include "base/check.h"
++#include "base/logging.h"
+ #include "base/metrics/histogram_macros.h"
+ #include "base/trace_event/trace_event.h"
+ #include "components/subresource_filter/core/common/first_party_origin.h"
+@@ -36,8 +37,10 @@ VerifyStatus GetVerifyStatus(const uint8_t* buffer,
+   // least once.  The verifier detects a subset of the errors detected by the
+   // checksum, and is unneeded once expected_checksum is consistently nonzero.
+   flatbuffers::Verifier verifier(buffer, size);
++  int local_checksum = LocalGetChecksum(buffer, size);
++  LOG(INFO) << "GetVerifyStatus: expected checksum = 0x" << std::hex << expected_checksum << ", local checksum = 0x" << std::hex << local_checksum;
+   if (expected_checksum != 0 &&
+-      expected_checksum != LocalGetChecksum(buffer, size)) {
++      expected_checksum != local_checksum) {
+     return flat::VerifyIndexedRulesetBuffer(verifier)
+                ? VerifyStatus::kChecksumFailVerifierPass
+                : VerifyStatus::kChecksumFailVerifierFail;
+diff --git a/content/browser/renderer_host/navigation_throttle_runner.cc b/content/browser/renderer_host/navigation_throttle_runner.cc
+--- a/content/browser/renderer_host/navigation_throttle_runner.cc
++++ b/content/browser/renderer_host/navigation_throttle_runner.cc
+@@ -190,11 +190,6 @@ void NavigationThrottleRunner::RegisterNavigationThrottles() {
+   // wait for the JS task that starts the navigation to finish, so add it close
+   // to the end to not delay running other throttles.
+   AddThrottle(RendererCancellationThrottle::MaybeCreateThrottleFor(request));
+-
+-  // Insert all testing NavigationThrottles last.
+-  throttles_.insert(throttles_.end(),
+-                    std::make_move_iterator(testing_throttles.begin()),
+-                    std::make_move_iterator(testing_throttles.end()));
+ }
+ 
+ NavigationThrottle* NavigationThrottleRunner::GetDeferringThrottle() const {
+diff --git a/third_party/blink/common/features.cc b/third_party/blink/common/features.cc
+--- a/third_party/blink/common/features.cc
++++ b/third_party/blink/common/features.cc
+@@ -28,8 +28,8 @@ BASE_FEATURE(kAnonymousIframeOriginTrial,
+ // Apply lazy-loading to ad frames which have embeds likely impacting Core Web
+ // Vitals.
+ BASE_FEATURE(kAutomaticLazyFrameLoadingToAds,
+-             "AutomaticLazyFrameLoadingToAds",
+-             base::FEATURE_DISABLED_BY_DEFAULT);
++             "AutomaticLazyFrameLoadingToAds",       // must be enabled
++             base::FEATURE_ENABLED_BY_DEFAULT);      // in Bromite
+ 
+ // The timeout value that forces loading iframes that are lazy loaded by
+ // LazyAds. After this timeout, the frame loading is triggered even when the
+@@ -49,8 +49,8 @@ const base::FeatureParam<int> kSkipFrameCountForLazyAds(
+ // Apply lazy-loading to frames which have embeds likely impacting Core Web
+ // Vitals.
+ BASE_FEATURE(kAutomaticLazyFrameLoadingToEmbeds,
+-             "AutomaticLazyFrameLoadingToEmbeds",
+-             base::FEATURE_DISABLED_BY_DEFAULT);
++             "AutomaticLazyFrameLoadingToEmbeds",    // must be enabled
++             base::FEATURE_ENABLED_BY_DEFAULT);      // in Bromite
+ 
+ // The timeout value that forces loading iframes that are lazy loaded by
+ // LazyEmbeds. After this timeout, the frame loading is triggered even when the
+@@ -72,8 +72,8 @@ const base::FeatureParam<int> kSkipFrameCountForLazyEmbeds(
+ // to gather Blink.AutomaticLazyLoadFrame.LazyEmbedFrameCount UKM data even when
+ // kAutomaticLazyFrameLoadingToEmbeds is disabled.
+ BASE_FEATURE(kAutomaticLazyFrameLoadingToEmbedUrls,
+-             "AutomaticLazyFrameLoadingToEmbedUrls",
+-             base::FEATURE_DISABLED_BY_DEFAULT);
++             "AutomaticLazyFrameLoadingToEmbedUrls",    // must be disabled
++             base::FEATURE_DISABLED_BY_DEFAULT);        // in Bromite
+ 
+ // Define the strategy for LazyEmbeds to decide which frames we apply
+ // lazy-loading or not. If the loading strategy is kAllowList, the detection
+--
+2.25.1

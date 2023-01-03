@@ -1,0 +1,96 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Fri, 2 Sep 2022 07:44:58 +0000
+Subject: Override Navigator Language
+
+Uses the first of the accept-languages as the system language for blink
+and fix the selection in the UI for the browser language
+
+Original License: GPL-2.0-or-later - https://spdx.org/licenses/GPL-2.0-or-later.html
+License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
+---
+ .../browser/language/AppLocaleUtils.java      | 20 +++++++++++++++++++
+ .../AppLanguagePreferenceDelegate.java        |  8 ++++++++
+ .../renderer_host/render_process_host_impl.cc |  6 +++++-
+ 3 files changed, 33 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/AppLocaleUtils.java b/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/AppLocaleUtils.java
+--- a/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/AppLocaleUtils.java
++++ b/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/AppLocaleUtils.java
+@@ -34,6 +34,10 @@ import java.util.Locale;
+ public class AppLocaleUtils {
+     private AppLocaleUtils(){};
+ 
++    public interface InstallListener {
++        void onComplete(boolean success);
++    }
++
+     // Value of AppLocale preference when the system language is used.
+     public static final String APP_LOCALE_USE_SYSTEM_LANGUAGE = null;
+ 
+@@ -98,6 +102,22 @@ public class AppLocaleUtils {
+         return locale.toLanguageTag();
+     }
+ 
++    public static void setAppLanguagePref(
++            String languageName, InstallListener listener) {
++        InstallListener wrappedListener = (success) -> {
++            if (success) {
++                if (shouldUseSystemManagedLocale()) {
++                    setSystemManagedAppLanguage(languageName);
++                } else {
++                    SharedPreferencesManager.getInstance().writeString(
++                            ChromePreferenceKeys.APPLICATION_OVERRIDE_LANGUAGE, languageName);
++                }
++            }
++            listener.onComplete(success);
++        };
++        wrappedListener.onComplete(true);
++    }
++
+     /**
+      * Gets the first original system locale from {@link LocaleManager}. This is the language that
+      * Chrome would use if there was no override set. If there are no possible UI languages en-US is
+diff --git a/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/AppLanguagePreferenceDelegate.java b/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/AppLanguagePreferenceDelegate.java
+--- a/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/AppLanguagePreferenceDelegate.java
++++ b/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/AppLanguagePreferenceDelegate.java
+@@ -87,6 +87,14 @@ public class AppLanguagePreferenceDelegate {
+ 
+         // Disable preference so a second downloaded cannot be started while one is in progress.
+         mPreference.setEnabled(false);
++
++        AppLocaleUtils.setAppLanguagePref(code, (success) -> {
++            if (success) {
++                languageSplitDownloadComplete();
++            } else {
++                languageSplitDownloadFailed();
++            }
++        });
+     }
+ 
+     /**
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -69,6 +69,7 @@
+ #include "cc/base/switches.h"
+ #include "components/discardable_memory/public/mojom/discardable_shared_memory_manager.mojom.h"
+ #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
++#include "components/language/core/browser/language_prefs.h"
+ #include "components/metrics/single_sample_metrics.h"
+ #include "components/services/storage/privileged/mojom/indexed_db_control.mojom.h"
+ #include "components/services/storage/public/cpp/buckets/bucket_id.h"
+@@ -3175,8 +3176,11 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
+   PropagateBrowserCommandLineToRenderer(browser_command_line, command_line);
+ 
+   // Pass on the browser locale.
+-  const std::string locale =
++  std::string locale =
+       GetContentClient()->browser()->GetApplicationLocale();
++  const std::string accept_langs = GetContentClient()->browser()->GetAcceptLangs(browser_context_);
++  if (!accept_langs.empty())
++    locale = language::GetFirstLanguage(accept_langs);
+   command_line->AppendSwitchASCII(switches::kLang, locale);
+ 
+   // A non-empty RendererCmdPrefix implies that Zygote is disabled.
+--
+2.25.1

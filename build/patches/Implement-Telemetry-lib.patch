@@ -1,0 +1,383 @@
+From: Yifeng <wuyifeng@nd.com.cn>
+Date: Wed, 29 Dec 2021 05:40:00 +0000
+Subject: Implement Telemetry lib
+
+---
+ base/BUILD.gn                                 |   2 +
+ .../src/org/chromium/base/TelemetryUtils.java |  44 ++++++
+ chrome/android/BUILD.gn                       |   1 +
+ chrome/android/java/AndroidManifest.xml       |   4 +
+ .../base/SplitMonochromeApplication.java      |   7 +
+ third_party/android_deps/build.gradle         |   4 +
+ .../main/groovy/ChromiumDepGraph.groovy       |   1 -
+ .../main/groovy/BuildConfigGenerator.groovy   |  16 ++
+ third_party/r8/desugar_jdk_libs.json          | 135 ------------------
+ 8 files changed, 78 insertions(+), 136 deletions(-)
+ create mode 100644 base/android/java/src/org/chromium/base/TelemetryUtils.java
+
+diff --git a/base/BUILD.gn b/base/BUILD.gn
+--- a/base/BUILD.gn
++++ b/base/BUILD.gn
+@@ -4177,6 +4177,7 @@ if (is_android) {
+     ]
+
+     deps = [
++      "//third_party/android_deps:com_prometheanworld_telemetry_java",
+       ":jni_java",
+       "//build/android:build_java",
+       "//third_party/android_deps:com_google_code_findbugs_jsr305_java",
+@@ -4238,6 +4239,7 @@ if (is_android) {
+       "android/java/src/org/chromium/base/StreamUtil.java",
+       "android/java/src/org/chromium/base/StrictModeContext.java",
+       "android/java/src/org/chromium/base/SysUtils.java",
++      "android/java/src/org/chromium/base/TelemetryUtils.java",
+       "android/java/src/org/chromium/base/ThreadUtils.java",
+       "android/java/src/org/chromium/base/TimeUtils.java",
+       "android/java/src/org/chromium/base/TimezoneUtils.java",
+diff --git a/base/android/java/src/org/chromium/base/TelemetryUtils.java b/base/android/java/src/org/chromium/base/TelemetryUtils.java
+new file mode 100644
+--- /dev/null
++++ b/base/android/java/src/org/chromium/base/TelemetryUtils.java
+@@ -0,0 +1,44 @@
++package org.chromium.base;
++
++import android.app.ActivityManager;
++import android.content.Context;
++import android.os.Process;
++
++import com.prometheanworld.telemetry.Telemetry;
++import com.prometheanworld.telemetry.TelemetryInitializer;
++
++import org.chromium.base.ContextUtils;
++import org.json.JSONObject;
++
++public class TelemetryUtils {
++
++    private TelemetryUtils() {
++        throw new UnsupportedOperationException("u can't instantiate me...");
++    }
++
++    public static void init() {
++        if (isMainProcess()) {
++            new TelemetryInitializer().create(ContextUtils.getApplicationContext());
++        }
++    }
++
++    private static void sendEvent(String eventName, JSONObject eventData) {
++        Telemetry.send(eventName, eventData);
++    }
++
++    private static boolean isMainProcess() {
++        Context context = ContextUtils.getApplicationContext();
++        boolean isMain = false;
++        try {
++            ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
++            for (ActivityManager.RunningAppProcessInfo process : am.getRunningAppProcesses()) {
++                if (process.pid == Process.myPid() && process.processName.equals(context.getPackageName())) {
++                    isMain = true;
++                    break;
++               }
++            }
++       } catch (Throwable ignored) {
++       }
++       return isMain;
++    }
++}
+diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
+--- a/chrome/android/BUILD.gn
++++ b/chrome/android/BUILD.gn
+@@ -230,6 +230,7 @@ if (current_toolchain == default_toolchain) {
+       "java/res_chromium_base/mipmap-xxxhdpi/layered_app_icon_background.png",
+       "java/res_chromium_base/values/channel_constants.xml",
+     ]
++    resource_overlay = true
+   }
+
+   android_resources("chrome_app_java_resources") {
+diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/AndroidManifest.xml
+--- a/chrome/android/java/AndroidManifest.xml
++++ b/chrome/android/java/AndroidManifest.xml
+@@ -1290,6 +1290,10 @@ by a child template that "extends" this file.
+               android:resource="@xml/promethean_file_paths" />
+       </provider>
+
++      <meta-data
++          android:name="com.prometheanworld.telemetry.product_name"
++          android:value="@string/app_name" />
++
+       {% block base_application_definitions %}
+       {% endblock %}
+       {% block extra_application_definitions_for_test %}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/base/SplitMonochromeApplication.java b/chrome/android/java/src/org/chromium/chrome/browser/base/SplitMonochromeApplication.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/base/SplitMonochromeApplication.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/base/SplitMonochromeApplication.java
+@@ -7,6 +7,7 @@ package org.chromium.chrome.browser.base;
+ import android.content.Context;
+
+ import org.chromium.android_webview.nonembedded.WebViewApkApplication;
++import org.chromium.base.TelemetryUtils;
+ import org.chromium.base.library_loader.LibraryProcessType;
+ import org.chromium.build.annotations.IdentifierNameString;
+ import org.chromium.components.version_info.VersionInfo;
+@@ -43,6 +44,12 @@ public class SplitMonochromeApplication extends SplitChromeApplication {
+         initializeMonochromeProcessCommon(getPackageName());
+     }
+
++    @Override
++    public void onCreate() {
++        super.onCreate();
++        TelemetryUtils.init();
++    }
++
+     @Override
+     protected Impl createNonBrowserApplication() {
+         return new NonBrowserMonochromeApplication();
+diff --git a/third_party/android_deps/build.gradle b/third_party/android_deps/build.gradle
+--- a/third_party/android_deps/build.gradle
++++ b/third_party/android_deps/build.gradle
+@@ -20,6 +20,8 @@ apply plugin: 'org.owasp.dependencycheck'
+ repositories {
+     google()
+     mavenCentral()
++    maven { url 'https://artifactory.prometheanjira.com/artifactory/promethean-release' }
++    jcenter()
+ }
+
+ dependencyCheck {
+@@ -129,6 +131,8 @@ dependencies {
+     compile "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.6.20"
+     compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.6.20"
+
++    // promethean telemetry
++    compile 'com.prometheanworld:telemetry:latest.release'
+
+     // Upstream guava introduced versions with -android suffix starting with version
+     // 22 to remove incompatible code with android. Thus we keep two jars, one for
+diff --git a/third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy b/third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy
+--- a/third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy
++++ b/third_party/android_deps/buildSrc/src/main/groovy/BuildConfigGenerator.groovy
+@@ -921,6 +921,22 @@ class BuildConfigGenerator extends DefaultTask {
+               sb.append('  # Can\'t find com.sun.jna classes.\n')
+               sb.append('  enable_bytecode_checks = false\n')
+               break
++            case 'com_prometheanworld_telemetry':
++            case 'com_prometheanworld_activpanel':
++            case 'com_mixpanel_android_mixpanel_android':
++                sb.append('  resource_overlay = false\n')
++                sb.append('  extract_native_libraries = true\n')
++                sb.append('  enable_bytecode_checks = false\n')
++                break
++            case 'net_pubnative_advertising_id_client':
++                sb.append('  resource_overlay = false\n')
++                sb.append('  enable_bytecode_checks = false\n')
++                break
++            case 'org_jetbrains_kotlinx_kotlinx_coroutines_android':
++            case 'org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm':
++                sb.append('  jar_excluded_patterns = [ "META-INF/proguard/*" ]\n')
++                sb.append('  enable_bytecode_checks = false\n')
++                break
+             case 'org_jetbrains_kotlinx_kotlinx_coroutines_android':
+                 sb.append('requires_android = true')
+                 break
+diff --git a/third_party/android_deps/buildSrc/src/main/groovy/ChromiumDepGraph.groovy b/third_party/android_deps/buildSrc/src/main/groovy/ChromiumDepGraph.groovy
+--- a/third_party/android_deps/buildSrc/src/main/groovy/ChromiumDepGraph.groovy
++++ b/third_party/android_deps/buildSrc/src/main/groovy/ChromiumDepGraph.groovy
+@@ -664,7 +664,6 @@ class ChromiumDepGraph {
+         }
+
+         if (skipLicenses) {
+-            dep.licenses.clear()
+             if (dep.id?.endsWith('license')) {
+                 dep.exclude = true
+             }
+diff --git a/third_party/r8/desugar_jdk_libs.json b/third_party/r8/desugar_jdk_libs.json
+--- a/third_party/r8/desugar_jdk_libs.json
++++ b/third_party/r8/desugar_jdk_libs.json
+@@ -15,56 +15,6 @@
+     {
+       "api_level_below_or_equal": 23,
+       "wrapper_conversion": [
+-        "java.util.PrimitiveIterator$OfDouble",
+-        "java.util.PrimitiveIterator$OfInt",
+-        "java.util.PrimitiveIterator$OfLong",
+-        "java.util.Spliterator",
+-        "java.util.Spliterator$OfDouble",
+-        "java.util.Spliterator$OfInt",
+-        "java.util.Spliterator$OfLong",
+-        "java.util.Spliterator$OfPrimitive",
+-        "java.util.function.BiConsumer",
+-        "java.util.function.BiFunction",
+-        "java.util.function.BiPredicate",
+-        "java.util.function.BinaryOperator",
+-        "java.util.function.Consumer",
+-        "java.util.function.DoubleBinaryOperator",
+-        "java.util.function.DoubleConsumer",
+-        "java.util.function.DoubleFunction",
+-        "java.util.function.DoublePredicate",
+-        "java.util.function.DoubleToIntFunction",
+-        "java.util.function.DoubleToLongFunction",
+-        "java.util.function.DoubleUnaryOperator",
+-        "java.util.function.Function",
+-        "java.util.function.IntBinaryOperator",
+-        "java.util.function.IntConsumer",
+-        "java.util.function.IntFunction",
+-        "java.util.function.IntPredicate",
+-        "java.util.function.IntToDoubleFunction",
+-        "java.util.function.IntToLongFunction",
+-        "java.util.function.IntUnaryOperator",
+-        "java.util.function.LongBinaryOperator",
+-        "java.util.function.LongConsumer",
+-        "java.util.function.LongFunction",
+-        "java.util.function.LongPredicate",
+-        "java.util.function.LongToDoubleFunction",
+-        "java.util.function.LongToIntFunction",
+-        "java.util.function.LongUnaryOperator",
+-        "java.util.function.ObjDoubleConsumer",
+-        "java.util.function.ObjIntConsumer",
+-        "java.util.function.ObjLongConsumer",
+-        "java.util.function.Predicate",
+-        "java.util.function.Supplier",
+-        "java.util.function.ToDoubleFunction",
+-        "java.util.function.ToIntFunction",
+-        "java.util.function.ToLongFunction",
+-        "java.util.function.UnaryOperator",
+-        "java.util.stream.BaseStream",
+-        "java.util.stream.Collector",
+-        "java.util.stream.DoubleStream",
+-        "java.util.stream.IntStream",
+-        "java.util.stream.LongStream",
+-        "java.util.stream.Stream"
+       ]
+     }
+   ],
+@@ -72,7 +22,6 @@
+     {
+       "api_level_below_or_equal": 25,
+       "rewrite_prefix": {
+-        "java.util.Desugar": "j$.util.Desugar"
+       },
+       "retarget_lib_member": {
+       },
+@@ -82,54 +31,14 @@
+     {
+       "api_level_below_or_equal": 23,
+       "rewrite_prefix": {
+-        "j$.util.Optional": "java.util.Optional",
+-        "j$.util.LongSummaryStatistics": "java.util.LongSummaryStatistics",
+-        "j$.util.IntSummaryStatistics": "java.util.IntSummaryStatistics",
+-        "j$.util.DoubleSummaryStatistics": "java.util.DoubleSummaryStatistics",
+-        "java.util.stream.": "j$.util.stream.",
+-        "java.util.function.": "j$.util.function.",
+-        "java.util.Comparators": "j$.util.Comparators",
+-        "java.util.DoubleSummaryStatistics": "j$.util.DoubleSummaryStatistics",
+-        "java.util.IntSummaryStatistics": "j$.util.IntSummaryStatistics",
+-        "java.util.LongSummaryStatistics": "j$.util.LongSummaryStatistics",
+-        "java.util.Objects": "j$.util.Objects",
+-        "java.util.Optional": "j$.util.Optional",
+-        "java.util.PrimitiveIterator": "j$.util.PrimitiveIterator",
+-        "java.util.SortedSet$1": "j$.util.SortedSet$1",
+-        "java.util.Spliterator": "j$.util.Spliterator",
+-        "java.util.StringJoiner": "j$.util.StringJoiner",
+-        "java.util.Tripwire": "j$.util.Tripwire",
+-        "java.util.concurrent.DesugarUnsafe": "j$.util.concurrent.DesugarUnsafe",
+-        "java.util.concurrent.atomic.DesugarAtomic": "j$.util.concurrent.atomic.DesugarAtomic"
+       },
+       "retarget_lib_member": {
+-        "java.util.Arrays#stream": "java.util.DesugarArrays",
+-        "java.util.Arrays#spliterator": "java.util.DesugarArrays",
+-        "java.util.LinkedHashSet#spliterator": "java.util.DesugarLinkedHashSet"
+       },
+       "dont_rewrite": [
+-        "java.util.Iterator#remove"
+       ],
+       "emulate_interface": {
+-        "java.lang.Iterable": "j$.lang.Iterable",
+-        "java.util.Map$Entry": "j$.util.Map$Entry",
+-        "java.util.Collection": "j$.util.Collection",
+-        "java.util.Map": "j$.util.Map",
+-        "java.util.Iterator": "j$.util.Iterator",
+-        "java.util.Comparator": "j$.util.Comparator",
+-        "java.util.List": "j$.util.List",
+-        "java.util.SortedSet": "j$.util.SortedSet",
+-        "java.util.Set": "j$.util.Set",
+-        "java.util.concurrent.ConcurrentMap": "j$.util.concurrent.ConcurrentMap"
+       },
+       "custom_conversion": {
+-        "java.util.Optional": "java.util.OptionalConversions",
+-        "java.util.OptionalDouble": "java.util.OptionalConversions",
+-        "java.util.OptionalInt": "java.util.OptionalConversions",
+-        "java.util.OptionalLong": "java.util.OptionalConversions",
+-        "java.util.LongSummaryStatistics": "java.util.LongSummaryStatisticsConversions",
+-        "java.util.IntSummaryStatistics": "java.util.IntSummaryStatisticsConversions",
+-        "java.util.DoubleSummaryStatistics": "java.util.DoubleSummaryStatisticsConversions"
+       }
+     }
+   ],
+@@ -137,7 +46,6 @@
+     {
+       "api_level_below_or_equal": 25,
+       "rewrite_prefix": {
+-        "java.util.Desugar": "j$.util.Desugar"
+       },
+       "retarget_lib_member": {
+       },
+@@ -147,57 +55,14 @@
+     {
+       "api_level_below_or_equal": 23,
+       "rewrite_prefix": {
+-        "java.util.stream.": "j$.util.stream.",
+-        "java.util.function.": "j$.util.function.",
+-        "java.util.DoubleSummaryStatistics": "j$.util.DoubleSummaryStatistics",
+-        "java.util.IntSummaryStatistics": "j$.util.IntSummaryStatistics",
+-        "java.util.LongSummaryStatistics": "j$.util.LongSummaryStatistics",
+-        "java.util.Optional": "j$.util.Optional",
+-        "java.util.PrimitiveIterator": "j$.util.PrimitiveIterator",
+-        "java.util.Spliterator": "j$.util.Spliterator",
+-        "java.util.StringJoiner": "j$.util.StringJoiner",
+-        "java.util.concurrent.atomic.DesugarAtomic": "j$.util.concurrent.atomic.DesugarAtomic"
+       },
+       "retarget_lib_member": {
+-        "java.util.Arrays#stream": "java.util.DesugarArrays",
+-        "java.util.Arrays#spliterator": "java.util.DesugarArrays",
+-        "java.util.LinkedHashSet#spliterator": "java.util.DesugarLinkedHashSet",
+-        "java.util.concurrent.atomic.AtomicInteger#getAndUpdate": "java.util.concurrent.atomic.DesugarAtomicInteger",
+-        "java.util.concurrent.atomic.AtomicInteger#updateAndGet": "java.util.concurrent.atomic.DesugarAtomicInteger",
+-        "java.util.concurrent.atomic.AtomicInteger#getAndAccumulate": "java.util.concurrent.atomic.DesugarAtomicInteger",
+-        "java.util.concurrent.atomic.AtomicInteger#accumulateAndGet": "java.util.concurrent.atomic.DesugarAtomicInteger",
+-        "java.util.concurrent.atomic.AtomicLong#getAndUpdate": "java.util.concurrent.atomic.DesugarAtomicLong",
+-        "java.util.concurrent.atomic.AtomicLong#updateAndGet": "java.util.concurrent.atomic.DesugarAtomicLong",
+-        "java.util.concurrent.atomic.AtomicLong#getAndAccumulate": "java.util.concurrent.atomic.DesugarAtomicLong",
+-        "java.util.concurrent.atomic.AtomicLong#accumulateAndGet": "java.util.concurrent.atomic.DesugarAtomicLong",
+-        "java.util.concurrent.atomic.AtomicReference#getAndUpdate": "java.util.concurrent.atomic.DesugarAtomicReference",
+-        "java.util.concurrent.atomic.AtomicReference#updateAndGet": "java.util.concurrent.atomic.DesugarAtomicReference",
+-        "java.util.concurrent.atomic.AtomicReference#getAndAccumulate": "java.util.concurrent.atomic.DesugarAtomicReference",
+-        "java.util.concurrent.atomic.AtomicReference#accumulateAndGet": "java.util.concurrent.atomic.DesugarAtomicReference"
+       },
+       "dont_rewrite": [
+-        "java.util.Iterator#remove"
+       ],
+       "emulate_interface": {
+-        "java.lang.Iterable": "j$.lang.Iterable",
+-        "java.util.Map$Entry": "j$.util.Map$Entry",
+-        "java.util.Collection": "j$.util.Collection",
+-        "java.util.Map": "j$.util.Map",
+-        "java.util.Iterator": "j$.util.Iterator",
+-        "java.util.Comparator": "j$.util.Comparator",
+-        "java.util.List": "j$.util.List",
+-        "java.util.SortedSet": "j$.util.SortedSet",
+-        "java.util.Set": "j$.util.Set",
+-        "java.util.concurrent.ConcurrentMap": "j$.util.concurrent.ConcurrentMap"
+       },
+       "custom_conversion": {
+-        "java.util.Optional": "java.util.OptionalConversions",
+-        "java.util.OptionalDouble": "java.util.OptionalConversions",
+-        "java.util.OptionalInt": "java.util.OptionalConversions",
+-        "java.util.OptionalLong": "java.util.OptionalConversions",
+-        "java.util.LongSummaryStatistics": "java.util.LongSummaryStatisticsConversions",
+-        "java.util.IntSummaryStatistics": "java.util.IntSummaryStatisticsConversions",
+-        "java.util.DoubleSummaryStatistics": "java.util.DoubleSummaryStatisticsConversions"
+       }
+     }
+   ],
+--
+2.17.1

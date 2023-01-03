@@ -1,0 +1,998 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Sun, 19 Jun 2022 12:57:56 +0200
+Subject: Remove voice recognition integration
+
+License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
+---
+ .../start_surface/StartSurfaceMediator.java   |   7 +-
+ .../features/tasks/TasksSurfaceMediator.java  |   4 -
+ .../init/ProcessInitializationHandler.java    |   5 -
+ .../browser/metrics/UmaSessionStats.java      |  19 ---
+ .../chrome/browser/ntp/NewTabPage.java        |  41 +------
+ .../browser/ntp/search/SearchBoxMediator.java |  29 +----
+ .../PasswordCheckupLauncher.java              |   3 +-
+ .../browser/searchwidget/SearchActivity.java  |   8 +-
+ .../SearchActivityLocationBarLayout.java      |  42 +------
+ .../browser/toolbar/ToolbarManager.java       |   6 -
+ .../chrome/browser/ui/RootUiCoordinator.java  |  23 +---
+ chrome/browser/ui/android/omnibox/BUILD.gn    |   6 -
+ .../chrome/browser/omnibox/LocationBar.java   |   6 -
+ .../omnibox/LocationBarCoordinator.java       |  13 ---
+ .../browser/omnibox/LocationBarMediator.java  | 110 +-----------------
+ .../chrome/browser/omnibox/OmniboxStub.java   |   8 --
+ .../suggestions/AutocompleteController.java   |  21 ----
+ .../suggestions/AutocompleteCoordinator.java  |   8 --
+ .../suggestions/AutocompleteMediator.java     |   9 --
+ 19 files changed, 12 insertions(+), 356 deletions(-)
+
+diff --git a/chrome/android/features/start_surface/java/src/org/chromium/chrome/features/start_surface/StartSurfaceMediator.java b/chrome/android/features/start_surface/java/src/org/chromium/chrome/features/start_surface/StartSurfaceMediator.java
+--- a/chrome/android/features/start_surface/java/src/org/chromium/chrome/features/start_surface/StartSurfaceMediator.java
++++ b/chrome/android/features/start_surface/java/src/org/chromium/chrome/features/start_surface/StartSurfaceMediator.java
+@@ -420,8 +420,7 @@ class StartSurfaceMediator implements TabSwitcher.TabSwitcherViewObserver, View.
+ 
+             // Initialize
+             // Note that isVoiceSearchEnabled will return false in incognito mode.
+-            mPropertyModel.set(IS_VOICE_RECOGNITION_BUTTON_VISIBLE,
+-                    mOmniboxStub.getVoiceRecognitionHandler().isVoiceSearchEnabled());
++            mPropertyModel.set(IS_VOICE_RECOGNITION_BUTTON_VISIBLE, false);
+             boolean shouldShowLensButton = mOmniboxStub.isLensEnabled(LensEntryPoint.TASKS_SURFACE);
+             LensMetrics.recordShown(LensEntryPoint.TASKS_SURFACE, shouldShowLensButton);
+             mPropertyModel.set(IS_LENS_BUTTON_VISIBLE, shouldShowLensButton);
+@@ -1176,10 +1175,6 @@ class StartSurfaceMediator implements TabSwitcher.TabSwitcherViewObserver, View.
+         // incorrect state if check synchronously.
+         ThreadUtils.postOnUiThread(() -> {
+             if (mOmniboxStub != null) {
+-                if (mOmniboxStub.getVoiceRecognitionHandler() != null) {
+-                    mPropertyModel.set(IS_VOICE_RECOGNITION_BUTTON_VISIBLE,
+-                            mOmniboxStub.getVoiceRecognitionHandler().isVoiceSearchEnabled());
+-                }
+                 mPropertyModel.set(IS_LENS_BUTTON_VISIBLE,
+                         mOmniboxStub.isLensEnabled(LensEntryPoint.TASKS_SURFACE));
+             }
+diff --git a/chrome/android/features/start_surface/java/src/org/chromium/chrome/features/tasks/TasksSurfaceMediator.java b/chrome/android/features/start_surface/java/src/org/chromium/chrome/features/tasks/TasksSurfaceMediator.java
+--- a/chrome/android/features/start_surface/java/src/org/chromium/chrome/features/tasks/TasksSurfaceMediator.java
++++ b/chrome/android/features/start_surface/java/src/org/chromium/chrome/features/tasks/TasksSurfaceMediator.java
+@@ -34,7 +34,6 @@ import org.chromium.chrome.browser.lens.LensMetrics;
+ import org.chromium.chrome.browser.ntp.IncognitoCookieControlsManager;
+ import org.chromium.chrome.browser.omnibox.OmniboxFocusReason;
+ import org.chromium.chrome.browser.omnibox.OmniboxStub;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
+ import org.chromium.chrome.browser.tasks.tab_management.TabSwitcher.TabSwitcherViewObserver;
+ import org.chromium.components.content_settings.CookieControlsEnforcement;
+ import org.chromium.ui.modelutil.PropertyModel;
+@@ -107,9 +106,6 @@ class TasksSurfaceMediator implements TabSwitcherViewObserver {
+                 if (feedReliabilityLogger != null) {
+                     feedReliabilityLogger.onVoiceSearch();
+                 }
+-                mOmniboxStub.getVoiceRecognitionHandler().startVoiceRecognition(
+-                        VoiceRecognitionHandler.VoiceInteractionSource.TASKS_SURFACE);
+-                RecordUserAction.record("TasksSurface.FakeBox.VoiceSearch");
+             }
+         });
+ 
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java b/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/init/ProcessInitializationHandler.java
+@@ -67,7 +67,6 @@ import org.chromium.chrome.browser.metrics.PackageMetrics;
+ import org.chromium.chrome.browser.metrics.WebApkUninstallUmaTracker;
+ import org.chromium.chrome.browser.notifications.channels.ChannelsUpdater;
+ import org.chromium.chrome.browser.offlinepages.measurements.OfflineMeasurementsBackgroundTask;
+-import org.chromium.chrome.browser.omnibox.voice.AssistantVoiceSearchService;
+ import org.chromium.chrome.browser.optimization_guide.OptimizationGuideBridgeFactory;
+ import org.chromium.chrome.browser.partnercustomizations.PartnerBrowserCustomizations;
+ import org.chromium.chrome.browser.photo_picker.DecoderService;
+@@ -431,10 +430,6 @@ public class ProcessInitializationHandler {
+         deferredStartupHandler.addDeferredTask(
+                 () -> OfflineMeasurementsBackgroundTask.clearPersistedDataFromPrefs());
+         deferredStartupHandler.addDeferredTask(() -> QueryTileUtils.isQueryTilesEnabledOnNTP());
+-        deferredStartupHandler.addDeferredTask(
+-                ()
+-                        -> AssistantVoiceSearchService.reportStartupUserEligibility(
+-                                ContextUtils.getApplicationContext()));
+         deferredStartupHandler.addDeferredTask(() -> {
+             GlobalAppLocaleController.getInstance().maybeSetupLocaleManager();
+             GlobalAppLocaleController.getInstance().recordOverrideLanguageMetrics();
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/metrics/UmaSessionStats.java b/chrome/android/java/src/org/chromium/chrome/browser/metrics/UmaSessionStats.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/metrics/UmaSessionStats.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/metrics/UmaSessionStats.java
+@@ -18,7 +18,6 @@ import org.chromium.base.task.PostTask;
+ import org.chromium.base.task.TaskTraits;
+ import org.chromium.chrome.browser.DefaultBrowserInfo;
+ import org.chromium.chrome.browser.instantapps.InstantAppsHandler;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler.AudioPermissionState;
+ import org.chromium.chrome.browser.privacy.settings.PrivacyPreferencesManagerImpl;
+ import org.chromium.chrome.browser.tab.Tab;
+ import org.chromium.chrome.browser.tabmodel.TabModel;
+@@ -128,24 +127,6 @@ public class UmaSessionStats {
+         updatePreferences();
+         updateMetricsServiceState();
+         DefaultBrowserInfo.logDefaultBrowserStats();
+-        if (permissionDelegate != null) {
+-            recordAudioPermissionState(permissionDelegate);
+-        }
+-    }
+-
+-    private void recordAudioPermissionState(AndroidPermissionDelegate permissionDelegate) {
+-        @AudioPermissionState
+-        int permissionState;
+-        if (permissionDelegate.hasPermission(Manifest.permission.RECORD_AUDIO)) {
+-            permissionState = AudioPermissionState.GRANTED;
+-        } else if (permissionDelegate.canRequestPermission(Manifest.permission.RECORD_AUDIO)) {
+-            permissionState = AudioPermissionState.DENIED_CAN_ASK_AGAIN;
+-        } else {
+-            permissionState = AudioPermissionState.DENIED_CANNOT_ASK_AGAIN;
+-        }
+-        RecordHistogram.recordEnumeratedHistogram(
+-                "VoiceInteraction.AudioPermissionEvent.SessionStart", permissionState,
+-                AudioPermissionState.NUM_ENTRIES);
+     }
+ 
+     private static void ensureNativeInitialized() {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java b/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
+@@ -56,7 +56,6 @@ import org.chromium.chrome.browser.lifecycle.PauseResumeWithNativeObserver;
+ import org.chromium.chrome.browser.native_page.ContextMenuManager;
+ import org.chromium.chrome.browser.omnibox.OmniboxFocusReason;
+ import org.chromium.chrome.browser.omnibox.OmniboxStub;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
+ import org.chromium.chrome.browser.privacy.settings.PrivacyPreferencesManagerImpl;
+ import org.chromium.chrome.browser.privacy_sandbox.PrivacySandboxDialogController;
+ import org.chromium.chrome.browser.privacy_sandbox.PrivacySandboxDialogLaunchContext;
+@@ -110,8 +109,7 @@ import java.util.List;
+  */
+ public class NewTabPage implements NativePage, InvalidationAwareThumbnailProvider,
+                                    TemplateUrlServiceObserver,
+-                                   BrowserControlsStateProvider.Observer, FeedSurfaceDelegate,
+-                                   VoiceRecognitionHandler.Observer {
++                                   BrowserControlsStateProvider.Observer, FeedSurfaceDelegate {
+     private static final String TAG = "NewTabPage";
+ 
+     // Key for the scroll position data that may be stored in a navigation entry.
+@@ -143,7 +141,6 @@ public class NewTabPage implements NativePage, InvalidationAwareThumbnailProvide
+     protected boolean mSearchProviderHasLogo;
+ 
+     protected OmniboxStub mOmniboxStub;
+-    private VoiceRecognitionHandler mVoiceRecognitionHandler;
+ 
+     // The timestamp at which the constructor was called.
+     protected final long mConstructedTimeNs;
+@@ -222,8 +219,7 @@ public class NewTabPage implements NativePage, InvalidationAwareThumbnailProvide
+ 
+         @Override
+         public boolean isVoiceSearchEnabled() {
+-            return mVoiceRecognitionHandler != null
+-                    && mVoiceRecognitionHandler.isVoiceSearchEnabled();
++            return false;
+         }
+ 
+         @Override
+@@ -232,21 +228,6 @@ public class NewTabPage implements NativePage, InvalidationAwareThumbnailProvide
+             if (VrModuleProvider.getDelegate().isInVr()) return;
+             FeedReliabilityLogger feedReliabilityLogger =
+                     mFeedSurfaceProvider.getReliabilityLogger();
+-            if (mVoiceRecognitionHandler != null && beginVoiceSearch) {
+-                if (feedReliabilityLogger != null) {
+-                    feedReliabilityLogger.onVoiceSearch();
+-                }
+-                mVoiceRecognitionHandler.startVoiceRecognition(
+-                        VoiceRecognitionHandler.VoiceInteractionSource.NTP);
+-                mTracker.notifyEvent(EventConstants.NTP_VOICE_SEARCH_BUTTON_CLICKED);
+-            } else if (mOmniboxStub != null) {
+-                if (feedReliabilityLogger != null) {
+-                    feedReliabilityLogger.onOmniboxFocused();
+-                }
+-                mOmniboxStub.setUrlBarFocus(true, pastedText,
+-                        pastedText == null ? OmniboxFocusReason.FAKE_BOX_TAP
+-                                           : OmniboxFocusReason.FAKE_BOX_LONG_PRESS);
+-            }
+         }
+ 
+         @Override
+@@ -742,12 +723,6 @@ public class NewTabPage implements NativePage, InvalidationAwareThumbnailProvide
+                 mOmniboxStub.addUrlFocusChangeListener(feedReliabilityLogger);
+             }
+         }
+-
+-        mVoiceRecognitionHandler = mOmniboxStub.getVoiceRecognitionHandler();
+-        if (mVoiceRecognitionHandler != null) {
+-            mVoiceRecognitionHandler.addObserver(this);
+-            mNewTabPageLayout.updateActionButtonVisibility();
+-        }
+     }
+ 
+     @Override
+@@ -758,11 +733,6 @@ public class NewTabPage implements NativePage, InvalidationAwareThumbnailProvide
+         }
+     }
+ 
+-    @Override
+-    public void onVoiceAvailabilityImpacted() {
+-        mNewTabPageLayout.updateActionButtonVisibility();
+-    }
+-
+     /** Adds an observer to be notified on most visited tile clicks. */
+     public void addMostVisitedTileClickObserver(MostVisitedTileClickObserver observer) {
+         mMostVisitedTileClickObservers.addObserver(observer);
+@@ -792,9 +762,6 @@ public class NewTabPage implements NativePage, InvalidationAwareThumbnailProvide
+                     /*isIncognito=*/false, // NTP is not displayed in incognito.
+                     mBottomSheetController);
+         }
+-
+-        FeatureNotificationUtils.registerIPHCallback(FeatureType.VOICE_SEARCH,
+-                mNewTabPageLayout::maybeShowFeatureNotificationVoiceSearchIPH);
+     }
+ 
+     /** Records UMA for the NTP being hidden and the time spent on it. */
+@@ -803,7 +770,6 @@ public class NewTabPage implements NativePage, InvalidationAwareThumbnailProvide
+         RecordHistogram.recordMediumTimesHistogram("NewTabPage.TimeSpent",
+                 (System.nanoTime() - mLastShownTimeNs) / TimeUtils.NANOSECONDS_PER_MILLISECOND);
+         SuggestionsMetrics.recordSurfaceHidden();
+-        FeatureNotificationUtils.unregisterIPHCallback(FeatureType.VOICE_SEARCH);
+     }
+ 
+     /**
+@@ -902,9 +868,6 @@ public class NewTabPage implements NativePage, InvalidationAwareThumbnailProvide
+         }
+         mFeedSurfaceProvider.destroy();
+         mTab.getWindowAndroid().removeContextMenuCloseListener(mContextMenuManager);
+-        if (mVoiceRecognitionHandler != null) {
+-            mVoiceRecognitionHandler.removeObserver(this);
+-        }
+         if (mSearchResumptionModuleCoordinator != null) {
+             mSearchResumptionModuleCoordinator.destroy();
+         }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/search/SearchBoxMediator.java b/chrome/android/java/src/org/chromium/chrome/browser/ntp/search/SearchBoxMediator.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ntp/search/SearchBoxMediator.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ntp/search/SearchBoxMediator.java
+@@ -21,7 +21,6 @@ import org.chromium.chrome.browser.lens.LensQueryParams;
+ import org.chromium.chrome.browser.lifecycle.ActivityLifecycleDispatcher;
+ import org.chromium.chrome.browser.lifecycle.DestroyObserver;
+ import org.chromium.chrome.browser.lifecycle.NativeInitObserver;
+-import org.chromium.chrome.browser.omnibox.voice.AssistantVoiceSearchService;
+ import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.search_engines.TemplateUrlServiceFactory;
+@@ -37,14 +36,13 @@ import java.util.ArrayList;
+ import java.util.List;
+ 
+ class SearchBoxMediator
+-        implements DestroyObserver, NativeInitObserver, AssistantVoiceSearchService.Observer {
++        implements DestroyObserver, NativeInitObserver {
+     private final Context mContext;
+     private final PropertyModel mModel;
+     private final ViewGroup mView;
+     private final List<OnClickListener> mVoiceSearchClickListeners = new ArrayList<>();
+     private final List<OnClickListener> mLensClickListeners = new ArrayList<>();
+     private ActivityLifecycleDispatcher mActivityLifecycleDispatcher;
+-    private AssistantVoiceSearchService mAssistantVoiceSearchService;
+ 
+     /** Constructor. */
+     SearchBoxMediator(Context context, PropertyModel model, ViewGroup view) {
+@@ -71,11 +69,6 @@ class SearchBoxMediator
+ 
+     @Override
+     public void onDestroy() {
+-        if (mAssistantVoiceSearchService != null) {
+-            mAssistantVoiceSearchService.destroy();
+-            mAssistantVoiceSearchService = null;
+-        }
+-
+         if (mActivityLifecycleDispatcher != null) {
+             mActivityLifecycleDispatcher.unregister(this);
+             mActivityLifecycleDispatcher = null;
+@@ -84,26 +77,6 @@ class SearchBoxMediator
+ 
+     @Override
+     public void onFinishNativeInitialization() {
+-        mAssistantVoiceSearchService = new AssistantVoiceSearchService(mContext,
+-                ExternalAuthUtils.getInstance(), TemplateUrlServiceFactory.get(),
+-                GSAState.getInstance(mContext), this, SharedPreferencesManager.getInstance(),
+-                IdentityServicesProvider.get().getIdentityManager(
+-                        Profile.getLastUsedRegularProfile()),
+-                AccountManagerFacadeProvider.getInstance());
+-        onAssistantVoiceSearchServiceChanged();
+-    }
+-
+-    @Override
+-    public void onAssistantVoiceSearchServiceChanged() {
+-        // Potential race condition between destroy and the observer, see crbug.com/1055274.
+-        if (mAssistantVoiceSearchService == null) return;
+-
+-        Drawable drawable = mAssistantVoiceSearchService.getCurrentMicDrawable();
+-        mModel.set(SearchBoxProperties.VOICE_SEARCH_DRAWABLE, drawable);
+-
+-        ColorStateList colorStateList = mAssistantVoiceSearchService.getButtonColorStateList(
+-                BrandedColorScheme.APP_DEFAULT, mContext);
+-        mModel.set(SearchBoxProperties.VOICE_SEARCH_COLOR_STATE_LIST, colorStateList);
+     }
+ 
+     /** Called to set a click listener for the search box. */
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/password_manager/PasswordCheckupLauncher.java b/chrome/android/java/src/org/chromium/chrome/browser/password_manager/PasswordCheckupLauncher.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/password_manager/PasswordCheckupLauncher.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/password_manager/PasswordCheckupLauncher.java
+@@ -13,7 +13,6 @@ import org.chromium.base.supplier.ObservableSupplierImpl;
+ import org.chromium.chrome.browser.AppHooks;
+ import org.chromium.chrome.browser.password_check.PasswordCheckFactory;
+ import org.chromium.chrome.browser.settings.SettingsLauncherImpl;
+-import org.chromium.chrome.browser.sync.SyncService;
+ import org.chromium.ui.base.WindowAndroid;
+ import org.chromium.ui.modaldialog.ModalDialogManager;
+ 
+@@ -35,7 +34,7 @@ public class PasswordCheckupLauncher {
+ 
+         if (PasswordManagerHelper.canUseUpm()) {
+             PasswordManagerHelper.showPasswordCheckup(windowAndroid.getContext().get(),
+-                    passwordCheckReferrer, SyncService.get(),
++                    passwordCheckReferrer,
+                     getModalDialogManagerSupplier(windowAndroid));
+             return;
+         }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/searchwidget/SearchActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/searchwidget/SearchActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/searchwidget/SearchActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/searchwidget/SearchActivity.java
+@@ -50,7 +50,6 @@ import org.chromium.chrome.browser.omnibox.OverrideUrlLoadingDelegate;
+ import org.chromium.chrome.browser.omnibox.SearchEngineLogoUtils;
+ import org.chromium.chrome.browser.omnibox.UrlFocusChangeListener;
+ import org.chromium.chrome.browser.omnibox.suggestions.OmniboxSuggestionsDropdownScrollListener;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
+ import org.chromium.chrome.browser.privacy.settings.PrivacyPreferencesManagerImpl;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.tab.Tab;
+@@ -343,14 +342,12 @@ public class SearchActivity extends AsyncInitializationActivity
+         //                will navigate to Tabbed mode.  Investigate whether this can inflate
+         //                the tabbed mode layout in the background instead of CCTs.
+         CustomTabsConnection.getInstance().warmup(0);
+-        VoiceRecognitionHandler voiceRecognitionHandler =
+-                mLocationBarCoordinator.getVoiceRecognitionHandler();
+         @SearchType
+         int searchType = getSearchType(getIntent().getAction());
+         if (isFromQuickActionSearchWidget()) {
+             recordQuickActionSearchType(searchType);
+         }
+-        mSearchBox.onDeferredStartup(searchType, voiceRecognitionHandler, getWindowAndroid());
++        mSearchBox.onDeferredStartup(searchType, getWindowAndroid());
+         RecordUserAction.record("SearchWidget.WidgetSelected");
+ 
+         getActivityDelegate().onFinishDeferredInitialization();
+@@ -421,8 +418,7 @@ public class SearchActivity extends AsyncInitializationActivity
+         if (isFromQuickActionSearchWidget()) {
+             recordQuickActionSearchType(searchType);
+         }
+-        mSearchBox.beginQuery(searchType, getOptionalIntentQuery(),
+-                mLocationBarCoordinator.getVoiceRecognitionHandler(), getWindowAndroid());
++        mSearchBox.beginQuery(searchType, getOptionalIntentQuery(), getWindowAndroid());
+     }
+ 
+     @Override
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/searchwidget/SearchActivityLocationBarLayout.java b/chrome/android/java/src/org/chromium/chrome/browser/searchwidget/SearchActivityLocationBarLayout.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/searchwidget/SearchActivityLocationBarLayout.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/searchwidget/SearchActivityLocationBarLayout.java
+@@ -30,7 +30,6 @@ import org.chromium.chrome.browser.omnibox.UrlBarCoordinator.SelectionState;
+ import org.chromium.chrome.browser.omnibox.UrlBarData;
+ import org.chromium.chrome.browser.omnibox.status.StatusCoordinator;
+ import org.chromium.chrome.browser.omnibox.suggestions.AutocompleteCoordinator;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
+ import org.chromium.chrome.browser.toolbar.top.ToolbarPhone;
+ import org.chromium.chrome.browser.ui.searchactivityutils.SearchActivityPreferencesManager;
+ import org.chromium.components.browser_ui.styles.ChromeColors;
+@@ -88,7 +87,6 @@ public class SearchActivityLocationBarLayout extends LocationBarLayout {
+ 
+     /** Called when the SearchActivity has finished initialization. */
+     void onDeferredStartup(@SearchType int searchType,
+-            @NonNull VoiceRecognitionHandler voiceRecognitionHandler,
+             @NonNull WindowAndroid windowAndroid) {
+         mAutocompleteCoordinator.prefetchZeroSuggestResults();
+ 
+@@ -103,7 +101,7 @@ public class SearchActivityLocationBarLayout extends LocationBarLayout {
+         }
+ 
+         if (mPendingBeginQuery) {
+-            beginQueryInternal(searchType, voiceRecognitionHandler, windowAndroid);
++            beginQueryInternal(searchType, windowAndroid);
+             mPendingBeginQuery = false;
+         }
+     }
+@@ -112,12 +110,10 @@ public class SearchActivityLocationBarLayout extends LocationBarLayout {
+      * Begins a new query.
+      * @param searchType The type of search to invoke.
+      * @param optionalText Prepopulate with a query, this may be null.
+-     * @param voiceRecognitionHandler Handler responsible for managing voice searches.
+      * @param windowAndroid WindowAndroid context.
+      */
+     @VisibleForTesting
+     public void beginQuery(@SearchType int searchType, @Nullable String optionalText,
+-            @NonNull VoiceRecognitionHandler voiceRecognitionHandler,
+             @NonNull WindowAndroid windowAndroid) {
+         // Clear the text regardless of the promo decision.  This allows the user to enter text
+         // before native has been initialized and have it not be cleared one the delayed beginQuery
+@@ -131,11 +127,10 @@ public class SearchActivityLocationBarLayout extends LocationBarLayout {
+             return;
+         }
+ 
+-        beginQueryInternal(searchType, voiceRecognitionHandler, windowAndroid);
++        beginQueryInternal(searchType, windowAndroid);
+     }
+ 
+     private void beginQueryInternal(@SearchType int searchType,
+-            @NonNull VoiceRecognitionHandler voiceRecognitionHandler,
+             @NonNull WindowAndroid windowAndroid) {
+         assert !mPendingSearchPromoDecision;
+ 
+@@ -145,7 +140,6 @@ public class SearchActivityLocationBarLayout extends LocationBarLayout {
+         }
+ 
+         if (searchType == SearchType.VOICE) {
+-            runVoiceSearch(voiceRecognitionHandler);
+         } else if (searchType == SearchType.LENS) {
+             runGoogleLens(windowAndroid);
+         } else {
+@@ -153,33 +147,6 @@ public class SearchActivityLocationBarLayout extends LocationBarLayout {
+         }
+     }
+ 
+-    /**
+-     * Begins a new Voice query.
+-     *
+-     * @param voiceRecognitionHandler Handler responsible for managing voice searches.
+-     */
+-    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+-    void runVoiceSearch(@NonNull VoiceRecognitionHandler voiceRecognitionHandler) {
+-        assert mNativeInitialized;
+-        // Run Voice before focusing the Omnibox. Voice search may trigger omnibox focus as part of
+-        // its own flow in the event where the input is ambiguous. Focusing the Omnibox early may
+-        // affect this flow.
+-        //
+-        // Note that the Voice search will call us back in the event of any failure via
+-        // notifyVoiceRecognitionCanceled() call, giving us the opportunity to focus the Omnibox.
+-        if (voiceRecognitionHandler.isVoiceSearchEnabled()) {
+-            voiceRecognitionHandler.startVoiceRecognition(
+-                    VoiceRecognitionHandler.VoiceInteractionSource.SEARCH_WIDGET);
+-            return;
+-        }
+-
+-        // Voice recognition is not available. Fall back to regular text search.
+-        Toast.makeText(getContext(), R.string.quick_action_search_widget_message_no_voice_search,
+-                     Toast.LENGTH_LONG)
+-                .show();
+-        focusTextBox();
+-    }
+-
+     /**
+      * Begins a new Lens query.
+      *
+@@ -233,9 +200,4 @@ public class SearchActivityLocationBarLayout extends LocationBarLayout {
+             mAutocompleteCoordinator.startCachedZeroSuggest();
+         });
+     }
+-
+-    @Override
+-    public void notifyVoiceRecognitionCanceled() {
+-        focusTextBox();
+-    }
+ }
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java b/chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java
+@@ -89,7 +89,6 @@ import org.chromium.chrome.browser.omnibox.OverrideUrlLoadingDelegate;
+ import org.chromium.chrome.browser.omnibox.SearchEngineLogoUtils;
+ import org.chromium.chrome.browser.omnibox.UrlFocusChangeListener;
+ import org.chromium.chrome.browser.omnibox.suggestions.OmniboxPedalDelegate;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
+ import org.chromium.chrome.browser.page_info.ChromePageInfo;
+ import org.chromium.chrome.browser.partnercustomizations.PartnerBrowserCustomizations;
+ import org.chromium.chrome.browser.privacy.settings.PrivacyPreferencesManagerImpl;
+@@ -2073,11 +2072,6 @@ public class ToolbarManager implements UrlFocusChangeListener, ThemeColorObserve
+         return mLocationBar.getOmniboxStub();
+     }
+ 
+-    @Nullable
+-    public VoiceRecognitionHandler getVoiceRecognitionHandler() {
+-        return mLocationBar.getVoiceRecognitionHandler();
+-    }
+-
+     /**
+      * Called whenever the NTP could have been entered (e.g. tab content changed, tab navigated to
+      * from the tab strip/tab switcher, etc.). If the user is on a tablet and indeed entered the
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ui/RootUiCoordinator.java b/chrome/android/java/src/org/chromium/chrome/browser/ui/RootUiCoordinator.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ui/RootUiCoordinator.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ui/RootUiCoordinator.java
+@@ -90,8 +90,6 @@ import org.chromium.chrome.browser.messages.MessagesResourceMapperInitializer;
+ import org.chromium.chrome.browser.omnibox.OmniboxFocusReason;
+ import org.chromium.chrome.browser.omnibox.geo.GeolocationHeader;
+ import org.chromium.chrome.browser.omnibox.suggestions.OmniboxPedalDelegate;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler.VoiceInteractionSource;
+ import org.chromium.chrome.browser.paint_preview.DemoPaintPreview;
+ import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
+ import org.chromium.chrome.browser.profiles.Profile;
+@@ -271,7 +269,6 @@ public class RootUiCoordinator
+     protected OneshotSupplierImpl<Boolean> mPromoShownOneshotSupplier = new OneshotSupplierImpl<>();
+     protected Supplier<Tab> mStartSurfaceParentTabSupplier;
+     @Nullable
+-    private VoiceRecognitionHandler.Observer mMicStateObserver;
+     private MediaCaptureOverlayController mCaptureController;
+     private @Nullable ScrollCaptureManager mScrollCaptureManager;
+     protected final ActivityLifecycleDispatcher mActivityLifecycleDispatcher;
+@@ -546,9 +543,6 @@ public class RootUiCoordinator
+         }
+ 
+         if (mToolbarManager != null) {
+-            if (mMicStateObserver != null && mToolbarManager.getVoiceRecognitionHandler() != null) {
+-                mToolbarManager.getVoiceRecognitionHandler().removeObserver(mMicStateObserver);
+-            }
+             mToolbarManager.destroy();
+             mToolbarManager = null;
+         }
+@@ -1091,19 +1085,11 @@ public class RootUiCoordinator
+                     new VoiceToolbarButtonController.VoiceSearchDelegate() {
+                         @Override
+                         public boolean isVoiceSearchEnabled() {
+-                            VoiceRecognitionHandler voiceRecognitionHandler =
+-                                    mToolbarManager.getVoiceRecognitionHandler();
+-                            if (voiceRecognitionHandler == null) return false;
+-                            return voiceRecognitionHandler.isVoiceSearchEnabled();
++                            return false;
+                         }
+ 
+                         @Override
+                         public void startVoiceRecognition() {
+-                            VoiceRecognitionHandler voiceRecognitionHandler =
+-                                    mToolbarManager.getVoiceRecognitionHandler();
+-                            if (voiceRecognitionHandler == null) return;
+-                            voiceRecognitionHandler.startVoiceRecognition(
+-                                    VoiceInteractionSource.TOOLBAR);
+                         }
+                     };
+             VoiceToolbarButtonController voiceToolbarButtonController =
+@@ -1153,13 +1139,6 @@ public class RootUiCoordinator
+             if (!mSupportsAppMenuSupplier.getAsBoolean()) {
+                 mToolbarManager.getToolbar().disableMenuButton();
+             }
+-
+-            VoiceRecognitionHandler voiceRecognitionHandler =
+-                    mToolbarManager.getVoiceRecognitionHandler();
+-            if (voiceRecognitionHandler != null) {
+-                mMicStateObserver = voiceToolbarButtonController::updateMicButtonState;
+-                voiceRecognitionHandler.addObserver(mMicStateObserver);
+-            }
+         }
+     }
+ 
+diff --git a/chrome/browser/ui/android/omnibox/BUILD.gn b/chrome/browser/ui/android/omnibox/BUILD.gn
+--- a/chrome/browser/ui/android/omnibox/BUILD.gn
++++ b/chrome/browser/ui/android/omnibox/BUILD.gn
+@@ -127,12 +127,6 @@ android_library("java") {
+     "java/src/org/chromium/chrome/browser/omnibox/suggestions/tail/TailSuggestionView.java",
+     "java/src/org/chromium/chrome/browser/omnibox/suggestions/tail/TailSuggestionViewBinder.java",
+     "java/src/org/chromium/chrome/browser/omnibox/suggestions/tail/TailSuggestionViewProperties.java",
+-    "java/src/org/chromium/chrome/browser/omnibox/voice/AssistantVoiceSearchConsentBottomSheet.java",
+-    "java/src/org/chromium/chrome/browser/omnibox/voice/AssistantVoiceSearchConsentController.java",
+-    "java/src/org/chromium/chrome/browser/omnibox/voice/AssistantVoiceSearchConsentModal.java",
+-    "java/src/org/chromium/chrome/browser/omnibox/voice/AssistantVoiceSearchConsentUi.java",
+-    "java/src/org/chromium/chrome/browser/omnibox/voice/AssistantVoiceSearchService.java",
+-    "java/src/org/chromium/chrome/browser/omnibox/voice/VoiceRecognitionHandler.java",
+   ]
+ 
+   public_deps = [
+diff --git a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBar.java b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBar.java
+--- a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBar.java
++++ b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBar.java
+@@ -9,7 +9,6 @@ import android.view.ViewGroup;
+ 
+ import androidx.annotation.Nullable;
+ 
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
+ import org.chromium.chrome.browser.tab.Tab;
+ 
+ /**
+@@ -67,11 +66,6 @@ public interface LocationBar {
+     View getSecurityIconView();
+ 
+ 
+-    /** Returns the {@link VoiceRecognitionHandler} associated with this LocationBar. */
+-    @Nullable
+-    default VoiceRecognitionHandler getVoiceRecognitionHandler() {
+-        return null;
+-    }
+     /**
+      * Returns a (@link OmniboxStub}.
+      *
+diff --git a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBarCoordinator.java b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBarCoordinator.java
+--- a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBarCoordinator.java
++++ b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBarCoordinator.java
+@@ -40,7 +40,6 @@ import org.chromium.chrome.browser.omnibox.suggestions.OmniboxPedalDelegate;
+ import org.chromium.chrome.browser.omnibox.suggestions.OmniboxSuggestionsDropdownEmbedder;
+ import org.chromium.chrome.browser.omnibox.suggestions.OmniboxSuggestionsDropdownScrollListener;
+ import org.chromium.chrome.browser.omnibox.suggestions.basic.BasicSuggestionProcessor.BookmarkState;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
+ import org.chromium.chrome.browser.privacy.settings.PrivacyPreferencesManager;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.search_engines.TemplateUrlServiceFactory;
+@@ -368,13 +367,6 @@ public class LocationBarCoordinator implements LocationBar, NativeInitObserver,
+         return mLocationBarLayout.getSecurityIconView();
+     }
+ 
+-    /** Returns the {@link VoiceRecognitionHandler} associated with this LocationBar. */
+-    @Nullable
+-    @Override
+-    public VoiceRecognitionHandler getVoiceRecognitionHandler() {
+-        return mLocationBarMediator.getVoiceRecognitionHandler();
+-    }
+-
+     @Nullable
+     @Override
+     public OmniboxStub getOmniboxStub() {
+@@ -644,11 +636,6 @@ public class LocationBarCoordinator implements LocationBar, NativeInitObserver,
+ 
+     // End tablet-specific methods.
+ 
+-    public void setVoiceRecognitionHandlerForTesting(
+-            VoiceRecognitionHandler voiceRecognitionHandler) {
+-        mLocationBarMediator.setVoiceRecognitionHandlerForTesting(voiceRecognitionHandler);
+-    }
+-
+     public void onUrlChangedForTesting() {
+         mLocationBarMediator.onUrlChanged();
+     }
+diff --git a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBarMediator.java b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBarMediator.java
+--- a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBarMediator.java
++++ b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBarMediator.java
+@@ -51,8 +51,6 @@ import org.chromium.chrome.browser.omnibox.geo.GeolocationHeader;
+ import org.chromium.chrome.browser.omnibox.status.StatusCoordinator;
+ import org.chromium.chrome.browser.omnibox.styles.OmniboxResourceProvider;
+ import org.chromium.chrome.browser.omnibox.suggestions.AutocompleteCoordinator;
+-import org.chromium.chrome.browser.omnibox.voice.AssistantVoiceSearchService;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
+ import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
+ import org.chromium.chrome.browser.prefetch.settings.PreloadPagesSettingsBridge;
+ import org.chromium.chrome.browser.prefetch.settings.PreloadPagesState;
+@@ -88,8 +86,7 @@ import java.util.List;
+  * currently, migration of this logic out of LocationBarLayout is in progress.
+  */
+ class LocationBarMediator
+-        implements LocationBarDataProvider.Observer, OmniboxStub, VoiceRecognitionHandler.Delegate,
+-                   VoiceRecognitionHandler.Observer, AssistantVoiceSearchService.Observer,
++        implements LocationBarDataProvider.Observer, OmniboxStub,
+                    UrlBarDelegate, OnKeyListener, ComponentCallbacks,
+                    TemplateUrlService.TemplateUrlServiceObserver, BackPressHandler {
+     private static final int ICON_FADE_ANIMATION_DURATION_MS = 150;
+@@ -145,10 +142,7 @@ class LocationBarMediator
+             };
+ 
+     private final LocationBarLayout mLocationBarLayout;
+-    private VoiceRecognitionHandler mVoiceRecognitionHandler;
+     private final LocationBarDataProvider mLocationBarDataProvider;
+-    private final OneshotSupplierImpl<AssistantVoiceSearchService>
+-            mAssistantVoiceSearchServiceSupplier = new OneshotSupplierImpl<>();
+     private StatusCoordinator mStatusCoordinator;
+     private AutocompleteCoordinator mAutocompleteCoordinator;
+     private OmniboxPrerender mOmniboxPrerender;
+@@ -213,10 +207,6 @@ class LocationBarMediator
+         mLocationBarDataProvider.addObserver(this);
+         mOverrideUrlLoadingDelegate = overrideUrlLoadingDelegate;
+         mLocaleManager = localeManager;
+-        mVoiceRecognitionHandler =
+-                new VoiceRecognitionHandler(this, mAssistantVoiceSearchServiceSupplier,
+-                        launchAssistanceSettingsAction, profileSupplier);
+-        mVoiceRecognitionHandler.addObserver(this);
+         mProfileSupplier = profileSupplier;
+         mProfileSupplier.addObserver(mCallbackController.makeCancelable(this::setProfile));
+         mPrivacyPreferencesManager = privacyPreferencesManager;
+@@ -251,9 +241,6 @@ class LocationBarMediator
+     }
+ 
+     /*package */ void destroy() {
+-        if (mAssistantVoiceSearchServiceSupplier.get() != null) {
+-            mAssistantVoiceSearchServiceSupplier.get().destroy();
+-        }
+         if (mTemplateUrlServiceSupplier.hasValue()) {
+             mTemplateUrlServiceSupplier.get().removeObserver(this);
+         }
+@@ -261,8 +248,6 @@ class LocationBarMediator
+         mAutocompleteCoordinator = null;
+         mUrlCoordinator = null;
+         mPrivacyPreferencesManager = null;
+-        mVoiceRecognitionHandler.removeObserver(this);
+-        mVoiceRecognitionHandler = null;
+         mLocationBarDataProvider.removeObserver(this);
+         mDeferredNativeRunnables.clear();
+         mUrlFocusChangeListeners.clear();
+@@ -320,13 +305,6 @@ class LocationBarMediator
+         if (templateUrlService != null) {
+             templateUrlService.addObserver(this);
+         }
+-        mAssistantVoiceSearchServiceSupplier.set(new AssistantVoiceSearchService(mContext,
+-                ExternalAuthUtils.getInstance(), templateUrlService, GSAState.getInstance(mContext),
+-                this, SharedPreferencesManager.getInstance(),
+-                IdentityServicesProvider.get().getIdentityManager(
+-                        Profile.getLastUsedRegularProfile()),
+-                AccountManagerFacadeProvider.getInstance()));
+-        onAssistantVoiceSearchServiceChanged();
+         mLocationBarLayout.onFinishNativeInitialization();
+         setProfile(mProfileSupplier.get());
+         onPrimaryColorChanged();
+@@ -375,17 +353,6 @@ class LocationBarMediator
+         mLocationBarLayout.setUnfocusedWidth(unfocusedWidth);
+     }
+ 
+-    /* package */ void setVoiceRecognitionHandlerForTesting(
+-            VoiceRecognitionHandler voiceRecognitionHandler) {
+-        mVoiceRecognitionHandler = voiceRecognitionHandler;
+-    }
+-
+-    /* package */ void setAssistantVoiceSearchServiceForTesting(
+-            AssistantVoiceSearchService assistantVoiceSearchService) {
+-        mAssistantVoiceSearchServiceSupplier.set(assistantVoiceSearchService);
+-        onAssistantVoiceSearchServiceChanged();
+-    }
+-
+     /* package */ void setLensControllerForTesting(LensController lensController) {
+         mLensController = lensController;
+     }
+@@ -394,11 +361,6 @@ class LocationBarMediator
+         sLastCachedIsLensOnOmniboxEnabled = null;
+     }
+ 
+-    /* package */ OneshotSupplier<AssistantVoiceSearchService>
+-    getAssistantVoiceSearchServiceSupplierForTesting() {
+-        return mAssistantVoiceSearchServiceSupplier;
+-    }
+-
+     /* package */ void setIsUrlBarFocusedWithoutAnimationsForTesting(
+             boolean isUrlBarFocusedWithoutAnimations) {
+         mUrlFocusedWithoutAnimations = isUrlBarFocusedWithoutAnimations;
+@@ -591,8 +553,6 @@ class LocationBarMediator
+     /* package */ void micButtonClicked(View view) {
+         if (!mNativeInitialized) return;
+         RecordUserAction.record("MobileOmniboxVoiceSearch");
+-        mVoiceRecognitionHandler.startVoiceRecognition(
+-                VoiceRecognitionHandler.VoiceInteractionSource.OMNIBOX);
+     }
+ 
+     /** package */ void lensButtonClicked(View view) {
+@@ -938,28 +898,6 @@ class LocationBarMediator
+         }
+     }
+ 
+-    @VisibleForTesting
+-    /* package */ void updateAssistantVoiceSearchDrawableAndColors() {
+-        AssistantVoiceSearchService assistantVoiceSearchService =
+-                mAssistantVoiceSearchServiceSupplier.get();
+-        if (assistantVoiceSearchService == null) return;
+-
+-        mLocationBarLayout.setMicButtonTint(
+-                assistantVoiceSearchService.getButtonColorStateList(mBrandedColorScheme, mContext));
+-        mLocationBarLayout.setMicButtonDrawable(
+-                assistantVoiceSearchService.getCurrentMicDrawable());
+-    }
+-
+-    @VisibleForTesting
+-    /* package */ void updateLensButtonColors() {
+-        AssistantVoiceSearchService assistantVoiceSearchService =
+-                mAssistantVoiceSearchServiceSupplier.get();
+-        if (assistantVoiceSearchService == null) return;
+-
+-        mLocationBarLayout.setLensButtonTint(
+-                assistantVoiceSearchService.getButtonColorStateList(mBrandedColorScheme, mContext));
+-    }
+-
+     /**
+      * Update visuals to use a correct color scheme depending on the primary color.
+      */
+@@ -1046,8 +984,7 @@ class LocationBarMediator
+ 
+     private boolean shouldShowMicButton() {
+         if (shouldShowDeleteButton()) return false;
+-        if (!mNativeInitialized || mVoiceRecognitionHandler == null
+-                || !mVoiceRecognitionHandler.isVoiceSearchEnabled()) {
++        if ((true)) {
+             return false;
+         }
+         boolean isToolbarMicEnabled = mIsToolbarMicEnabledSupplier.getAsBoolean();
+@@ -1241,9 +1178,6 @@ class LocationBarMediator
+     public void onPrimaryColorChanged() {
+         // This method needs to be called first as it computes |mBrandedColorScheme|.
+         updateBrandedColorScheme();
+-
+-        updateAssistantVoiceSearchDrawableAndColors();
+-        updateLensButtonColors();
+     }
+ 
+     @Override
+@@ -1315,16 +1249,6 @@ class LocationBarMediator
+         }
+     }
+ 
+-    @Override
+-    public @Nullable VoiceRecognitionHandler getVoiceRecognitionHandler() {
+-        // TODO(crbug.com/1140333): StartSurfaceMediator can call this method after destroy().
+-        if (mLocationBarLayout == null) {
+-            return null;
+-        }
+-
+-        return mVoiceRecognitionHandler;
+-    }
+-
+     @Override
+     public void addUrlFocusChangeListener(UrlFocusChangeListener listener) {
+         mUrlFocusChangeListeners.addObserver(listener);
+@@ -1340,37 +1264,10 @@ class LocationBarMediator
+         return mUrlHasFocus;
+     }
+ 
+-    @Override
+     public void clearOmniboxFocus() {
+         setUrlBarFocus(/*shouldBeFocused=*/false, /*pastedText=*/null, OmniboxFocusReason.UNFOCUS);
+     }
+ 
+-    @Override
+-    public void notifyVoiceRecognitionCanceled() {
+-        mLocationBarLayout.notifyVoiceRecognitionCanceled();
+-    }
+-
+-    // AssistantVoiceSearchService.Observer implementation.
+-
+-    @Override
+-    public void onAssistantVoiceSearchServiceChanged() {
+-        updateAssistantVoiceSearchDrawableAndColors();
+-        updateLensButtonColors();
+-    }
+-
+-    // VoiceRecognitionHandler.Delegate implementation.
+-
+-    @Override
+-    public void loadUrlFromVoice(String url) {
+-        loadUrl(url, PageTransition.TYPED, 0);
+-    }
+-
+-    @Override
+-    public void onVoiceAvailabilityImpacted() {
+-        updateButtonVisibility();
+-    }
+-
+-    @Override
+     public void setSearchQuery(String query) {
+         if (TextUtils.isEmpty(query)) return;
+ 
+@@ -1389,17 +1286,14 @@ class LocationBarMediator
+         mUrlCoordinator.setKeyboardVisibility(true, false);
+     }
+ 
+-    @Override
+     public LocationBarDataProvider getLocationBarDataProvider() {
+         return mLocationBarDataProvider;
+     }
+ 
+-    @Override
+     public AutocompleteCoordinator getAutocompleteCoordinator() {
+         return mAutocompleteCoordinator;
+     }
+ 
+-    @Override
+     public WindowAndroid getWindowAndroid() {
+         return mWindowAndroid;
+     }
+diff --git a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/OmniboxStub.java b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/OmniboxStub.java
+--- a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/OmniboxStub.java
++++ b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/OmniboxStub.java
+@@ -7,7 +7,6 @@ package org.chromium.chrome.browser.omnibox;
+ import androidx.annotation.Nullable;
+ 
+ import org.chromium.chrome.browser.lens.LensEntryPoint;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
+ 
+ import java.util.List;
+ 
+@@ -40,13 +39,6 @@ public interface OmniboxStub {
+      */
+     boolean isUrlBarFocused();
+ 
+-    /**
+-     * Get the {@link VoiceRecognitionHandler}.
+-     * @return the {@link VoiceRecognitionHandler}
+-     */
+-    @Nullable
+-    VoiceRecognitionHandler getVoiceRecognitionHandler();
+-
+     /**
+      * Adds a URL focus change listener that will be notified when the URL gains or loses focus.
+      * @param listener The listener to be registered.
+diff --git a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/AutocompleteController.java b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/AutocompleteController.java
+--- a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/AutocompleteController.java
++++ b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/AutocompleteController.java
+@@ -12,7 +12,6 @@ import androidx.annotation.VisibleForTesting;
+ 
+ import org.chromium.base.annotations.CalledByNative;
+ import org.chromium.base.annotations.NativeMethods;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler.VoiceResult;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.tab.Tab;
+ import org.chromium.components.omnibox.AutocompleteMatch;
+@@ -249,24 +248,6 @@ public class AutocompleteController {
+                 completedLength, webContents);
+     }
+ 
+-    /**
+-     * Pass the voice provider a list representing the results of a voice recognition.
+-     * @param results A list containing the results of a voice recognition.
+-     */
+-    void onVoiceResults(@Nullable List<VoiceResult> results) {
+-        if (mNativeController == 0) return;
+-        if (results == null || results.size() == 0) return;
+-        final int count = Math.min(results.size(), MAX_VOICE_SUGGESTION_COUNT);
+-        String[] voiceMatches = new String[count];
+-        float[] confidenceScores = new float[count];
+-        for (int i = 0; i < count; i++) {
+-            voiceMatches[i] = results.get(i).getMatch();
+-            confidenceScores[i] = results.get(i).getConfidence();
+-        }
+-        AutocompleteControllerJni.get().setVoiceMatches(
+-                mNativeController, voiceMatches, confidenceScores);
+-    }
+-
+     /**
+      * Updates aqs parameters on the selected match that we will navigate to and returns the
+      * updated URL.
+@@ -371,8 +352,6 @@ public class AutocompleteController {
+                 long nativeAutocompleteControllerAndroid, int matchIndex,
+                 long elapsedTimeSinceInputChange, String newQueryText, String[] newQueryParams);
+         Tab getMatchingTabForSuggestion(long nativeAutocompleteControllerAndroid, int matchIndex);
+-        void setVoiceMatches(long nativeAutocompleteControllerAndroid, String[] matches,
+-                float[] confidenceScores);
+ 
+         /**
+          * Sends a zero suggest request to the server in order to pre-populate the result cache.
+diff --git a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/AutocompleteCoordinator.java b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/AutocompleteCoordinator.java
+--- a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/AutocompleteCoordinator.java
++++ b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/AutocompleteCoordinator.java
+@@ -48,7 +48,6 @@ import org.chromium.chrome.browser.omnibox.suggestions.pedal.PedalSuggestionView
+ import org.chromium.chrome.browser.omnibox.suggestions.pedal.PedalSuggestionViewBinder;
+ import org.chromium.chrome.browser.omnibox.suggestions.tail.TailSuggestionView;
+ import org.chromium.chrome.browser.omnibox.suggestions.tail.TailSuggestionViewBinder;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.share.ShareDelegate;
+ import org.chromium.chrome.browser.tab.Tab;
+@@ -304,13 +303,6 @@ public class AutocompleteCoordinator implements UrlFocusChangeListener, UrlTextC
+         mMediator.onNativeInitialized();
+     }
+ 
+-    /**
+-     * @see AutocompleteController#onVoiceResults(List)
+-     */
+-    public void onVoiceResults(@Nullable List<VoiceRecognitionHandler.VoiceResult> results) {
+-        mMediator.onVoiceResults(results);
+-    }
+-
+     /**
+      * @return The current native pointer to the autocomplete results.
+      * TODO(ender): Figure out how to remove this.
+diff --git a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/AutocompleteMediator.java b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/AutocompleteMediator.java
+--- a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/AutocompleteMediator.java
++++ b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/AutocompleteMediator.java
+@@ -36,7 +36,6 @@ import org.chromium.chrome.browser.omnibox.UrlBarEditingTextStateProvider;
+ import org.chromium.chrome.browser.omnibox.suggestions.AutocompleteController.OnSuggestionsReceivedListener;
+ import org.chromium.chrome.browser.omnibox.suggestions.SuggestionsMetrics.RefineActionUsage;
+ import org.chromium.chrome.browser.omnibox.suggestions.basic.BasicSuggestionProcessor.BookmarkState;
+-import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.share.ShareDelegate;
+ import org.chromium.chrome.browser.tab.Tab;
+@@ -398,14 +397,6 @@ class AutocompleteMediator implements OnSuggestionsReceivedListener,
+         mShouldPreventOmniboxAutocomplete = prevent;
+     }
+ 
+-    /**
+-     * @see AutocompleteController#onVoiceResults(List)
+-     */
+-    void onVoiceResults(@Nullable List<VoiceRecognitionHandler.VoiceResult> results) {
+-        if (!mNativeInitialized || mAutocomplete == null) return;
+-        mAutocomplete.onVoiceResults(results);
+-    }
+-
+     /**
+      * @return The current native pointer to the autocomplete results.
+      * TODO(crbug.com/1138587): Figure out how to remove this.
+--
+2.25.1

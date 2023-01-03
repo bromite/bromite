@@ -1,0 +1,211 @@
+From: csagan5 <32685696+csagan5@users.noreply.github.com>
+Date: Thu, 16 Jun 2022 23:23:43 +0200
+Subject: Revert "Delete block-external-form-redirects"
+
+This reverts commit b710cefb53b558a8bcd884f6baf0229ba4225721 and
+enables IntentBlockExternalFormRedirectsNoGesture.
+
+License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
+---
+ chrome/browser/about_flags.cc                 |  7 +++++++
+ chrome/browser/flag-metadata.json             |  5 +++++
+ chrome/browser/flag_descriptions.cc           |  6 ++++++
+ chrome/browser/flag_descriptions.h            |  3 +++
+ .../android/external_intents_features.cc      |  7 ++++++-
+ .../android/external_intents_features.h       |  1 +
+ .../ExternalIntentsFeatures.java              |  6 ++++++
+ .../ExternalNavigationHandler.java            | 21 +++++++++++++++++++
+ .../ExternalNavigationHandlerTest.java        | 11 ++++++----
+ 9 files changed, 62 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
+--- a/chrome/browser/about_flags.cc
++++ b/chrome/browser/about_flags.cc
+@@ -236,6 +236,7 @@
+ #include "components/browser_ui/photo_picker/android/features.h"
+ #include "components/content_creation/notes/core/note_features.h"
+ #include "components/content_creation/reactions/core/reactions_features.h"
++#include "components/external_intents/android/external_intents_features.h"
+ #include "components/translate/content/android/translate_message.h"
+ #else  // BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/media/router/discovery/access_code/access_code_cast_sink_service.h"
+@@ -7593,6 +7594,12 @@ const FeatureEntry kFeatureEntries[] = {
+ #endif  // BUILDFLAG(ENABLE_PAINT_PREVIEW) && BUILDFLAG(IS_ANDROID)
+ 
+ #if BUILDFLAG(IS_ANDROID)
++    {"block-external-form-redirects-no-gesture",
++     flag_descriptions::kIntentBlockExternalFormRedirectsNoGestureName,
++     flag_descriptions::kIntentBlockExternalFormRedirectsNoGestureDescription,
++     kOsAndroid,
++     FEATURE_VALUE_TYPE(
++         external_intents::kIntentBlockExternalFormRedirectsNoGesture)},
+     {"recover-from-never-save-android",
+      flag_descriptions::kRecoverFromNeverSaveAndroidName,
+      flag_descriptions::kRecoverFromNeverSaveAndroidDescription, kOsAndroid,
+diff --git a/chrome/browser/flag-metadata.json b/chrome/browser/flag-metadata.json
+--- a/chrome/browser/flag-metadata.json
++++ b/chrome/browser/flag-metadata.json
+@@ -698,6 +698,11 @@
+     "owners": [ "ioanap", "vsemeniuk@google.com" ],
+     "expiry_milestone": 108
+   },
++  {
++    "name": "block-external-form-redirects-no-gesture",
++    "owners": [ "jochen", "tedchoc" ],
++    "expiry_milestone": -1
++  },
+   {
+     "name": "block-insecure-private-network-requests",
+     "owners": [ "titouan", "chrome-security-owp-team@google.com" ],
+diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
+--- a/chrome/browser/flag_descriptions.cc
++++ b/chrome/browser/flag_descriptions.cc
+@@ -3801,6 +3801,12 @@ const char kInstantStartName[] = "Instant start";
+ const char kInstantStartDescription[] =
+     "Show start surface before native library is loaded.";
+ 
++const char kIntentBlockExternalFormRedirectsNoGestureName[] =
++    "Block intents from form submissions without user gesture";
++const char kIntentBlockExternalFormRedirectsNoGestureDescription[] =
++    "Require a user gesture that triggered a form submission in order to "
++    "allow for redirecting to an external intent.";
++
+ const char kInterestFeedV2Name[] = "Interest Feed v2";
+ const char kInterestFeedV2Description[] =
+     "Show content suggestions on the New Tab Page and Start Surface using the "
+diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptions.h
+--- a/chrome/browser/flag_descriptions.h
++++ b/chrome/browser/flag_descriptions.h
+@@ -2160,6 +2160,9 @@ extern const char kInstanceSwitcherDescription[];
+ extern const char kInstantStartName[];
+ extern const char kInstantStartDescription[];
+ 
++extern const char kIntentBlockExternalFormRedirectsNoGestureName[];
++extern const char kIntentBlockExternalFormRedirectsNoGestureDescription[];
++
+ extern const char kInterestFeedV2Name[];
+ extern const char kInterestFeedV2Description[];
+ 
+diff --git a/components/external_intents/android/external_intents_features.cc b/components/external_intents/android/external_intents_features.cc
+--- a/components/external_intents/android/external_intents_features.cc
++++ b/components/external_intents/android/external_intents_features.cc
+@@ -19,7 +19,8 @@ namespace {
+ // Array of features exposed through the Java ExternalIntentsFeatures API.
+ const base::Feature* kFeaturesExposedToJava[] = {
+     &kAutofillAssistantGoogleInitiatorOriginCheck,
+-    &kBlockExternalFormSubmitWithoutGesture, &kExternalNavigationDebugLogs};
++    &kBlockExternalFormSubmitWithoutGesture, &kExternalNavigationDebugLogs,
++    &kIntentBlockExternalFormRedirectsNoGesture};
+ 
+ }  // namespace
+ 
+@@ -41,6 +42,10 @@ BASE_FEATURE(kExternalNavigationDebugLogs,
+              "ExternalNavigationDebugLogs",
+              base::FEATURE_DISABLED_BY_DEFAULT);
+ 
++BASE_FEATURE(kIntentBlockExternalFormRedirectsNoGesture,
++             "IntentBlockExternalFormRedirectsNoGesture",
++             base::FEATURE_ENABLED_BY_DEFAULT);
++
+ static jlong JNI_ExternalIntentsFeatures_GetFeature(JNIEnv* env, jint ordinal) {
+   return reinterpret_cast<jlong>(kFeaturesExposedToJava[ordinal]);
+ }
+diff --git a/components/external_intents/android/external_intents_features.h b/components/external_intents/android/external_intents_features.h
+--- a/components/external_intents/android/external_intents_features.h
++++ b/components/external_intents/android/external_intents_features.h
+@@ -12,6 +12,7 @@ namespace external_intents {
+ // Alphabetical:
+ BASE_DECLARE_FEATURE(kAutofillAssistantGoogleInitiatorOriginCheck);
+ BASE_DECLARE_FEATURE(kBlockExternalFormSubmitWithoutGesture);
++BASE_DECLARE_FEATURE(kIntentBlockExternalFormRedirectsNoGesture);
+ BASE_DECLARE_FEATURE(kExternalNavigationDebugLogs);
+ 
+ }  // namespace external_intents
+diff --git a/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalIntentsFeatures.java b/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalIntentsFeatures.java
+--- a/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalIntentsFeatures.java
++++ b/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalIntentsFeatures.java
+@@ -17,6 +17,12 @@ import org.chromium.base.annotations.NativeMethods;
+  */
+ @JNINamespace("external_intents")
+ public class ExternalIntentsFeatures extends Features {
++    public static final String INTENT_BLOCK_EXTERNAL_FORM_REDIRECT_NO_GESTURE_NAME =
++            "IntentBlockExternalFormRedirectsNoGesture";
++
++    public static final ExternalIntentsFeatures INTENT_BLOCK_EXTERNAL_FORM_REDIRECT_NO_GESTURE =
++            new ExternalIntentsFeatures(0, INTENT_BLOCK_EXTERNAL_FORM_REDIRECT_NO_GESTURE_NAME);
++
+     public static final String AUTOFILL_ASSISTANT_GOOGLE_INITIATOR_ORIGIN_CHECK_NAME =
+             "AutofillAssistantGoogleInitiatorOriginCheck";
+     public static final String BLOCK_EXTERNAL_FORM_SUBMIT_WITHOUT_GESTURE_NAME =
+diff --git a/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationHandler.java b/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationHandler.java
+--- a/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationHandler.java
++++ b/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationHandler.java
+@@ -1588,6 +1588,12 @@ public class ExternalNavigationHandler {
+         }
+     }
+ 
++    /** Wrapper of check against the feature to support overriding for testing. */
++    @VisibleForTesting
++    boolean blockExternalFormRedirectsWithoutGesture() {
++        return ExternalIntentsFeatures.INTENT_BLOCK_EXTERNAL_FORM_REDIRECT_NO_GESTURE.isEnabled();
++    }
++
+     private OverrideUrlLoadingResult shouldOverrideUrlLoadingInternal(
+             ExternalNavigationParams params, Intent targetIntent, GURL browserFallbackUrl,
+             MutableBoolean canLaunchExternalFallbackResult) {
+@@ -1637,6 +1643,21 @@ public class ExternalNavigationHandler {
+             return OverrideUrlLoadingResult.forNoOverride();
+         }
+ 
++        // http://crbug.com/839751: Require user gestures for form submits to external
++        //                          protocols.
++        // TODO(tedchoc): Turn this on by default once we verify this change does
++        //                not break the world.
++        int pageTransitionCore = params.getPageTransition() & PageTransition.CORE_MASK;
++        boolean isFormSubmit = pageTransitionCore == PageTransition.FORM_SUBMIT;
++        boolean isRedirectFromFormSubmit = isFormSubmit && params.isRedirect();
++        if (isRedirectFromFormSubmit && !incomingIntentRedirect && !params.hasUserGesture()
++                && blockExternalFormRedirectsWithoutGesture()) {
++            if (debug()) {
++                Log.i(TAG, "Incoming form intent attempting to redirect without user gesture");
++            }
++            return OverrideUrlLoadingResult.forNoOverride();
++        }
++
+         if (hasInternalScheme(params.getUrl(), targetIntent)
+                 || hasContentScheme(params.getUrl(), targetIntent)
+                 || hasFileSchemeInIntentURI(params.getUrl(), targetIntent)) {
+diff --git a/components/external_intents/android/javatests/src/org/chromium/components/external_intents/ExternalNavigationHandlerTest.java b/components/external_intents/android/javatests/src/org/chromium/components/external_intents/ExternalNavigationHandlerTest.java
+--- a/components/external_intents/android/javatests/src/org/chromium/components/external_intents/ExternalNavigationHandlerTest.java
++++ b/components/external_intents/android/javatests/src/org/chromium/components/external_intents/ExternalNavigationHandlerTest.java
+@@ -299,14 +299,12 @@ public class ExternalNavigationHandlerTest {
+                 .withIsRedirect(true)
+                 .withHasUserGesture(true)
+                 .withRedirectHandler(handler)
+-                .expecting(OverrideUrlLoadingResultType.OVERRIDE_WITH_EXTERNAL_INTENT,
+-                        START_OTHER_ACTIVITY);
++                .expecting(OverrideUrlLoadingResultType.NO_OVERRIDE, IGNORE);
+         checkUrl("http://youtube.com://")
+                 .withPageTransition(PageTransition.FORM_SUBMIT)
+                 .withIsRedirect(true)
+                 .withHasUserGesture(true)
+-                .expecting(OverrideUrlLoadingResultType.OVERRIDE_WITH_EXTERNAL_INTENT,
+-                        START_OTHER_ACTIVITY);
++                .expecting(OverrideUrlLoadingResultType.NO_OVERRIDE, IGNORE);
+ 
+         // If the page matches the referrer, then continue loading in Chrome.
+         checkUrl("http://youtube.com://")
+@@ -2891,6 +2889,11 @@ public class ExternalNavigationHandlerTest {
+                     && !packageName.equals(INVALID_WEBAPK_PACKAGE_NAME);
+         }
+ 
++        @Override
++        public boolean blockExternalFormRedirectsWithoutGesture() {
++            return true;
++        }
++
+         @Override
+         protected boolean canLaunchIncognitoIntent(Intent intent, Context context) {
+             mStartActivityInIncognitoIntent = intent;
+--
+2.25.1

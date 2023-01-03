@@ -1,0 +1,136 @@
+From: Jan Engelhardt <jengelh@inai.de>
+Date: Thu, 11 Sep 2014 16:37:32 +0200
+Subject: autofill: disable autofill download manager
+
+Disables the autofill download manager (trk:158).
+
+Make sure that autofill is disabled by default
+---
+ .../core/browser/autofill_download_manager.cc | 35 +++----------------
+ .../core/browser/autofill_download_manager.h  |  2 --
+ .../autofill/core/browser/autofill_manager.cc | 20 -----------
+ .../autofill/core/common/autofill_prefs.cc    |  2 +-
+ 4 files changed, 6 insertions(+), 53 deletions(-)
+
+diff --git a/components/autofill/core/browser/autofill_download_manager.cc b/components/autofill/core/browser/autofill_download_manager.cc
+--- a/components/autofill/core/browser/autofill_download_manager.cc
++++ b/components/autofill/core/browser/autofill_download_manager.cc
+@@ -512,35 +512,6 @@ bool GetUploadPayloadForApi(const AutofillUploadContents& upload,
+   return upload_request.SerializeToString(payload);
+ }
+ 
+-// Gets an API method URL given its type (query or upload), an optional
+-// resource ID, and the HTTP method to be used.
+-// Example usage:
+-// * GetAPIMethodUrl(REQUEST_QUERY, "1234", "GET") will return "/v1/pages/1234".
+-// * GetAPIMethodUrl(REQUEST_QUERY, "1234", "POST") will return "/v1/pages:get".
+-// * GetAPIMethodUrl(REQUEST_UPLOAD, "", "POST") will return "/v1/forms:vote".
+-std::string GetAPIMethodUrl(AutofillDownloadManager::RequestType type,
+-                            base::StringPiece resource_id,
+-                            base::StringPiece method) {
+-  const char* api_method_url;
+-  if (type == AutofillDownloadManager::REQUEST_QUERY) {
+-    if (method == "POST") {
+-      api_method_url = "/v1/pages:get";
+-    } else {
+-      api_method_url = "/v1/pages";
+-    }
+-  } else if (type == AutofillDownloadManager::REQUEST_UPLOAD) {
+-    api_method_url = "/v1/forms:vote";
+-  } else {
+-    // This should not be reached, but we never know.
+-    NOTREACHED() << "Request of type " << type << " is invalid";
+-    return "";
+-  }
+-  if (resource_id.empty()) {
+-    return std::string(api_method_url);
+-  }
+-  return base::StrCat({api_method_url, "/", resource_id});
+-}
+-
+ // Gets HTTP body payload for API POST request.
+ bool GetAPIBodyPayload(const std::string& payload,
+                        AutofillDownloadManager::RequestType type,
+@@ -778,6 +749,7 @@ std::tuple<GURL, std::string> AutofillDownloadManager::GetRequestURLAndMethod(
+   // ID of the resource to add to the API request URL. Nothing will be added if
+   // |resource_id| is empty.
+   std::string resource_id;
++#if 0
+   std::string method = "POST";
+ 
+   if (request_data.request_type == AutofillDownloadManager::REQUEST_QUERY) {
+@@ -798,7 +770,10 @@ std::tuple<GURL, std::string> AutofillDownloadManager::GetRequestURLAndMethod(
+ 
+   // Add the query parameter to set the response format to a serialized proto.
+   url = net::AppendQueryParameter(url, "alt", "proto");
+-
++#else
++  std::string method("GET");
++  GURL url = GURL("about:blank");
++#endif
+   return std::make_tuple(std::move(url), std::move(method));
+ }
+ 
+diff --git a/components/autofill/core/browser/autofill_download_manager.h b/components/autofill/core/browser/autofill_download_manager.h
+--- a/components/autofill/core/browser/autofill_download_manager.h
++++ b/components/autofill/core/browser/autofill_download_manager.h
+@@ -35,8 +35,6 @@ namespace autofill {
+ class AutofillDriver;
+ class LogManager;
+ 
+-const size_t kMaxQueryGetSize = 10240;  // 10 KiB
+-
+ // A helper to make sure that tests which modify the set of active autofill
+ // experiments do not interfere with one another.
+ struct ScopedActiveAutofillExperiments {
+diff --git a/components/autofill/core/browser/autofill_manager.cc b/components/autofill/core/browser/autofill_manager.cc
+--- a/components/autofill/core/browser/autofill_manager.cc
++++ b/components/autofill/core/browser/autofill_manager.cc
+@@ -54,19 +54,6 @@ bool CachedFormNeedsUpdate(const FormData& live_form,
+   return false;
+ }
+ 
+-std::string GetAPIKeyForUrl(version_info::Channel channel) {
+-  // First look if we can get API key from command line flag.
+-  const base::CommandLine& command_line =
+-      *base::CommandLine::ForCurrentProcess();
+-  if (command_line.HasSwitch(switches::kAutofillAPIKey))
+-    return command_line.GetSwitchValueASCII(switches::kAutofillAPIKey);
+-
+-  // Get the API key from Chrome baked keys.
+-  if (channel == version_info::Channel::STABLE)
+-    return google_apis::GetAPIKey();
+-  return google_apis::GetNonStableAPIKey();
+-}
+-
+ }  // namespace
+ 
+ using base::TimeTicks;
+@@ -120,13 +107,6 @@ AutofillManager::AutofillManager(
+       client_(client),
+       log_manager_(client ? client->GetLogManager() : nullptr),
+       form_interactions_ukm_logger_(CreateFormInteractionsUkmLogger()) {
+-  if (enable_download_manager == ENABLE_AUTOFILL_DOWNLOAD_MANAGER) {
+-    download_manager_ = std::make_unique<AutofillDownloadManager>(
+-        driver, this, GetAPIKeyForUrl(channel),
+-        AutofillDownloadManager::IsRawMetadataUploadingEnabled(
+-            IsRawMetadataUploadingEnabled(channel)),
+-        log_manager_);
+-  }
+   if (client) {
+     translate::TranslateDriver* translate_driver = client->GetTranslateDriver();
+     if (translate_driver) {
+diff --git a/components/autofill/core/common/autofill_prefs.cc b/components/autofill/core/common/autofill_prefs.cc
+--- a/components/autofill/core/common/autofill_prefs.cc
++++ b/components/autofill/core/common/autofill_prefs.cc
+@@ -134,7 +134,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+       prefs::kAutofillEnabledDeprecated, true,
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+   registry->RegisterBooleanPref(
+-      prefs::kAutofillProfileEnabled, true,
++      prefs::kAutofillProfileEnabled, false,
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+   registry->RegisterIntegerPref(
+       prefs::kAutofillLastVersionDeduped, 0,
+--
+2.25.1

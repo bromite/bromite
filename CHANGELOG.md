@@ -1,3 +1,100 @@
+# 108.0.5359.156
+
+# 108.0.5359.109
+* reintroduce adaptive-button-in-top-toolbar-customization flag
+
+# 108.0.5359.106
+* fix crash when using always incognito (fixes https://github.com/bromite/bromite/issues/2482)
+* enable third-party storage partitioning (fixes https://github.com/bromite/bromite/issues/2337)
+* disable features ExperimentsForAgsa, KeepPrefetchedContentSuggestions, CriticalClientHint, AcceptCHFrame (accidentally enabled but not effective in 108.0.5359.75)
+
+# 108.0.5359.75
+* drop patch to mark all favicons ON_DEMAND (fixed by upstream, see https://bugs.chromium.org/p/chromium/issues/detail?id=1096660)
+* enable AutomaticLazyFrameLoadingToAds and AutomaticLazyFrameLoadingToEmbeds features
+* drop patch for SDK21 to prevent crashes on download
+* fix patch to ignore enterprise policies for secure DNS (fixes https://github.com/bromite/bromite/issues/2463)
+* stop using SM-G960U as model provided via client hints and Javascript (fixes https://github.com/bromite/bromite/issues/2465)
+* temptative fix for OfflinePageModelFactory crash (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2419)
+* fix fingerprinting vector via Window.requestAnimationFrame() (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2370)
+* remove patch for offline measurements background task (fixes https://github.com/bromite/bromite/issues/2468)
+* enable PermuteTLSExtensions (fixes https://github.com/bromite/bromite/issues/2467)
+* hide "turn on enhanced protection" in security interstitials
+
+# 107.0.5304.114
+* fix for drag selection not working with bottom toolbar (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2411)
+* fix for navbar color not matching site color (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2416)
+* clamp time resolution in WebWorkers' requestAnimationFrame (thanks to @uazo)
+* drop patch for AV1 codec support (already in upstream)
+
+# 107.0.5304.96
+* bottom toolbar: fix for white strip at top in tab view (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2407)
+* reverse tab order from top to bottom when using bottom toolbar (thanks to @uazo)
+* dropped patches already merged upstream (partition DNS requests by top frame NIK, clipboard user gesture requirement removal)
+* disable StartSurface feature
+
+# 106.0.5249.163
+* enable ECH (Encrypted ClientHello) by default
+
+# 106.0.5249.72
+* dropped patches already merged upstream
+
+# 105.0.5195.147
+* enable HEVC by default (fixes https://github.com/bromite/bromite/issues/2331)
+* partition blobs by top frame URL (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2312)
+* use first accept-language as system language for Blink (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2160)
+* fix user scripts injection with back-forward cache enabled (thanks to @uazo)
+* remove HTTP referrals in cross-origin navigation (thanks to @uazo)
+* update noise factor for anti-fingerpriting mitigations only once per document (fixes https://github.com/bromite/bromite/issues/2352)
+* disable add to home screen prompt (fixes https://github.com/bromite/bromite/issues/2340)
+
+# 105.0.5195.41
+* revert by-pass for clipboard permissions for NTP doodles (fixes https://bugs.chromium.org/p/chromium/issues/detail?id=1334203)
+* prevent history detection via favicon (fixes https://github.com/bromite/bromite/issues/2269)
+* fix the lack of protection in canvas.convertToBlob()
+* improve incognito mode detection countermeasures (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/1615)
+* fix toolbar gesture when using bottom navigation bar (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2253)
+
+# 104.0.5112.91
+* re-introduce modal flag to prompt when closing all tabs
+* sharing hub: always use visible URL (fixes https://github.com/bromite/bromite/issues/2204)
+* add SVG fingerprinting mitigation (thanks to @uazo)
+* updated zh_CN translactions (thanks to @zhmars)
+* dropped patch to open YouTube links in Bromite
+
+# 104.0.5112.63
+
+# 103.0.5060.140
+* fix timezone override not working correctly (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2133)
+* never provide navigator.connection info (thanks to @uazo)
+* fix management of custom User-Agent (thanks to @uazo)
+
+# 103.0.5060.126
+* fix malfunctioning sticky desktop mode (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2179)
+* fix non-working passwords manager (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2188)
+* fix crash when opening recent tabs (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2190)
+* fix autoplay not working correctly (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2096)
+* add GN flag for clangd builds (thanks to @uazo)
+
+# 103.0.5060.121
+* do not enable always use HTTPS by default
+* match system dark mode (thanks to @krlvm)
+* remove window name on cross origin navigation (thanks to @uazo)
+* remove preload of GMS fonts on stock Android (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2156)
+
+# 102.0.5005.96
+* fix history expiration bug (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2104)
+* fix category setting activation (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2091)
+* improve plain text rendering on mobile
+* rewritten certificate transparency patch (fixes https://github.com/bromite/bromite/issues/2101)
+
+# 102.0.5005.92
+* restore offline-indicator-v2 flag functionality (thanks to @Zelda189)
+
+# 102.0.5005.67
+* dropped patch to disable mobile identity consistency by default
+* fix text for blocked ads (fixes https://github.com/bromite/bromite/issues/2026)
+* fix OpenSeach visited site detection bug (fixes https://github.com/bromite/bromite/issues/1994)
+
 # 101.0.4951.69
 * flag to toggle site engagement (thanks to @uazo, fixes https://github.com/bromite/bromite/issues/2022)
 * site settings to enable webGL (thanks to @uazo)
