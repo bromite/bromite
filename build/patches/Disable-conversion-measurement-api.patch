@@ -16,17 +16,18 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../render_view_context_menu_base.cc              |  3 ---
  .../aggregatable_report_sender.cc                 | 15 +++++++--------
  .../attribution_reporting/attribution_host.cc     |  1 +
- .../attribution_report_network_sender.cc          | 15 ++++++++-------
+ .../attribution_report_network_sender.cc          | 11 ++++++++---
+ .../attribution_storage_sql.cc                    |  8 +++++---
  content/browser/storage_partition_impl.cc         |  7 +------
  content/public/browser/navigation_controller.cc   |  1 -
  third_party/blink/common/features.cc              |  4 ++--
  .../platform/runtime_enabled_features.json5       |  7 +++++++
- 10 files changed, 32 insertions(+), 33 deletions(-)
+ 11 files changed, 37 insertions(+), 32 deletions(-)
 
 diff --git a/chrome/browser/flags/android/chrome_feature_list.cc b/chrome/browser/flags/android/chrome_feature_list.cc
 --- a/chrome/browser/flags/android/chrome_feature_list.cc
 +++ b/chrome/browser/flags/android/chrome_feature_list.cc
-@@ -521,8 +521,8 @@ BASE_FEATURE(kAppMenuMobileSiteOption,
+@@ -522,8 +522,8 @@ BASE_FEATURE(kAppMenuMobileSiteOption,
               base::FEATURE_DISABLED_BY_DEFAULT);
  
  BASE_FEATURE(kAppToWebAttribution,
@@ -102,7 +103,7 @@ diff --git a/content/browser/aggregation_service/aggregatable_report_sender.cc b
 diff --git a/content/browser/attribution_reporting/attribution_host.cc b/content/browser/attribution_reporting/attribution_host.cc
 --- a/content/browser/attribution_reporting/attribution_host.cc
 +++ b/content/browser/attribution_reporting/attribution_host.cc
-@@ -124,6 +124,7 @@ void AttributionHost::DidRedirectNavigation(
+@@ -126,6 +126,7 @@ void AttributionHost::DidRedirectNavigation(
      return;
    }
  
@@ -113,25 +114,21 @@ diff --git a/content/browser/attribution_reporting/attribution_host.cc b/content
 diff --git a/content/browser/attribution_reporting/attribution_report_network_sender.cc b/content/browser/attribution_reporting/attribution_report_network_sender.cc
 --- a/content/browser/attribution_reporting/attribution_report_network_sender.cc
 +++ b/content/browser/attribution_reporting/attribution_report_network_sender.cc
-@@ -110,13 +110,8 @@ void AttributionReportNetworkSender::SendReport(
+@@ -132,9 +132,8 @@ void AttributionReportNetworkSender::SendReport(GURL url,
                     network::SimpleURLLoader::RETRY_ON_NAME_NOT_RESOLVED;
    simple_url_loader_ptr->SetRetryOptions(/*max_retries=*/1, retry_mode);
  
--  // Unretained is safe because the URLLoader is owned by |this| and will be
--  // deleted before |this|.
 -  simple_url_loader_ptr->DownloadHeadersOnly(
 -      url_loader_factory_.get(),
--      base::BindOnce(&AttributionReportNetworkSender::OnReportSent,
--                     base::Unretained(this), std::move(it), std::move(report),
--                     is_debug_report, std::move(sent_callback)));
+-      base::BindOnce(std::move(callback), std::move(it)));
 +  // this is never called on Bromite but nothing would be sent if it were
 +  OnReportSent(std::move(it), report, is_debug_report, std::move(sent_callback), nullptr);
  }
  
  void AttributionReportNetworkSender::OnReportSent(
-@@ -125,6 +120,12 @@ void AttributionReportNetworkSender::OnReportSent(
-     bool is_debug_report,
+@@ -143,6 +142,12 @@ void AttributionReportNetworkSender::OnReportSent(
      ReportSentCallback sent_callback,
+     UrlLoaderList::iterator it,
      scoped_refptr<net::HttpResponseHeaders> headers) {
 +  if ((true)) {
 +    std::move(sent_callback)
@@ -142,10 +139,35 @@ diff --git a/content/browser/attribution_reporting/attribution_report_network_se
    network::SimpleURLLoader* loader = it->get();
  
    // Consider a non-200 HTTP code as a non-internal error.
+diff --git a/content/browser/attribution_reporting/attribution_storage_sql.cc b/content/browser/attribution_reporting/attribution_storage_sql.cc
+--- a/content/browser/attribution_reporting/attribution_storage_sql.cc
++++ b/content/browser/attribution_reporting/attribution_storage_sql.cc
+@@ -514,6 +514,8 @@ DestinationLimitResult GetDestinationLimitResult(
+   }
+ }
+ 
++bool g_run_in_memory = true;
++
+ }  // namespace
+ 
+ // static
+@@ -525,9 +527,9 @@ bool AttributionStorageSql::DeleteStorageForTesting(
+ AttributionStorageSql::AttributionStorageSql(
+     const base::FilePath& user_data_directory,
+     std::unique_ptr<AttributionStorageDelegate> delegate)
+-    : path_to_database_(user_data_directory.empty()
+-                            ? base::FilePath()
+-                            : DatabasePath(user_data_directory)),
++    : path_to_database_(user_data_directory.empty() || g_run_in_memory
++                             ? base::FilePath()
++                             : DatabasePath(user_data_directory)),
+       delegate_(std::move(delegate)),
+       rate_limit_table_(delegate_.get()) {
+   DCHECK(delegate_);
 diff --git a/content/browser/storage_partition_impl.cc b/content/browser/storage_partition_impl.cc
 --- a/content/browser/storage_partition_impl.cc
 +++ b/content/browser/storage_partition_impl.cc
-@@ -1353,12 +1353,7 @@ void StoragePartitionImpl::Initialize(
+@@ -1358,12 +1358,7 @@ void StoragePartitionImpl::Initialize(
  
    bucket_manager_ = std::make_unique<BucketManager>(this);
  
@@ -173,7 +195,7 @@ diff --git a/content/public/browser/navigation_controller.cc b/content/public/br
 diff --git a/third_party/blink/common/features.cc b/third_party/blink/common/features.cc
 --- a/third_party/blink/common/features.cc
 +++ b/third_party/blink/common/features.cc
-@@ -105,8 +105,8 @@ BASE_FEATURE(kBlockingDownloadsInAdFrameWithoutUserActivation,
+@@ -121,8 +121,8 @@ BASE_FEATURE(kBlockingDownloadsInAdFrameWithoutUserActivation,
  
  // Controls whether the Conversion Measurement API infrastructure is enabled.
  BASE_FEATURE(kConversionMeasurement,
@@ -187,7 +209,7 @@ diff --git a/third_party/blink/common/features.cc b/third_party/blink/common/fea
 diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
 --- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
 +++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -176,6 +176,13 @@
+@@ -201,6 +201,13 @@
    },
  
    data: [
