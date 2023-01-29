@@ -1,0 +1,639 @@
+From: uazo <uazo@users.noreply.github.com>
+Date: Tue, 20 Dec 2022 11:06:42 +0000
+Subject: Viewport Protection
+
+Scale the viewport and the screen by a random factor to prevent coordinate-based fingerprinting scripts.
+The factor is changed at each change of origin.
+The feature is controlled by a feature flag (default enabled)
+---
+ chrome/browser/about_flags.cc                 |  5 ++
+ chrome/browser/flag_descriptions.cc           |  6 ++
+ chrome/browser/flag_descriptions.h            |  3 +
+ third_party/blink/common/features.cc          |  4 +
+ third_party/blink/public/common/features.h    |  3 +
+ .../common/widget/device_emulation_params.h   |  6 +-
+ .../core/css/resolver/style_resolver.cc       | 10 ++-
+ .../blink/renderer/core/events/mouse_event.h  | 19 ++++-
+ .../renderer/core/events/pointer_event.h      | 11 +++
+ .../renderer/core/exported/web_view_impl.cc   |  2 +-
+ .../renderer/core/frame/local_dom_window.cc   | 28 ++++++-
+ .../blink/renderer/core/frame/local_frame.cc  | 12 ++-
+ .../blink/renderer/core/frame/local_frame.h   |  6 +-
+ .../core/frame/screen_metrics_emulator.cc     | 18 ++++-
+ .../core/frame/screen_metrics_emulator.h      | 14 ++++
+ .../core/frame/web_frame_widget_impl.cc       |  8 ++
+ .../core/frame/web_remote_frame_impl.cc       |  3 +-
+ .../blink/renderer/core/input/touch.cc        | 17 ++++-
+ third_party/blink/renderer/core/page/page.cc  | 76 +++++++++++++++++++
+ third_party/blink/renderer/core/page/page.h   |  7 ++
+ 20 files changed, 241 insertions(+), 17 deletions(-)
+
+diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
+--- a/chrome/browser/about_flags.cc
++++ b/chrome/browser/about_flags.cc
+@@ -7768,6 +7768,11 @@ const FeatureEntry kFeatureEntries[] = {
+      FEATURE_VALUE_TYPE(paint_preview::kPaintPreviewDemo)},
+ #endif  // BUILDFLAG(ENABLE_PAINT_PREVIEW) && BUILDFLAG(IS_ANDROID)
+ 
++    {"viewport-protection",
++     flag_descriptions::kViewportProtectionName,
++     flag_descriptions::kViewportProtectionDescription, kOsAll,
++     FEATURE_VALUE_TYPE(blink::features::kViewportProtection)},
++
+ #if BUILDFLAG(IS_ANDROID)
+     {"block-external-form-redirects-no-gesture",
+      flag_descriptions::kIntentBlockExternalFormRedirectsNoGestureName,
+diff --git a/chrome/browser/flag_descriptions.cc b/chrome/browser/flag_descriptions.cc
+--- a/chrome/browser/flag_descriptions.cc
++++ b/chrome/browser/flag_descriptions.cc
+@@ -6654,6 +6654,12 @@ const char kPaintPreviewDemoDescription[] =
+     "previews.";
+ #endif  // ENABLE_PAINT_PREVIEW && BUILDFLAG(IS_ANDROID)
+ 
++const char kViewportProtectionName[] = "Viewport Protection";
++const char kViewportProtectionDescription[] =
++    "Scale the viewport and the screen by a random factor to prevent "
++    "coordinate-based fingerprinting scripts. The factor is changed at each "
++    "change of origin.";
++
+ #if BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
+ const char kWebUITabStripFlagId[] = "webui-tab-strip";
+ const char kWebUITabStripName[] = "WebUI tab strip";
+diff --git a/chrome/browser/flag_descriptions.h b/chrome/browser/flag_descriptions.h
+--- a/chrome/browser/flag_descriptions.h
++++ b/chrome/browser/flag_descriptions.h
+@@ -3857,6 +3857,9 @@ extern const char kPaintPreviewDemoName[];
+ extern const char kPaintPreviewDemoDescription[];
+ #endif  // ENABLE_PAINT_PREVIEW && BUILDFLAG(IS_ANDROID)
+ 
++extern const char kViewportProtectionName[];
++extern const char kViewportProtectionDescription[];
++
+ #if BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
+ extern const char kWebUITabStripFlagId[];
+ extern const char kWebUITabStripName[];
+diff --git a/third_party/blink/common/features.cc b/third_party/blink/common/features.cc
+--- a/third_party/blink/common/features.cc
++++ b/third_party/blink/common/features.cc
+@@ -1668,6 +1668,10 @@ BASE_FEATURE(kNewBaseUrlInheritanceBehavior,
+              "NewBaseUrlInheritanceBehavior",
+              base::FEATURE_DISABLED_BY_DEFAULT);
+ 
++BASE_FEATURE(kViewportProtection,
++             "ViewportProtection",
++             base::FEATURE_ENABLED_BY_DEFAULT);
++
+ BASE_FEATURE(kNewGetDisplayMediaPickerOrder,
+              "NewGetDisplayMediaPickerOrder",
+              base::FEATURE_DISABLED_BY_DEFAULT);
+diff --git a/third_party/blink/public/common/features.h b/third_party/blink/public/common/features.h
+--- a/third_party/blink/public/common/features.h
++++ b/third_party/blink/public/common/features.h
+@@ -933,6 +933,9 @@ BLINK_COMMON_EXPORT extern const base::FeatureParam<
+ // base url inheritance behavior from https://crbug.com/1356658.
+ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kNewBaseUrlInheritanceBehavior);
+ 
++// Enable blink viewport protection
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kViewportProtection);
++
+ // When an application calls getDisplayMedia(), a media-picker is displayed
+ // to the user, allowing them to share a tab, a window or a screen.
+ // * If this flag is enabled, the order is - tabs, windows, screens.
+diff --git a/third_party/blink/public/common/widget/device_emulation_params.h b/third_party/blink/public/common/widget/device_emulation_params.h
+--- a/third_party/blink/public/common/widget/device_emulation_params.h
++++ b/third_party/blink/public/common/widget/device_emulation_params.h
+@@ -19,6 +19,9 @@ namespace blink {
+ struct DeviceEmulationParams {
+   mojom::EmulatedScreenType screen_type = mojom::EmulatedScreenType::kDesktop;
+ 
++  // Forces screen recalculation the same way as mobile
++  bool force_mobile_calc = false;
++
+   // Emulated screen size. Typically full / physical size of the device screen
+   // in DIP. Empty size means using default value: original one for kDesktop
+   // screen position, equal to |view_size| for kMobile.
+@@ -71,7 +74,8 @@ inline bool operator==(const DeviceEmulationParams& a,
+          a.screen_orientation_angle == b.screen_orientation_angle &&
+          a.viewport_offset == b.viewport_offset &&
+          a.viewport_scale == b.viewport_scale &&
+-         a.window_segments == b.window_segments;
++         a.window_segments == b.window_segments &&
++         a.force_mobile_calc == b.force_mobile_calc;
+ }
+ 
+ inline bool operator!=(const DeviceEmulationParams& a,
+diff --git a/third_party/blink/renderer/core/css/resolver/style_resolver.cc b/third_party/blink/renderer/core/css/resolver/style_resolver.cc
+--- a/third_party/blink/renderer/core/css/resolver/style_resolver.cc
++++ b/third_party/blink/renderer/core/css/resolver/style_resolver.cc
+@@ -1533,8 +1533,14 @@ ComputedStyleBuilder StyleResolver::InitialStyleBuilderForElement() const {
+   ComputedStyleBuilder builder = CreateComputedStyleBuilder();
+   builder.SetRtlOrdering(GetDocument().VisuallyOrdered() ? EOrder::kVisual
+                                                          : EOrder::kLogical);
+-  builder.SetZoom(InitialZoom());
+-  builder.SetEffectiveZoom(InitialZoom());
++  if (GetDocument().GetPage() && GetDocument().GetPage()->IsScreenEmulated()) {
++    // hides the zoom override to the dom on the html tag
++    builder.SetZoom(1);
++    builder.SetEffectiveZoom(InitialZoom());
++  } else {
++    builder.SetZoom(InitialZoom());
++    builder.SetEffectiveZoom(initial_style_->Zoom());
++  }
+   builder.SetInForcedColorsMode(GetDocument().InForcedColorsMode());
+   builder.SetTapHighlightColor(
+       ComputedStyleInitialValues::InitialTapHighlightColor());
+diff --git a/third_party/blink/renderer/core/events/mouse_event.h b/third_party/blink/renderer/core/events/mouse_event.h
+--- a/third_party/blink/renderer/core/events/mouse_event.h
++++ b/third_party/blink/renderer/core/events/mouse_event.h
+@@ -31,6 +31,7 @@
+ #include "third_party/blink/renderer/core/dom/events/simulated_click_options.h"
+ #include "third_party/blink/renderer/core/events/ui_event_with_key_state.h"
+ #include "third_party/blink/renderer/platform/wtf/casting.h"
++#include "third_party/blink/renderer/core/page/page.h"
+ 
+ namespace blink {
+ 
+@@ -143,8 +144,22 @@ class CORE_EXPORT MouseEvent : public UIEventWithKeyState {
+ 
+   // Note that these values are adjusted to counter the effects of zoom, so that
+   // values exposed via DOM APIs are invariant under zooming.
+-  virtual double screenX() const { return std::floor(screen_x_); }
+-  virtual double screenY() const { return std::floor(screen_y_); }
++  virtual double screenX() const {
++    if (view() && view()->GetFrame() &&
++        view()->GetFrame()->GetPage() &&
++        view()->GetFrame()->GetPage()->IsScreenEmulated()) {
++      return std::floor(page_x_);
++    }
++    return std::floor(screen_x_);
++  }
++  virtual double screenY() const {
++    if (view() && view()->GetFrame() &&
++        view()->GetFrame()->GetPage() &&
++        view()->GetFrame()->GetPage()->IsScreenEmulated()) {
++      return std::floor(page_y_);
++    }
++    return std::floor(screen_y_);
++  }
+ 
+   virtual double clientX() const { return std::floor(client_x_); }
+   virtual double clientY() const { return std::floor(client_y_); }
+diff --git a/third_party/blink/renderer/core/events/pointer_event.h b/third_party/blink/renderer/core/events/pointer_event.h
+--- a/third_party/blink/renderer/core/events/pointer_event.h
++++ b/third_party/blink/renderer/core/events/pointer_event.h
+@@ -9,6 +9,7 @@
+ #include "third_party/blink/renderer/core/core_export.h"
+ #include "third_party/blink/renderer/core/events/mouse_event.h"
+ #include "third_party/blink/renderer/platform/wtf/casting.h"
++#include "third_party/blink/renderer/core/page/page.h"
+ 
+ namespace blink {
+ 
+@@ -57,11 +58,21 @@ class CORE_EXPORT PointerEvent : public MouseEvent {
+   double screenX() const override {
+     if (ShouldHaveIntegerCoordinates())
+       return MouseEvent::screenX();
++    if (view() && view()->GetFrame() &&
++        view()->GetFrame()->GetPage() &&
++        view()->GetFrame()->GetPage()->IsScreenEmulated()) {
++      return page_x_;
++    }
+     return screen_x_;
+   }
+   double screenY() const override {
+     if (ShouldHaveIntegerCoordinates())
+       return MouseEvent::screenY();
++    if (view() && view()->GetFrame() &&
++        view()->GetFrame()->GetPage() &&
++        view()->GetFrame()->GetPage()->IsScreenEmulated()) {
++      return page_y_;
++    }
+     return screen_y_;
+   }
+   double clientX() const override {
+diff --git a/third_party/blink/renderer/core/exported/web_view_impl.cc b/third_party/blink/renderer/core/exported/web_view_impl.cc
+--- a/third_party/blink/renderer/core/exported/web_view_impl.cc
++++ b/third_party/blink/renderer/core/exported/web_view_impl.cc
+@@ -1032,7 +1032,7 @@ WebPagePopupImpl* WebViewImpl::OpenPagePopup(PagePopupClient* client) {
+   page_popup_ = WebPagePopupImpl::Create(
+       std::move(popup_widget_host), std::move(widget_host),
+       std::move(widget_receiver), this, agent_group_scheduler,
+-      opener_widget->GetOriginalScreenInfos(), client);
++      opener_widget->GetScreenInfos(), client);
+   EnablePopupMouseWheelEventListener(web_opener_frame->LocalRoot());
+   return page_popup_.get();
+ }
+diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
+--- a/third_party/blink/renderer/core/frame/local_dom_window.cc
++++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
+@@ -1478,6 +1478,11 @@ int LocalDOMWindow::outerHeight() const {
+   if (!page)
+     return 0;
+ 
++  // If screen is emulated and this frame is remote cross-origin
++  // return innerHeight
++  if (page->IsScreenEmulated() && frame->IsCrossOriginToOutermostMainFrame())
++    return innerHeight();
++
+   ChromeClient& chrome_client = page->GetChromeClient();
+   if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
+     return static_cast<int>(
+@@ -1503,6 +1508,11 @@ int LocalDOMWindow::outerWidth() const {
+   if (!page)
+     return 0;
+ 
++  // If screen is emulated and this frame is remote cross-origin
++  // return innerWidth
++  if (page->IsScreenEmulated() && frame->IsCrossOriginToOutermostMainFrame())
++    return innerWidth();
++
+   ChromeClient& chrome_client = page->GetChromeClient();
+   if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
+     return static_cast<int>(
+@@ -1691,7 +1701,8 @@ double LocalDOMWindow::devicePixelRatio() const {
+   if (!GetFrame())
+     return 0.0;
+ 
+-  return GetFrame()->DevicePixelRatio();
++  // never send the zoom factor override value
++  return GetFrame()->DevicePixelRatio(/*with_zoom_factor*/false);
+ }
+ 
+ void LocalDOMWindow::scrollBy(double x, double y) const {
+@@ -2237,6 +2248,21 @@ DOMWindow* LocalDOMWindow::open(v8::Isolate* isolate,
+   if (!completed_url.IsEmpty() || result.new_window)
+     result.frame->Navigate(frame_request, WebFrameLoadType::kStandard);
+ 
++  if (result.frame->IsLocalFrame()) {
++    // we need to use opener setting when opening a iframe without url
++    // (as "about:blank") to force emulated screen
++    // since result.frame.GetContentSettingsClient()->AllowViewportChange()
++    // in the Page::DidCommitLoad() event returns false for these urls
++    //
++    // prevent this js code:
++    //     var w = window.open()
++    //     var not_emulated_screen_info = w.screen
++    bool protection_enabled = base::FeatureList::IsEnabled(features::kViewportProtection);
++    result.frame->GetPage()->CalculateEmulatedScreenSetting(
++      To<LocalFrame>(result.frame),
++      /*force*/ protection_enabled);
++  }
++
+   // TODO(japhet): window-open-noopener.html?_top and several tests in
+   // html/browsers/windows/browsing-context-names/ appear to require that
+   // the special case target names (_top, _parent, _self) ignore opener
+diff --git a/third_party/blink/renderer/core/frame/local_frame.cc b/third_party/blink/renderer/core/frame/local_frame.cc
+--- a/third_party/blink/renderer/core/frame/local_frame.cc
++++ b/third_party/blink/renderer/core/frame/local_frame.cc
+@@ -1287,6 +1287,10 @@ gfx::SizeF LocalFrame::ResizePageRectsKeepingRatio(
+   return gfx::SizeF(result_width, result_height);
+ }
+ 
++void LocalFrame::SetPageZoomFactorBaseValue(float factor) {
++  page_zoom_factor_base_value_ = factor;
++}
++
+ void LocalFrame::SetPageZoomFactor(float factor) {
+   SetPageAndTextZoomFactors(factor, text_zoom_factor_);
+ }
+@@ -1426,12 +1430,16 @@ device::mojom::blink::DevicePostureType LocalFrame::GetDevicePosture() {
+   return mojo_handler_->GetDevicePosture();
+ }
+ 
+-double LocalFrame::DevicePixelRatio() const {
++double LocalFrame::DevicePixelRatio(bool with_zoom_factor) const {
+   if (!page_)
+     return 0;
+ 
+   double ratio = page_->InspectorDeviceScaleFactorOverride();
+-  ratio *= PageZoomFactor();
++  // with_zoom_factor is default true
++  if (with_zoom_factor)
++    ratio *= PageZoomFactor();
++  else
++    ratio = page_zoom_factor_;
+   return ratio;
+ }
+ 
+diff --git a/third_party/blink/renderer/core/frame/local_frame.h b/third_party/blink/renderer/core/frame/local_frame.h
+--- a/third_party/blink/renderer/core/frame/local_frame.h
++++ b/third_party/blink/renderer/core/frame/local_frame.h
+@@ -382,13 +382,14 @@ class CORE_EXPORT LocalFrame final
+   void SetInViewSourceMode(bool = true);
+ 
+   void SetPageZoomFactor(float);
+-  float PageZoomFactor() const { return page_zoom_factor_; }
++  void SetPageZoomFactorBaseValue(float factor);
++  float PageZoomFactor() const { return page_zoom_factor_ + page_zoom_factor_base_value_; }
+   void SetTextZoomFactor(float);
+   float TextZoomFactor() const { return text_zoom_factor_; }
+   void SetPageAndTextZoomFactors(float page_zoom_factor,
+                                  float text_zoom_factor);
+ 
+-  double DevicePixelRatio() const;
++  double DevicePixelRatio(bool with_zoom_factor = true) const;
+ 
+   // Informs the local root's document and its local descendant subtree that a
+   // media query value changed.
+@@ -972,6 +973,7 @@ class CORE_EXPORT LocalFrame final
+   unsigned hidden_ : 1;
+ 
+   float page_zoom_factor_;
++  float page_zoom_factor_base_value_ = 0;
+   float text_zoom_factor_;
+ 
+   Member<CoreProbeSink> probe_sink_;
+diff --git a/third_party/blink/renderer/core/frame/screen_metrics_emulator.cc b/third_party/blink/renderer/core/frame/screen_metrics_emulator.cc
+--- a/third_party/blink/renderer/core/frame/screen_metrics_emulator.cc
++++ b/third_party/blink/renderer/core/frame/screen_metrics_emulator.cc
+@@ -34,6 +34,7 @@ void ScreenMetricsEmulator::Trace(Visitor* vistor) const {
+ }
+ 
+ void ScreenMetricsEmulator::DisableAndApply() {
++  override_screen_type_ = false;
+   frame_widget_->SetScreenMetricsEmulationParameters(false, emulation_params_);
+   frame_widget_->SetScreenRects(original_view_screen_rect_,
+                                 original_window_screen_rect_);
+@@ -45,7 +46,16 @@ void ScreenMetricsEmulator::DisableAndApply() {
+ 
+ void ScreenMetricsEmulator::ChangeEmulationParams(
+     const DeviceEmulationParams& params) {
++  if (!params.force_mobile_calc) {
++    // user has activated device emulator via devtools
++    override_screen_type_ = true;
++    // we need to save requested value
++    last_screen_type_ = params.screen_type;
++  }
+   emulation_params_ = params;
++  if (override_screen_type_) {
++    emulation_params_.screen_type = last_screen_type_;
++  }
+   Apply();
+ }
+ 
+@@ -163,6 +173,9 @@ void ScreenMetricsEmulator::Apply() {
+   frame_widget_->SetScreenInfoAndSize(emulated_screen_infos,
+                                       /*widget_size=*/widget_size,
+                                       /*visible_viewport_size=*/widget_size);
++
++  // save emulated window size
++  window_size_ = window_size;
+ }
+ 
+ void ScreenMetricsEmulator::UpdateVisualProperties(
+@@ -191,9 +204,8 @@ void ScreenMetricsEmulator::OnUpdateScreenRects(
+     const gfx::Rect& window_screen_rect) {
+   original_view_screen_rect_ = view_screen_rect;
+   original_window_screen_rect_ = window_screen_rect;
+-  if (emulating_desktop()) {
+-    Apply();
+-  }
++  // needed as we need browser ui size
++  Apply();
+ }
+ 
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/frame/screen_metrics_emulator.h b/third_party/blink/renderer/core/frame/screen_metrics_emulator.h
+--- a/third_party/blink/renderer/core/frame/screen_metrics_emulator.h
++++ b/third_party/blink/renderer/core/frame/screen_metrics_emulator.h
+@@ -61,6 +61,11 @@ class ScreenMetricsEmulator : public GarbageCollected<ScreenMetricsEmulator> {
+   // Emulated position of the main frame widget (aka view) rect.
+   gfx::Point ViewRectOrigin();
+ 
++  // Get emulated window size
++  const gfx::Size& ViewWindowSize() const {
++    return window_size_;
++  }
++
+   // Disables emulation and applies non-emulated values to the
+   // WebFrameWidgetImpl. Call this before destroying the ScreenMetricsEmulator.
+   void DisableAndApply();
+@@ -77,6 +82,8 @@ class ScreenMetricsEmulator : public GarbageCollected<ScreenMetricsEmulator> {
+ 
+  private:
+   bool emulating_desktop() const {
++    if (emulation_params_.force_mobile_calc == true)
++      return false;
+     return emulation_params_.screen_type ==
+            mojom::blink::EmulatedScreenType::kDesktop;
+   }
+@@ -89,6 +96,10 @@ class ScreenMetricsEmulator : public GarbageCollected<ScreenMetricsEmulator> {
+   // Parameters as passed by `WebFrameWidgetImpl::EnableDeviceEmulation()`
+   DeviceEmulationParams emulation_params_;
+ 
++  // Used to remember the user's choice if devtools are activated
++  bool override_screen_type_ = false;
++  mojom::EmulatedScreenType last_screen_type_;
++
+   // Original values to restore back after emulation ends.
+   display::ScreenInfos original_screen_infos_;
+   gfx::Size original_widget_size_;
+@@ -96,6 +107,9 @@ class ScreenMetricsEmulator : public GarbageCollected<ScreenMetricsEmulator> {
+   gfx::Rect original_view_screen_rect_;
+   gfx::Rect original_window_screen_rect_;
+   std::vector<gfx::Rect> original_root_window_segments_;
++
++  // Actual size after apply
++  gfx::Size window_size_;
+ };
+ 
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc b/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
+--- a/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
++++ b/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
+@@ -1597,6 +1597,14 @@ void WebFrameWidgetImpl::ApplyVisualPropertiesSizing(
+ 
+     if (auto* device_emulator = DeviceEmulator()) {
+       device_emulator->UpdateVisualProperties(visual_properties);
++      // Shink the view according to browsercontrols
++      size_ = widget_base_->DIPsToCeiledBlinkSpace(
++          device_emulator->ViewWindowSize());
++      View()->ResizeWithBrowserControls(
++          size_.value(),
++          widget_base_->DIPsToCeiledBlinkSpace(
++              widget_base_->VisibleViewportSizeInDIPs()),
++          visual_properties.browser_controls_params);
+       return;
+     }
+ 
+diff --git a/third_party/blink/renderer/core/frame/web_remote_frame_impl.cc b/third_party/blink/renderer/core/frame/web_remote_frame_impl.cc
+--- a/third_party/blink/renderer/core/frame/web_remote_frame_impl.cc
++++ b/third_party/blink/renderer/core/frame/web_remote_frame_impl.cc
+@@ -348,7 +348,8 @@ void WebRemoteFrameImpl::InitializeFrameVisualProperties(
+   visual_properties.page_scale_factor = ancestor_widget->PageScaleInMainFrame();
+   visual_properties.is_pinch_gesture_active =
+       ancestor_widget->PinchGestureActiveInMainFrame();
+-  visual_properties.screen_infos = ancestor_widget->GetOriginalScreenInfos();
++  // for a cross-site iframe, set the actual (original or emulated) screen infos
++  visual_properties.screen_infos = ancestor_widget->GetScreenInfos();
+   visual_properties.visible_viewport_size =
+       ancestor_widget->VisibleViewportSizeInDIPs();
+   const WebVector<gfx::Rect>& window_segments =
+diff --git a/third_party/blink/renderer/core/input/touch.cc b/third_party/blink/renderer/core/input/touch.cc
+--- a/third_party/blink/renderer/core/input/touch.cc
++++ b/third_party/blink/renderer/core/input/touch.cc
+@@ -30,6 +30,7 @@
+ #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+ #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
+ #include "ui/gfx/geometry/point_f.h"
++#include "third_party/blink/renderer/core/page/page.h"
+ 
+ namespace blink {
+ 
+@@ -75,7 +76,13 @@ Touch::Touch(LocalFrame* frame,
+       radius_(radius),
+       rotation_angle_(rotation_angle),
+       force_(force),
+-      absolute_location_(PageToAbsolute(frame, page_pos)) {}
++      absolute_location_(PageToAbsolute(frame, page_pos)) {
++    if (frame->GetPage() && frame->GetPage()->IsScreenEmulated()) {
++      // use page_pos instead of screen_pos
++      screen_pos_.set_x(page_pos_.x());
++      screen_pos_.set_y(page_pos_.y());
++    }
++  }
+ 
+ Touch::Touch(EventTarget* target,
+              int identifier,
+@@ -105,7 +112,13 @@ Touch::Touch(LocalFrame* frame, const TouchInit* initializer)
+       radius_(initializer->radiusX(), initializer->radiusY()),
+       rotation_angle_(initializer->rotationAngle()),
+       force_(initializer->force()),
+-      absolute_location_(PageToAbsolute(frame, page_pos_)) {}
++      absolute_location_(PageToAbsolute(frame, page_pos_))  {
++    if (frame->GetPage() && frame->GetPage()->IsScreenEmulated()) {
++      // use page_pos instead of screen_pos
++      screen_pos_.set_x(page_pos_.x());
++      screen_pos_.set_y(page_pos_.y());
++    }
++  }
+ 
+ Touch* Touch::CloneWithNewTarget(EventTarget* event_target) const {
+   return MakeGarbageCollected<Touch>(
+diff --git a/third_party/blink/renderer/core/page/page.cc b/third_party/blink/renderer/core/page/page.cc
+--- a/third_party/blink/renderer/core/page/page.cc
++++ b/third_party/blink/renderer/core/page/page.cc
+@@ -23,6 +23,7 @@
+ 
+ #include "base/compiler_specific.h"
+ #include "base/feature_list.h"
++#include "build/build_config.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink-forward.h"
+ #include "third_party/blink/public/platform/platform.h"
+@@ -92,6 +93,9 @@
+ #include "third_party/blink/renderer/platform/scheduler/public/agent_group_scheduler.h"
+ #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
+ #include "third_party/skia/include/core/SkColor.h"
++#include "base/rand_util.h"
++#include "third_party/blink/public/common/widget/device_emulation_params.h"
++#include "third_party/blink/renderer/core/exported/web_view_impl.h"
+ 
+ namespace blink {
+ 
+@@ -878,7 +882,79 @@ void Page::UpdateAcceleratedCompositingSettings() {
+   }
+ }
+ 
++void Page::CalculateEmulatedScreenSetting(LocalFrame* frame, bool force) {
++  bool isEnabled = base::FeatureList::IsEnabled(features::kViewportProtection);
++  if (isEnabled || force) {
++    // this is the maximum (and minimum) value which in percentage
++    // corresponds to +- 0.03%
++    // more or less 3-6 pixels according to the resolution 300-600px
++    // little enough not to change the page view the user is used to,
++    // but enough to change all bounds, especially those in floating point
++    const int max_range = 300;
++
++    // only for the local main frame
++    // the other local frames use the values from main
++    // while the remote ones do not communicate the values to the parent
++    // (and they will be local main frame in their page context)
++    if (main_frame_ == frame) {
++      // set the scale factor
++      double scale_factor = 0;
++      if (override_window_scale_factor_ != 0) {
++        scale_factor = override_window_scale_factor_;
++      } else {
++        // we allow the increase or decrease of the screen size (and view)
++        scale_factor = 1.0 + base::RandInt(-max_range, max_range) / 10000.0;
++      }
++
++      // save the value, so a same domain navigation will reuse same value
++      override_window_scale_factor_ = scale_factor;
++
++      // we divide the value in half: half for the screen and the view,
++      // which then the latter will be scaled again by the zoom
++      double half_random = (scale_factor - 1.0) / 2.0;
++
++      // set emulation params
++      DeviceEmulationParams params;
++      // the screen size is changed to match the widget size with force_mobile_calc
++      params.force_mobile_calc = true;
++      params.screen_type = mojom::EmulatedScreenType::kDesktop;
++      // scale the widget size (and the screen size) by half_random scale factor
++      params.scale = 1 / (1.0 + half_random);
++
++      GetChromeClient().GetWebView()->EnableDeviceEmulation(params);
++
++      // set zoom factor
++      // the zoom factor is used by all the functions that manage the bounds,
++      // which is multiplied by the values in pixels when computed
++      // we do not modify the actual value but only the one used internally
++      // it becomes the base value used as the zoom property of the css, but
++      // it does not appear on the dom (which always remains 1.0)
++      double zoom_factor = 0;
++      if (override_zoom_factor_ != 0) {
++        zoom_factor = override_zoom_factor_;
++      } else {
++        // we only allow the page size to decrease, otherwise the scroll
++        // bars would not be visible
++        zoom_factor = base::RandInt(0, max_range/2) / 10000.0;
++      }
++
++      // save the value, so a same domain navigation will reuse same value
++      override_zoom_factor_ = zoom_factor;
++
++      frame->SetPageZoomFactorBaseValue(zoom_factor);
++    }
++    is_screen_emulated = true;
++  } else {
++    if (is_screen_emulated && main_frame_ == frame) {
++      GetChromeClient().GetWebView()->DisableDeviceEmulation();
++      frame->SetPageZoomFactorBaseValue(0);
++    }
++    is_screen_emulated = false;
++  }
++}
++
+ void Page::DidCommitLoad(LocalFrame* frame) {
++  CalculateEmulatedScreenSetting(frame);
+   if (main_frame_ == frame) {
+     GetConsoleMessageStorage().Clear();
+     GetInspectorIssueStorage().Clear();
+diff --git a/third_party/blink/renderer/core/page/page.h b/third_party/blink/renderer/core/page/page.h
+--- a/third_party/blink/renderer/core/page/page.h
++++ b/third_party/blink/renderer/core/page/page.h
+@@ -409,6 +409,9 @@ class CORE_EXPORT Page final : public GarbageCollected<Page>,
+   }
+   mojom::blink::FencedFrameMode FencedFrameMode() { return fenced_frame_mode_; }
+ 
++  void CalculateEmulatedScreenSetting(LocalFrame* frame, bool force = false);
++  bool IsScreenEmulated() { return is_screen_emulated; }
++
+  private:
+   friend class ScopedPagePauser;
+ 
+@@ -538,6 +541,10 @@ class CORE_EXPORT Page final : public GarbageCollected<Page>,
+   // browser side FrameTree has the FrameTree::Type of kFencedFrame.
+   bool is_fenced_frame_tree_ = false;
+ 
++  bool is_screen_emulated = false;
++  double override_window_scale_factor_ = 0;
++  double override_zoom_factor_ = 0;
++
+   // If the page is hosted inside an MPArch fenced frame, this tracks the
+   // mode that the fenced frame is set to. This will always be set to kDefault
+   // for the ShadowDOM implementation of fenced frames.
+--
+2.25.1
