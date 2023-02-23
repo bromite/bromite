@@ -1,0 +1,304 @@
+From: wuyifeng <wuyifeng@nd.com.cn>
+Date: Wed, 22 Feb 2023 15:20:59 +0800
+Subject: Telemetry event about Chromium tabs opened
+
+Fix version: 1.4.0
+We will count the maximum number of tabs, then send the Chromium Tabs Opened event after closing Chromium.
+1. The event will be sent immediately if all pages are closed but Chromium is still running in the background.
+2. The event will be sent the next time Chromium is reopened if all processes are killed.
+3. The number of tabs is include the normal tabs, the incognito tabs, and the tabs of the new window.
+Relate to https://prometheanworld.atlassian.net/browse/AP9-14158.
+
+---
+ base/BUILD.gn                                 |  1 +
+ .../org/chromium/base/PrometheanManager.java  | 56 ++++++++++++++++++
+ .../org/chromium/base/PrometheanSPUtils.java  | 57 +++++++++++++++++++
+ .../src/org/chromium/base/TelemetryUtils.java | 13 ++++-
+ .../chrome/browser/ChromeTabbedActivity.java  | 17 +++++-
+ .../browser/PrometheanContentProvider.java    | 12 +++-
+ 6 files changed, 150 insertions(+), 4 deletions(-)
+ create mode 100644 base/android/java/src/org/chromium/base/PrometheanSPUtils.java
+
+diff --git a/base/BUILD.gn b/base/BUILD.gn
+--- a/base/BUILD.gn
++++ b/base/BUILD.gn
+@@ -4236,6 +4236,7 @@ if (is_android) {
+       "android/java/src/org/chromium/base/PowerMonitorForQ.java",
+       "android/java/src/org/chromium/base/Predicate.java",
+       "android/java/src/org/chromium/base/PrometheanManager.java",
++      "android/java/src/org/chromium/base/PrometheanSPUtils.java",
+       "android/java/src/org/chromium/base/Promise.java",
+       "android/java/src/org/chromium/base/RadioUtils.java",
+       "android/java/src/org/chromium/base/StreamUtil.java",
+diff --git a/base/android/java/src/org/chromium/base/PrometheanManager.java b/base/android/java/src/org/chromium/base/PrometheanManager.java
+--- a/base/android/java/src/org/chromium/base/PrometheanManager.java
++++ b/base/android/java/src/org/chromium/base/PrometheanManager.java
+@@ -1,5 +1,10 @@
+ package org.chromium.base;
+ 
++import android.app.Activity;
++
++import java.util.HashSet;
++import java.util.Set;
++
+ import com.prometheanworld.identity.impl.PrometheanProfileImpl;
+ import com.prometheanworld.identity.dto.response.LoginStatusResponse;
+ import com.prometheanworld.identity.handler.response.LoginStatusHandler;
+@@ -11,11 +16,33 @@ public class PrometheanManager {
+     public static final PrometheanManager INSTANCE = new PrometheanManager();
+ 
+     private PrometheanProfileImpl mProfileImpl;
++    private final Set<IOpenedTab> mOpenedTabSet = new HashSet<>();
+ 
+     private boolean mIsLogin;
+ 
+     private PrometheanManager() {
+         mProfileImpl = new PrometheanProfileImpl(ContextUtils.getApplicationContext());
++        if (TelemetryUtils.isMainProcess()) {
++            ApplicationStatus.registerStateListenerForAllActivities(new ApplicationStatus.ActivityStateListener() {
++                public void onActivityStateChange(Activity activity, @ActivityState int newState) {
++                    if (newState == ActivityState.CREATED) {
++                        if (activity.getClass().getName().equals("org.chromium.chrome.browser.ChromeTabbedActivity") && mOpenedTabSet.isEmpty()) {
++                            sendMaxOpenedTabCountEvent();
++                        }
++                        if (activity instanceof IOpenedTab) {
++                            mOpenedTabSet.add((IOpenedTab) activity);
++                        }
++                    } else if (newState == ActivityState.DESTROYED) {
++                        if (activity instanceof IOpenedTab) {
++                            mOpenedTabSet.remove((IOpenedTab) activity);
++                        }
++                        if (ApplicationStatus.isEveryActivityDestroyed()) {
++                            sendMaxOpenedTabCountEvent();
++                        }
++                    }
++                }
++            });
++        }
+     }
+ 
+     public void updateLoginStatus() {
+@@ -30,4 +57,33 @@ public class PrometheanManager {
+     public boolean isLogin() {
+         return mIsLogin;
+     }
++
++    public void updateMaxOpenedTabCount() {
++        int count = getMaxOpenedTabCount();
++        if (count > PrometheanSPUtils.getMaxOpenedTabCount()) {
++            PrometheanSPUtils.saveMaxOpenedTabCount(count);
++        }
++    }
++
++    private void sendMaxOpenedTabCountEvent() {
++        if (PrometheanSPUtils.containsMaxOpenedTabCount()) {
++            int count = PrometheanSPUtils.getMaxOpenedTabCount();
++            TelemetryUtils.sendChromiumTabsOpenedEvent(count);
++            PrometheanSPUtils.removeMaxOpenedTabCount();
++        }
++    }
++
++    private int getMaxOpenedTabCount() {
++        int count = 0;
++        for (IOpenedTab tab : mOpenedTabSet) {
++            if (tab != null) {
++                count += tab.getMaxOpenedTabCount();
++            }
++        }
++        return count;
++    }
++
++    public interface IOpenedTab {
++        int getMaxOpenedTabCount();
++    }
+ }
+diff --git a/base/android/java/src/org/chromium/base/PrometheanSPUtils.java b/base/android/java/src/org/chromium/base/PrometheanSPUtils.java
+new file mode 100644
+--- /dev/null
++++ b/base/android/java/src/org/chromium/base/PrometheanSPUtils.java
+@@ -0,0 +1,57 @@
++package org.chromium.base;
++
++import android.content.Context;
++import android.content.SharedPreferences;
++
++import org.chromium.base.ContextUtils;
++
++public class PrometheanSPUtils {
++
++	private static final String SP_NAME = "promethean_sp";
++
++	private static final String KEY_MAX_OPENED_TAB_COUNT = "max_opened_tab_count";
++
++	private PrometheanSPUtils() {
++		throw new UnsupportedOperationException("u can't instantiate me...");
++	}
++
++	public static int getMaxOpenedTabCount() {
++		return getInt(KEY_MAX_OPENED_TAB_COUNT, 0);
++	}
++
++	public static void saveMaxOpenedTabCount(int count) {
++		putInt(KEY_MAX_OPENED_TAB_COUNT, count);
++	}
++
++	public static void removeMaxOpenedTabCount() {
++		remove(KEY_MAX_OPENED_TAB_COUNT);
++	}
++
++	public static boolean containsMaxOpenedTabCount() {
++		return contains(KEY_MAX_OPENED_TAB_COUNT);
++	}
++
++	private static int getInt(String key, int defaultValue) {
++		return getSP().getInt(key, defaultValue);
++	}
++
++	private static void putInt(String key, int value) {
++		getEditor().putInt(key, value).apply();
++	}
++
++	private static void remove(String key) {
++		getEditor().remove(key).apply();
++	}
++
++	private static boolean contains(String key) {
++		return getSP().contains(key);
++	}
++
++	private static SharedPreferences getSP() {
++		return ContextUtils.getApplicationContext().getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
++	}
++
++	private static SharedPreferences.Editor getEditor() {
++		return getSP().edit();
++	}
++}
+\ No newline at end of file
+diff --git a/base/android/java/src/org/chromium/base/TelemetryUtils.java b/base/android/java/src/org/chromium/base/TelemetryUtils.java
+--- a/base/android/java/src/org/chromium/base/TelemetryUtils.java
++++ b/base/android/java/src/org/chromium/base/TelemetryUtils.java
+@@ -14,9 +14,11 @@ public class TelemetryUtils {
+ 
+     private static final String EVENT_VIDEO_FULL_SCREEN = "Chromium Video Player Full Screen Mode";
+     private static final String EVENT_WEBSITE_SAVED_TO_BOOKMARKS = "Website Saved To Bookmarks";
++    private static final String EVENT_CHROMIUM_TABS_OPENED = "Chromium Tabs Opened";
+ 
+     private static final String KEY_VIDEO_FULL_SCREEN = "Video Player in Chromium Full Screen Mode";
+     private static final String KEY_WEBSITE_BOOKMARKED = "Website Bookmarked";
++    private static final String KEY_NUMBER_OF_CHROMIUM_TABS_OPENED = "Number of Chromium tabs opened in a session";
+ 
+     private static final String VALUE_VIDEO_FULL_SCREEN = "Full screen mode selected in browser video player";
+ 
+@@ -48,11 +50,20 @@ public class TelemetryUtils {
+         }
+     }
+ 
++    public static void sendChromiumTabsOpenedEvent(int count) {
++        try {
++            JSONObject eventData = new JSONObject();
++            eventData.put(KEY_NUMBER_OF_CHROMIUM_TABS_OPENED, count);
++            sendEvent(EVENT_CHROMIUM_TABS_OPENED, eventData);
++        } catch (Throwable ignored) {
++        }
++    }
++
+     private static void sendEvent(String eventName, JSONObject eventData) {
+         Telemetry.send(eventName, eventData);
+     }
+ 
+-    private static boolean isMainProcess() {
++    public static boolean isMainProcess() {
+         Context context = ContextUtils.getApplicationContext();
+         boolean isMain = false;
+         try {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -44,6 +44,7 @@ import org.chromium.base.ContextUtils;
+ import org.chromium.base.IntentUtils;
+ import org.chromium.base.Log;
+ import org.chromium.base.MemoryPressureListener;
++import org.chromium.base.PrometheanManager;
+ import org.chromium.base.ThreadUtils;
+ import org.chromium.base.TraceEvent;
+ import org.chromium.base.jank_tracker.JankTrackerImpl;
+@@ -234,7 +235,7 @@ import org.chromium.chrome.browser.ApplicationLifetime;
+  * are accessible via a chrome specific tab switching UI.
+  */
+ public class ChromeTabbedActivity extends ChromeActivity<ChromeActivityComponent>
+-        implements ChromeAccessibilityUtil.Observer {
++        implements ChromeAccessibilityUtil.Observer, PrometheanManager.IOpenedTab {
+     private static final String TAG = "ChromeTabbedActivity";
+ 
+     private static final String HELP_URL_PREFIX = "https://support.google.com/chrome/";
+@@ -659,6 +660,7 @@ public class ChromeTabbedActivity extends ChromeActivity<ChromeActivityComponent
+                                      Toast.LENGTH_SHORT)
+                                 .show();
+                     }
++                    PrometheanManager.INSTANCE.updateMaxOpenedTabCount();
+                 }
+ 
+                 @Override
+@@ -673,6 +675,19 @@ public class ChromeTabbedActivity extends ChromeActivity<ChromeActivityComponent
+         }
+     }
+ 
++    @Override
++    public int getMaxOpenedTabCount() {
++        int count = 0;
++        TabModelSelector modelSelector = getTabModelSelector();
++        if (modelSelector != null) {
++            List<TabModel> models = modelSelector.getModels();
++            for (TabModel model : models) {
++                count += model.getCount();
++            }
++        }
++        return count;
++    }
++
+     private void openTabletTabSwitcherIfNoTabs() {
+         if (!isTablet() || mLayoutManager == null
+                 || !mTabModelOrchestrator.areTabModelsInitialized()) {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java b/chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/PrometheanContentProvider.java
+@@ -43,6 +43,7 @@ public class PrometheanContentProvider extends ContentProvider {
+     private static final String KEY_DATA = "data";
+     private static final UriMatcher URI_MATCHER = new UriMatcher(UriMatcher.NO_MATCH);
+     private static final Set<String> CLEAR_FILES_OR_DIRS = new HashSet<>();
++    private static final Set<String> NOT_ALLOW_DELETED_FILES = new HashSet<>();
+ 
+     static {
+         URI_MATCHER.addURI(AUTHORITY, PATH_DATA_DATA_LOCAL_STATE, CODE_DATA_DATA_LOCAL_STATE);
+@@ -76,6 +77,8 @@ public class PrometheanContentProvider extends ContentProvider {
+         CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Cookies");
+         CLEAR_FILES_OR_DIRS.add(appChromeDefaultDir + "/Cookies-journal");
+         CLEAR_FILES_OR_DIRS.add(externalDir);
++
++        NOT_ALLOW_DELETED_FILES.add(dataDirPath + "/shared_prefs/promethean_sp.xml");
+         return false;
+     }
+ 
+@@ -208,11 +211,16 @@ public class PrometheanContentProvider extends ContentProvider {
+             return;
+         }
+         if (file.isFile()) {
++            String absolutePath = file.getAbsolutePath();
++            if (NOT_ALLOW_DELETED_FILES.contains(absolutePath)) {
++                Log.d(TAG, absolutePath + " is not allowed to be deleted");
++                return;
++            }
+             boolean deleted = file.delete();
+             if (deleted) {
+-                Log.d(TAG, "deleted file " + file.getAbsolutePath());
++                Log.d(TAG, "deleted file " + absolutePath);
+             } else {
+-                Log.d(TAG, "could not delete file " + file.getAbsolutePath());
++                Log.d(TAG, "could not delete file " + absolutePath);
+             }
+         } else if (file.isDirectory()) {
+             File[] files = file.listFiles();
+-- 
+2.34.1
+
