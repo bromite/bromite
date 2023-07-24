@@ -74,7 +74,7 @@ dependencies. If you have troubles with the build, you may wish to run
 `./build/install-build-deps.sh` to make sure dependencies are properly
 installed.
 
-## Applying the patches
+## Apply the patches
 
 Now apply the patches in correct order. Make sure you do this from the
 `src/` directory of the Chromium checkout and set the `BROMITE_REPO`
@@ -89,6 +89,10 @@ done
 
 All patches should apply cleanly. If they did not, make sure you have
 checked out the proper Chromium tag (108.0.5359.156).
+
+## Apply the translations
+
+* [README of Applying the translations](./build/translations/README.md)
 
 ## Getting the third dependencies
 
