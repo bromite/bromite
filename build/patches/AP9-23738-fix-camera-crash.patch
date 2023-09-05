@@ -1,0 +1,63 @@
+From: wuyifeng <wuyifeng@nd.com.cn>
+Date: Thu, 31 Aug 2023 14:30:59 +0800
+Subject: AP9-23738 [Android 11] [only 9950]Chromium crashed when opening camera on Zoom meeting online (Camera is connected to USB 2.0 port))
+
+Why:
+It is possible to invoke multi-methods to notify error at the same time, which causes the crash of invoking pthread_mutex_trylock (or pthread_mutex_lock) method after invoking pthread_mutex_destroy.
+How:
+If the state is already 'stopped', do not notify the error.
+
+---
+ .../org/chromium/media/VideoCaptureCamera2.java | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/media/capture/video/android/java/src/org/chromium/media/VideoCaptureCamera2.java b/media/capture/video/android/java/src/org/chromium/media/VideoCaptureCamera2.java
+--- a/media/capture/video/android/java/src/org/chromium/media/VideoCaptureCamera2.java
++++ b/media/capture/video/android/java/src/org/chromium/media/VideoCaptureCamera2.java
+@@ -84,6 +84,9 @@ public class VideoCaptureCamera2 extends VideoCapture {
+ 
+             cameraDevice.close();
+             mCameraDevice = null;
++            if (isStopped()) {
++                return;
++            }
+             changeCameraStateAndNotify(CameraState.STOPPED);
+             VideoCaptureJni.get().onError(mNativeVideoCaptureDeviceAndroid,
+                     VideoCaptureCamera2.this,
+@@ -158,8 +161,11 @@ public class VideoCaptureCamera2 extends VideoCapture {
+ 
+             // TODO(mcasas): When signalling error, C++ will tear us down. Is there need for
+             // cleanup?
+-            changeCameraStateAndNotify(CameraState.STOPPED);
+             mPreviewSession = null;
++            if (isStopped()) {
++                return;
++            }
++            changeCameraStateAndNotify(CameraState.STOPPED);
+             VideoCaptureJni.get().onError(mNativeVideoCaptureDeviceAndroid,
+                     VideoCaptureCamera2.this,
+                     AndroidVideoCaptureError.ANDROID_API_2_CAPTURE_SESSION_CONFIGURE_FAILED,
+@@ -1062,6 +1068,9 @@ public class VideoCaptureCamera2 extends VideoCapture {
+ 
+         if (createPreviewObjectsAndStartPreview()) return;
+ 
++        if (isStopped()) {
++            return;
++        }
+         changeCameraStateAndNotify(CameraState.STOPPED);
+         VideoCaptureJni.get().onError(mNativeVideoCaptureDeviceAndroid, VideoCaptureCamera2.this,
+                 androidVideoCaptureError, "Error starting or restarting preview");
+@@ -1758,4 +1767,10 @@ public class VideoCaptureCamera2 extends VideoCapture {
+     public void deallocate() {
+         Log.d(TAG, "deallocate");
+     }
++
++    private boolean isStopped() {
++        synchronized (mCameraStateLock) {
++            return mCameraState == CameraState.STOPPED;
++        }
++    }
+ }
+-- 
+2.34.1
+
