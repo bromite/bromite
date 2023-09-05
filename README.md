@@ -1,6 +1,7 @@
-[![Stand With Ukraine](./banner2-direct.svg)](https://stand-with-ukraine.pp.ua/)
+# Bromite has been abandoned (Sorry)
+# There is a fork called cromite at https://github.com/uazo/cromite
 
-# Bromite - Take back your browser
+## Bromite - Take back your browser
 <a href="https://github.com/bromite/bromite/releases/latest">
   <img src="https://www.bromite.org/release.svg" alt="current Bromite release" title="current Bromite release" /> </a>
 <a href="https://github.com/bromite/bromite/blob/master/LICENSE">
